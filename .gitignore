@@ -1,0 +1,9 @@
+.env
+__pycache__/
+*.pyc
+.pytest_cache/
+
+# Extraction outputs -- these can contain real candidate PII depending on
+# what was run locally. Never committed, whatever produced them.
+*.xlsx
+*.csv
