@@ -80,6 +80,19 @@ def _field_schema(value_type: str, *, nullable: bool, enum: list[str] | None = N
     }
 
 
+def _publication_titles_schema() -> dict:
+    """A list-valued field still needs the value/confidence/evidence shape."""
+    return {
+        "type": "OBJECT",
+        "properties": {
+            "value": {"type": "ARRAY", "nullable": True, "items": {"type": "STRING"}},
+            "confidence": {"type": "NUMBER"},
+            "evidence": {"type": "STRING", "nullable": True},
+        },
+        "required": ["value", "confidence", "evidence"],
+    }
+
+
 # Gemini's structured-output schema is an OpenAPI 3.0 subset (uppercase
 # type names, a `nullable` flag) rather than raw JSON Schema, so this can't
 # be shared verbatim with ollama_provider.EXTRACTION_JSON_SCHEMA even though
@@ -90,6 +103,7 @@ GEMINI_EXTRACTION_SCHEMA = types.Schema(
         "candidate_name": _field_schema("STRING", nullable=True),
         "highest_degree": _field_schema("STRING", nullable=False, enum=["UG", "PG", "PhD", "Post-Doc"]),
         "marks_pct": _field_schema("NUMBER", nullable=True),
+        "cgpa": _field_schema("NUMBER", nullable=True),
         "has_phd": _field_schema("BOOLEAN", nullable=False),
         "phd_award_date": _field_schema("STRING", nullable=True),
         "phd_regulation": _field_schema("STRING", nullable=True, enum=["2009", "2016"]),
@@ -99,11 +113,15 @@ GEMINI_EXTRACTION_SCHEMA = types.Schema(
         "study_leave_taken": _field_schema("BOOLEAN", nullable=True),
         "teaching_years_raw": _field_schema("NUMBER", nullable=True),
         "publications_count": _field_schema("INTEGER", nullable=False),
+        "publication_titles": _publication_titles_schema(),
+        "publications_in_progress_count": _field_schema("INTEGER", nullable=False),
+        "publications_in_progress_titles": _publication_titles_schema(),
     },
     required=[
-        "candidate_name", "highest_degree", "marks_pct", "has_phd", "phd_award_date",
+        "candidate_name", "highest_degree", "marks_pct", "cgpa", "has_phd", "phd_award_date",
         "phd_regulation", "masters_award_date", "net_set_status", "set_state",
-        "study_leave_taken", "teaching_years_raw", "publications_count",
+        "study_leave_taken", "teaching_years_raw", "publications_count", "publication_titles",
+        "publications_in_progress_count", "publications_in_progress_titles",
     ],
 )
 

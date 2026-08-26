@@ -17,6 +17,7 @@ T = TypeVar("T")
 
 NetSetStatus = Literal["NET", "SET", "SLET", "NONE"]
 PhdRegulation = Literal["2009", "2016"]
+DatePrecision = Literal["year", "month", "full"]
 
 
 class FieldWithConfidence(BaseModel, Generic[T]):
@@ -67,6 +68,11 @@ class ExtractionResult(BaseModel):
     candidate_name: FieldWithConfidence[str | None]
     highest_degree: FieldWithConfidence[str]  # UG / PG / PhD / Post-Doc
     marks_pct: FieldWithConfidence[float | None]
+    # Kept separate from marks_pct rather than converted into it: CGPA->%
+    # conversion factors differ by university (x10 at some, x9.5 at others),
+    # so any single formula would misstate a real candidate's marks. Storing
+    # the grade point on its own scale loses no information and invents none.
+    cgpa: FieldWithConfidence[float | None]
     has_phd: FieldWithConfidence[bool]
     phd_award_date: FieldWithConfidence[date | None]
     phd_regulation: FieldWithConfidence[PhdRegulation | None]
@@ -84,6 +90,31 @@ class ExtractionResult(BaseModel):
     # passing silently.
     teaching_years_raw: FieldWithConfidence[float | None]
     publications_count: FieldWithConfidence[int]
+    # The titles behind publications_count. Counting is the model's weakest
+    # numeric task on real CVs, which routinely re-list the same work across
+    # a "Publications" list and a separate projects/research table -- each
+    # mention carries its own honest quote, so evidence checks cannot catch
+    # the double-count. Holding the titles lets Python dedupe them instead.
+    publication_titles: FieldWithConfidence[list[str] | None]
+    # Work that has not yet cleared peer review, kept separate rather than
+    # dropped. Section 6.1 requires "peer-reviewed or UGC-listed" work for
+    # Associate Professor / Professor, so SUBMITTED / UNDER_REVIEW / DRAFT
+    # must not inflate publications_count -- but a reviewer still needs to
+    # see "10 published + 3 under review" rather than a bare 10, and the
+    # DataModel's Candidate_Publications.publication_status enum exists
+    # precisely so downstream logic can make that call for itself.
+    # ACCEPTED counts as published: it has passed peer review, which is the
+    # substantive bar, even though it is not yet in print.
+    publications_in_progress_count: FieldWithConfidence[int]
+    publications_in_progress_titles: FieldWithConfidence[list[str] | None]
+    # How much of each date the resume actually stated. A bare "2015" parses
+    # to date(2015, 1, 1), which then reads in the export exactly like a
+    # verified full date -- a reviewer cannot tell "year only, verified" from
+    # "day-accurate, verified". Derived in llm.postprocess from the evidence
+    # quote (the parsed value has already had the gaps filled in and can no
+    # longer say what was really there), so it is not a model-reported field.
+    phd_award_date_precision: DatePrecision | None = None
+    masters_award_date_precision: DatePrecision | None = None
     raw_llm_output: str = ""
 
 
@@ -93,6 +124,7 @@ FIELD_NAMES: tuple[str, ...] = (
     "candidate_name",
     "highest_degree",
     "marks_pct",
+    "cgpa",
     "has_phd",
     "phd_award_date",
     "phd_regulation",
@@ -102,6 +134,9 @@ FIELD_NAMES: tuple[str, ...] = (
     "study_leave_taken",
     "teaching_years_raw",
     "publications_count",
+    "publication_titles",
+    "publications_in_progress_count",
+    "publications_in_progress_titles",
 )
 
 # Fields the model is always expected to ground in the resume. Everything else

@@ -26,6 +26,7 @@ def build(**overrides) -> ExtractionResult:
         candidate_name=_ok("D. Synthetic Candidate"),
         highest_degree=_ok("PG"),
         marks_pct=_ok(70.0),
+        cgpa=ABSENT,
         has_phd=_ok(False),
         phd_award_date=ABSENT,
         phd_regulation=ABSENT,
@@ -35,6 +36,9 @@ def build(**overrides) -> ExtractionResult:
         study_leave_taken=ABSENT,
         teaching_years_raw=_ok(5.0),
         publications_count=_ok(2),
+        publication_titles=_ok(["Paper One", "Paper Two"]),
+        publications_in_progress_count=_ok(0),
+        publications_in_progress_titles=_ok([]),
         raw_llm_output="{}",
     )
     base.update(overrides)

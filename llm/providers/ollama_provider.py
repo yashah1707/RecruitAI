@@ -56,6 +56,7 @@ EXTRACTION_JSON_SCHEMA: dict = {
         "candidate_name": _field_schema(_NULLABLE_STRING),
         "highest_degree": _field_schema({"type": "string", "enum": ["UG", "PG", "PhD", "Post-Doc"]}),
         "marks_pct": _field_schema(_NULLABLE_NUMBER),
+        "cgpa": _field_schema(_NULLABLE_NUMBER),
         "has_phd": _field_schema({"type": "boolean"}),
         "phd_award_date": _field_schema(_NULLABLE_DATE),
         "phd_regulation": _field_schema({"type": ["string", "null"], "enum": ["2009", "2016", None]}),
@@ -65,11 +66,15 @@ EXTRACTION_JSON_SCHEMA: dict = {
         "study_leave_taken": _field_schema(_NULLABLE_BOOL),
         "teaching_years_raw": _field_schema(_NULLABLE_NUMBER),
         "publications_count": _field_schema({"type": "integer"}),
+        "publication_titles": _field_schema({"type": ["array", "null"], "items": {"type": "string"}}),
+        "publications_in_progress_count": _field_schema({"type": "integer"}),
+        "publications_in_progress_titles": _field_schema({"type": ["array", "null"], "items": {"type": "string"}}),
     },
     "required": [
-        "candidate_name", "highest_degree", "marks_pct", "has_phd", "phd_award_date",
+        "candidate_name", "highest_degree", "marks_pct", "cgpa", "has_phd", "phd_award_date",
         "phd_regulation", "masters_award_date", "net_set_status", "set_state",
-        "study_leave_taken", "teaching_years_raw", "publications_count",
+        "study_leave_taken", "teaching_years_raw", "publications_count", "publication_titles",
+        "publications_in_progress_count", "publications_in_progress_titles",
     ],
 }
 

@@ -14,7 +14,6 @@ from app.excel_writer import (
     COLUMNS,
     CONFIDENCE_COLUMNS,
     EVIDENCE_COLUMNS,
-    FORBIDDEN_COLUMN_NAMES,
     SHEET_NAME,
     build_row,
     write_workbook,
@@ -69,19 +68,62 @@ def test_every_extracted_field_has_confidence_and_evidence_columns(sheet):
         assert f"{field}_evidence" in names
 
 
-def test_no_rank_score_or_priority_column(sheet):
-    """A computed ordering column is out of scope by design, not by oversight."""
-    for name in header(sheet):
-        assert name.lower() not in FORBIDDEN_COLUMN_NAMES
-        assert "rank" not in name.lower()
-        assert "score" not in name.lower()
-        assert "priority" not in name.lower()
+def test_rank_and_score_columns_exist_and_lead_the_sheet(sheet):
+    """Ranking was added on an explicit instruction, overriding the original
+    no-leaderboard design. See app/ranking.py for what the number is not."""
+    names = header(sheet)
+    assert names[:3] == ["rank", "score", "score_completeness"]
+
+
+def test_rows_are_ordered_by_rank(sheet):
+    ranks = [sheet.cell(row=r, column=1).value for r in range(2, sheet.max_row + 1)]
+    present = [r for r in ranks if r is not None]
+    assert present == sorted(present)
+    assert present == list(range(1, len(present) + 1))
+
+
+def test_score_completeness_travels_with_every_score(sheet):
+    """A score without its completeness is the misleading form of this column:
+    it hides that the number may rest on mostly-missing data."""
+    names = header(sheet)
+    si, ci = names.index("score") + 1, names.index("score_completeness") + 1
+    for r in range(2, sheet.max_row + 1):
+        if sheet.cell(row=r, column=si).value is not None:
+            assert sheet.cell(row=r, column=ci).value is not None
+
+
+def test_needs_review_still_present_alongside_rank(sheet):
+    """A high rank on unverified data must stay visibly unverified."""
+    assert "needs_review" in header(sheet)
+    assert "review_reasons" in header(sheet)
+
+
+def test_workbook_carries_the_ranking_disclaimer(records, tmp_path):
+    """The caveat has to survive the file being forwarded to someone who
+    never saw the app."""
+    from openpyxl import load_workbook
+
+    from app.ranking import RANKING_DISCLAIMER
+
+    path = write_workbook(records, tmp_path / "d.xlsx", threshold=THRESHOLD)
+    wb = load_workbook(path)
+    assert "how_scoring_works" in wb.sheetnames
+    explain = " ".join(
+        str(c.value) for row in wb["how_scoring_works"].iter_rows() for c in row if c.value
+    )
+    assert "not a hiring decision" in explain
+    note = wb[SHEET_NAME].cell(row=1, column=1).comment
+    assert note is not None and "not a hiring decision" in note.text
 
 
 def test_one_row_per_uploaded_file_including_the_failed_one(sheet, records):
+    """Every uploaded file gets a row. Order is by rank now, not upload
+    order, so compare as sets."""
     assert sheet.max_row == len(records) + 1
-    filenames = [sheet.cell(row=r, column=1).value for r in range(2, sheet.max_row + 1)]
-    assert filenames == [r.source_filename for r in records]
+    names = header(sheet)
+    fi = names.index("source_filename") + 1
+    filenames = [sheet.cell(row=r, column=fi).value for r in range(2, sheet.max_row + 1)]
+    assert sorted(filenames) == sorted(r.source_filename for r in records)
 
 
 def test_header_row_is_frozen_and_bold_with_autofilter(sheet):
@@ -98,9 +140,12 @@ def test_column_widths_are_set_not_left_at_default(sheet):
         letter = widths[list(widths)[0]].__class__  # noqa: F841 - keep openpyxl import local
     from openpyxl.utils import get_column_letter
 
+    # "rank" is a 1-2 digit column; a wide one would just be padding.
+    narrow = {"rank", "score"}
     for i in range(1, len(COLUMNS) + 1):
         dim = sheet.column_dimensions[get_column_letter(i)]
-        assert dim.width and dim.width > 8
+        floor = 5 if COLUMNS[i - 1] in narrow else 8
+        assert dim.width and dim.width > floor
 
 
 def test_low_confidence_cells_are_filled_and_high_confidence_ones_are_not(sheet):
@@ -233,3 +278,79 @@ def test_review_reasons_carries_no_extracted_values():
     )
     row = build_row(record)
     assert "Maharashtra" not in (row["review_reasons"] or "")
+
+
+# --- date precision is disclosed, not fabricated (P2) -----------------------
+
+def test_a_year_only_date_is_not_written_as_a_full_iso_date(tmp_path):
+    """A bare "2015" parses to date(2015,1,1) and then reads in the export
+    exactly like a day-accurate date. The output must not assert a January
+    1st the resume never mentioned."""
+    from datetime import datetime as _dt
+
+    from app.excel_writer import build_row
+    from tests.test_confidence_routing import _ok, build
+
+    result = build(masters_award_date=_ok(date(2015, 1, 1), 0.85, "M.Tech 2015"))
+    result.masters_award_date_precision = "year"
+    row = build_row(
+        ResumeRecord(source_filename="cv.pdf", processed_at=_dt.now(), result=result)
+    )
+    assert row["masters_award_date"] == "2015"
+
+
+def test_a_month_precision_date_shows_year_and_month_only(tmp_path):
+    from datetime import datetime as _dt
+
+    from app.excel_writer import build_row
+    from tests.test_confidence_routing import _ok, build
+
+    result = build(masters_award_date=_ok(date(2021, 5, 1), 0.9, "Graduated: May 2021"))
+    result.masters_award_date_precision = "month"
+    row = build_row(
+        ResumeRecord(source_filename="cv.pdf", processed_at=_dt.now(), result=result)
+    )
+    assert row["masters_award_date"] == "2021-05"
+
+
+def test_a_genuinely_full_date_is_still_written_as_a_date(tmp_path):
+    from datetime import datetime as _dt
+
+    from app.excel_writer import build_row
+    from tests.test_confidence_routing import _ok, build
+
+    result = build(masters_award_date=_ok(date(2019, 11, 12), 0.9, "awarded 12 November 2019"))
+    result.masters_award_date_precision = "full"
+    row = build_row(
+        ResumeRecord(source_filename="cv.pdf", processed_at=_dt.now(), result=result)
+    )
+    assert row["masters_award_date"] == date(2019, 11, 12)
+
+
+# --- raw_llm_output is retrievable for audit (P2) ---------------------------
+
+def test_raw_llm_output_is_retrievable_from_the_workbook(records, tmp_path):
+    """The parsed columns are the product of a prompt, a schema and several
+    post-processing rules. Only the model's own response distinguishes "the
+    model said something false" from "we mangled something true"."""
+    from openpyxl import load_workbook
+
+    path = write_workbook(records, tmp_path / "out.xlsx", threshold=THRESHOLD)
+    wb = load_workbook(path)
+    assert "raw_llm_output" in wb.sheetnames
+    sheet = wb["raw_llm_output"]
+    filenames = [c.value for c in sheet["A"][1:]]
+    for rec in records:
+        assert rec.source_filename in filenames
+
+
+def test_a_failed_extraction_still_gets_a_raw_output_row(tmp_path):
+    from datetime import datetime as _dt
+
+    from openpyxl import load_workbook
+
+    recs = [ResumeRecord.failed("scanned.pdf", "no extractable text")]
+    path = write_workbook(recs, tmp_path / "out.xlsx", threshold=THRESHOLD)
+    sheet = load_workbook(path)["raw_llm_output"]
+    assert sheet["A2"].value == "scanned.pdf"
+    assert sheet["B2"].value  # carries the reason rather than being blank

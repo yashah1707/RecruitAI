@@ -23,6 +23,7 @@ def _result(**overrides) -> ExtractionResult:
         candidate_name=_field("Jane Doe", 0.9, "Jane Doe"),
         highest_degree=_field("PhD", 0.9, "PhD in Mathematics"),
         marks_pct=_field(None, 0.0, None),
+        cgpa=_field(None, 0.0, None),
         has_phd=_field(True, 0.9, "PhD in Mathematics"),
         phd_award_date=_field(date(2020, 1, 1), 0.8, "awarded 2020"),
         phd_regulation=_field(None, 0.0, None),
@@ -32,6 +33,9 @@ def _result(**overrides) -> ExtractionResult:
         study_leave_taken=_field(None, 0.0, None),
         teaching_years_raw=_field(5, 0.8, "5 years teaching"),
         publications_count=_field(2, 0.9, "2 publications listed"),
+        publication_titles=_field(["Paper One", "Paper Two"], 0.9, "2 publications listed"),
+        publications_in_progress_count=_field(0, 0.9, None),
+        publications_in_progress_titles=_field([], 0.9, None),
         raw_llm_output="{}",
     )
     base.update(overrides)

@@ -77,7 +77,13 @@ GEMINI_MODEL_POOL: list[str] = [
     m.strip() for m in _get_str("GEMINI_MODEL_POOL", "gemini-3.5-flash,gemini-3.6-flash").split(",") if m.strip()
 ]
 
-GEMINI_TIMEOUT_SECONDS: float = _get_float("GEMINI_TIMEOUT_SECONDS", 60.0)
+# 60s was fine when the model returned a dozen scalar fields, but the schema
+# now asks for publication_titles as well -- on a long, publication-heavy CV
+# that is a much larger response, and the two biggest resumes in testing
+# (14k and 20k chars) both hit 504 DEADLINE_EXCEEDED at 60s while every
+# smaller one passed. The ceiling has to scale with the output, not the
+# input.
+GEMINI_TIMEOUT_SECONDS: float = _get_float("GEMINI_TIMEOUT_SECONDS", 150.0)
 # 0 means "let the provider pick from the model's rate limit"; set a number
 # to override (e.g. after enabling billing, which raises the RPM ceiling).
 GEMINI_MAX_CONCURRENCY: int = int(_get_float("GEMINI_MAX_CONCURRENCY", 0))

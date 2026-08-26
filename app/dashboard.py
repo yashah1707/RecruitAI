@@ -27,6 +27,7 @@ import streamlit as st
 
 import config
 from app.excel_writer import build_rows, write_workbook
+from app.ranking import RANKING_DISCLAIMER
 from app.resume_text import UnreadableResumeError, extract_text
 from llm.confidence import evaluate
 from llm.interface import ExtractionFailure, LLMProvider, ResumeRecord
@@ -126,6 +127,54 @@ def process_batch(
     return [r for r in records if r is not None]
 
 
+def _render_manual_entry_panel(records: list[ResumeRecord]) -> None:
+    """Surface the one field a human must supply, rather than find.
+
+    phd_regulation (2009 vs 2016 Regulations) is effectively never written on
+    a resume, so it comes back null for every PhD holder. As a blank cell
+    among thirty other columns it reads like an absent optional field and
+    gets skipped -- but it changes an eligibility outcome downstream, so it
+    needs to look like an open question.
+
+    The award date and institution are shown purely to save the reviewer a
+    lookup. They are NOT used to infer the regulation year: the two
+    Regulations overlap in time and only the awarding university can say
+    which applied, so guessing it here would fabricate an eligibility input.
+    """
+    pending = [
+        r
+        for r in records
+        if r.result and r.result.has_phd.value is True and r.result.phd_regulation.value is None
+    ]
+    if not pending:
+        return
+
+    st.subheader("Needs manual entry")
+    st.caption(
+        f"{len(pending)} PhD-holding candidate(s) need `phd_regulation` "
+        "supplied by hand — resumes almost never state it, so it cannot be "
+        "extracted. Check with the awarding university; do not infer it from "
+        "the award year."
+    )
+    st.dataframe(
+        pd.DataFrame(
+            [
+                {
+                    "source_filename": r.source_filename,
+                    "candidate_name": r.result.candidate_name.value,
+                    "phd_award_date": r.result.phd_award_date.value,
+                    "awarding institution (from evidence)": (r.result.phd_award_date.evidence
+                                                            or r.result.has_phd.evidence or ""),
+                    "phd_regulation": "— enter 2009 or 2016 —",
+                }
+                for r in pending
+            ]
+        ),
+        use_container_width=True,
+        hide_index=True,
+    )
+
+
 def main() -> None:
     st.title("RecruitAI — Resume → Excel Dashboard")
     provider = get_provider()
@@ -137,7 +186,7 @@ def main() -> None:
         f"Provider: **{config.LLM_PROVIDER}**"
         + (f" · Model: **{model_name}**" if model_name else "")
         + f" · Confidence threshold: **{config.CONFIDENCE_THRESHOLD}** · "
-        "Extracts fields only — no eligibility decision, no rank/score."
+        "Extracts fields and computes a shortlisting score — no eligibility decision."
     )
     if model_name and "lite" in str(model_name).lower():
         st.info(
@@ -189,10 +238,12 @@ def main() -> None:
     review_count = int(df["needs_review"].sum())
     st.subheader("Preview")
     st.caption(
-        f"{len(df)} row(s), {review_count} flagged for review. "
-        "Sort or filter any column yourself — there is no rank or score column."
+        f"{len(df)} row(s), ranked best-first, {review_count} flagged for review. "
+        "Sort or filter any column yourself to compare on a single factor."
     )
+    st.warning(RANKING_DISCLAIMER, icon="⚠️")
     st.dataframe(df, use_container_width=True, height=420)
+    _render_manual_entry_panel(records)
 
     workbook_path = write_workbook(records, "recruitai_extraction.xlsx")
     with open(workbook_path, "rb") as f:

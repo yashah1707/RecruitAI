@@ -46,6 +46,18 @@ touching provider code.
   - If the resume states a SET or SLET, `set_state` must name the specific
     state the test applies to. If the state cannot be determined, still
     return `net_set_status` but leave `set_state` null rather than guessing.
+  - `NONE` STILL REQUIRES EVIDENCE. You cannot quote something that isn't
+    there, so quote the heading of the section where a NET/SET would have
+    been listed if the candidate had one — the qualifications or education
+    heading, verbatim: "EDUCATIONAL QUALIFICATION", "Educational
+    Qualifications:-", "Academic Education", "QUALIFICATION :",
+    "EDUCATIONAL BACKGROUND", "Educational details:-". That shows you looked
+    in the right place and found nothing, which is what makes a `NONE`
+    trustworthy rather than merely asserted.
+    - Copy the heading exactly as it appears, including its capitalisation
+      and any trailing colon or dash.
+    - Only if the resume genuinely has no qualifications or education
+      section at all should `evidence` be null for a `NONE`.
 - `teaching_years_raw` — the raw, unadjusted TEACHING total. Never subtract
   for leave or concurrency; that adjustment happens downstream. Decide
   between three answers in this order:
@@ -61,15 +73,69 @@ touching provider code.
      total; a human will supply it.
   Note the difference between 2 and 3: `0` means "this resume shows no
   teaching", `null` means "this resume doesn't say how much".
-- `marks_pct` is a PERCENTAGE on a 0-100 scale, and only that. Many Indian
-  resumes state a CGPA/SGPA on a 0-10 scale instead (e.g. "8.2 CGPA",
-  "9.13", "8.79/10") — sometimes even written with a stray percent sign as
-  "8.2%". A grade point is NOT a percentage: return `null` for `marks_pct`
-  in that case. Do NOT convert it — conversion factors differ by university,
-  so any conversion you perform would be a guess. Still quote the CGPA text
-  in `evidence` so a human can enter the correct figure.
-- `publications_count` is a count of listed publications, 0 if the resume has
-  no publications section.
+- `marks_pct` and `cgpa` both describe the marks for ONE degree: the
+  candidate's MASTER'S degree (M.Tech / M.E. / M.Sc. / M.A. / M.Com etc.),
+  or their Ph.D. if the resume gives marks for that instead. This is the
+  qualification faculty eligibility is assessed on, so marks for any other
+  level are the wrong answer:
+  - IGNORE Bachelor's marks (B.E., B.Tech, B.Sc.) — do not put them here.
+  - IGNORE school marks (H.S.C., S.S.C., 10th, 12th, Higher Secondary,
+    CBSE, Intermediate) — these are never the right answer.
+  - A resume typically lists several qualifications in a table with a
+    percentage or CGPA against each. Find the Master's row and use only
+    that row's figure.
+  - If the resume gives no Master's marks at all, both fields are `null` —
+    even when it clearly shows marks for a Bachelor's or for school.
+  Then put that one figure on the correct scale, and NEVER convert between
+  them (conversion factors differ by university, so converting would be a
+  guess about a real person's marks):
+  - `marks_pct`: a PERCENTAGE, 0-100 (e.g. "63.56", "First Class 61.12%").
+  - `cgpa`: a GRADE POINT, 0-10 (e.g. "8.2 CGPA", "9.13", "8.79/10",
+    "GPA: 7.78", "SGPA 7.5"). Indian resumes sometimes write a grade point
+    with a stray percent sign, e.g. "8.2% M.E." — a value at or below 10
+    next to a degree is a CGPA, not a percentage, so it belongs in `cgpa`.
+  - Normally only ONE of the two is filled, because the Master's row states
+    the marks in only one of these forms. Fill both only if that same
+    Master's row genuinely gives both.
+- Publications are split by how far through peer review each work is,
+  because eligibility rules require "peer-reviewed or UGC-listed" work.
+  Title only in both lists — leave out the journal, conference, year and
+  page numbers.
+  - `publication_titles` / `publications_count`: work that has CLEARED peer
+    review. That means published, in print, or explicitly "accepted".
+    "Accepted" counts here even though it is not yet in print — it has
+    passed review, which is the substantive bar. "Early Access" / "in
+    press" / "online first" also count: those are published ahead of the
+    print issue.
+  - `publications_in_progress_titles` / `publications_in_progress_count`:
+    work that has NOT yet cleared review — "submitted", "under review",
+    "communicated", "in preparation", "draft". Do not discard these and do
+    not fold them into the counted list; a reviewer needs to see them.
+  - Many CVs list the same work TWICE in different formats: once under a
+    "Publications" heading and again inside a "Projects" / "Research Work" /
+    "Level of participation" table. That is one publication, not two. List
+    each distinct title once, in whichever list its status belongs to.
+  - If the resume states no status for a work, treat it as published: a
+    plain entry in a publications list is normally a published paper.
+  - COUNT only authored written works. Exactly these three kinds:
+    - journal articles,
+    - conference papers,
+    - book chapters and authored books.
+    Book chapters DO count: they are substantive authored work, and a
+    resume that lists them under a separate "Book Chapters" heading is not
+    saying they are lesser, only that they are a different format.
+  - Do NOT count, in either list:
+    - patents, design registrations and copyright registrations (different
+      kinds of output, usually under their own "Patents" / "Copyright"
+      heading),
+    - professional memberships and society fellowships,
+    - conferences, workshops, FDPs, seminars or webinars ATTENDED,
+    - reviewer, editor, session-chair or committee roles,
+    - certifications, awards, projects and funded grants.
+    A resume often lists these under headings that sit right next to the
+    publications, so read the heading each entry falls under, not just its
+    proximity to a journal name.
+  - Either list may be empty; its count is then 0.
 - Dates are `YYYY-MM-DD`. If only a year or month/year is known, use the
   first day of the known period and lower confidence accordingly.
 

@@ -30,6 +30,7 @@ def _canned() -> list[ExtractionResult]:
         candidate_name=_f("A. Synthetic Candidate", 0.96, "A. Synthetic Candidate"),
         highest_degree=_f("PG", 0.94, "M.Sc. Physics, 2015"),
         marks_pct=_f(68.4, 0.88, "M.Sc. Physics, 2015 — 68.4%"),
+        cgpa=_ABSENT,
         has_phd=_f(False, 0.91, "No doctoral qualification listed"),
         phd_award_date=_ABSENT,
         phd_regulation=_ABSENT,
@@ -39,6 +40,9 @@ def _canned() -> list[ExtractionResult]:
         study_leave_taken=_ABSENT,
         teaching_years_raw=_f(6.0, 0.82, "Assistant Professor, 2018-2024"),
         publications_count=_f(4, 0.79, "Publications: four peer-reviewed papers listed"),
+        publication_titles=_f(["Paper A", "Paper B", "Paper C", "Paper D"], 0.79, "Publications: four peer-reviewed papers listed"),
+        publications_in_progress_count=_f(0, 0.79, None),
+        publications_in_progress_titles=_f([], 0.79, None),
         raw_llm_output="{}",
     )
 
@@ -48,6 +52,7 @@ def _canned() -> list[ExtractionResult]:
         candidate_name=_f("B. Synthetic Candidate", 0.93, "B. Synthetic Candidate"),
         highest_degree=_f("PhD", 0.92, "Ph.D. in Commerce, 2019"),
         marks_pct=_f(72.0, 0.81, "M.Com. — 72%"),
+        cgpa=_ABSENT,
         has_phd=_f(True, 0.97, "Ph.D. in Commerce, awarded 2019"),
         phd_award_date=_f(date(2019, 11, 12), 0.86, "Ph.D. awarded 12 November 2019"),
         phd_regulation=_ABSENT,
@@ -57,6 +62,9 @@ def _canned() -> list[ExtractionResult]:
         study_leave_taken=_ABSENT,
         teaching_years_raw=_f(9.5, 0.84, "Lecturer since 2014"),
         publications_count=_f(11, 0.76, "11 publications listed under Research Output"),
+        publication_titles=_f([f"Commerce Paper {i}" for i in range(1, 12)], 0.76, "11 publications listed under Research Output"),
+        publications_in_progress_count=_f(1, 0.7, None),
+        publications_in_progress_titles=_f(["A Commerce Paper Under Review"], 0.7, None),
         raw_llm_output="{}",
     )
 
@@ -65,6 +73,7 @@ def _canned() -> list[ExtractionResult]:
         candidate_name=_f("C. Synthetic Candidate", 0.62, "C. Synthetic Candidate"),
         highest_degree=_f("PG", 0.71, "MA English"),
         marks_pct=_ABSENT,
+        cgpa=_f(8.4, 0.8, "CGPA 8.4"),
         has_phd=_f(False, 0.74, "No Ph.D. entry found"),
         phd_award_date=_ABSENT,
         phd_regulation=_ABSENT,
@@ -74,6 +83,9 @@ def _canned() -> list[ExtractionResult]:
         study_leave_taken=_ABSENT,
         teaching_years_raw={"value": 3.0, "confidence": 0.35, "evidence": None},
         publications_count=_f(0, 0.8, "No publications section"),
+        publication_titles=_f([], 0.8, "No publications section"),
+        publications_in_progress_count=_f(0, 0.8, None),
+        publications_in_progress_titles=_f([], 0.8, None),
         raw_llm_output="{}",
     )
 

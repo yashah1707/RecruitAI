@@ -49,7 +49,7 @@ def test_teaching_years_is_nullable_even_though_it_is_a_required_field():
 
 
 def test_schema_marks_optional_fields_nullable():
-    for name in ("candidate_name", "marks_pct", "phd_award_date", "phd_regulation", "masters_award_date", "set_state", "study_leave_taken"):
+    for name in ("candidate_name", "marks_pct", "cgpa", "phd_award_date", "phd_regulation", "masters_award_date", "set_state", "study_leave_taken"):
         value_schema = GEMINI_EXTRACTION_SCHEMA.properties[name].properties["value"]
         assert value_schema.nullable is True, f"{name} should be nullable"
 
@@ -59,6 +59,7 @@ def _payload(**overrides) -> dict:
         "candidate_name": {"value": "Jane Doe", "confidence": 0.9, "evidence": "Jane Doe"},
         "highest_degree": {"value": "PhD", "confidence": 0.9, "evidence": "PhD in Mathematics"},
         "marks_pct": {"value": None, "confidence": 0.0, "evidence": None},
+        "cgpa": {"value": None, "confidence": 0.0, "evidence": None},
         "has_phd": {"value": True, "confidence": 0.9, "evidence": "PhD in Mathematics"},
         "phd_award_date": {"value": "2020-01-01", "confidence": 0.8, "evidence": "awarded 2020"},
         "phd_regulation": {"value": None, "confidence": 0.0, "evidence": None},
@@ -68,6 +69,9 @@ def _payload(**overrides) -> dict:
         "study_leave_taken": {"value": None, "confidence": 0.0, "evidence": None},
         "teaching_years_raw": {"value": 5, "confidence": 0.8, "evidence": "5 years teaching"},
         "publications_count": {"value": 2, "confidence": 0.9, "evidence": "2 publications listed"},
+        "publication_titles": {"value": ["Paper One", "Paper Two"], "confidence": 0.9, "evidence": "2 publications listed"},
+        "publications_in_progress_count": {"value": 0, "confidence": 0.9, "evidence": None},
+        "publications_in_progress_titles": {"value": [], "confidence": 0.9, "evidence": None},
     }
     base.update(overrides)
     return base
