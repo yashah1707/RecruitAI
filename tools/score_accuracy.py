@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import argparse
 import csv
+import re
 import sys
 from collections import defaultdict
 from pathlib import Path
@@ -24,10 +25,16 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from openpyxl import load_workbook
 
+from tools.verify_run import run_stats
+
 UNCLEAR = "UNCLEAR"
 
-_TRUE = {"true", "yes", "1", "t"}
-_FALSE = {"false", "no", "0", "f"}
+# Deliberately no "1"/"0" here. They are how Excel sometimes renders a
+# boolean, but they are also real values for teaching_years_raw and
+# publications_count -- and mapping a numeric 0 to "false" made a correct
+# "0 teaching years" score as a mismatch against "0.0".
+_TRUE = {"true", "yes", "t"}
+_FALSE = {"false", "no", "f"}
 
 
 def normalize(value: str) -> str:
@@ -55,6 +62,29 @@ def normalize(value: str) -> str:
     if len(v) >= 10 and v[4] == "-" and v[7] == "-":
         return v[:10]
     return low
+
+
+def values_match(expected: str, got: str) -> bool:
+    """Whether two recorded values mean the same thing.
+
+    Dates are compared at whichever precision is coarser. The extractor now
+    reports a bare year as "2015" instead of fabricating "2015-01-01", and
+    answer keys written before that change still hold the fabricated form --
+    but a key saying "2015-01-01" for a resume that only ever said "2015"
+    means the year, so scoring them as different would penalise the fix that
+    stopped inventing the month and day.
+    """
+    a, b = normalize(expected), normalize(got)
+    if a == b:
+        return True
+    if _is_dateish(a) and _is_dateish(b):
+        return a[: min(len(a), len(b))] == b[: min(len(a), len(b))]
+    return False
+
+
+def _is_dateish(v: str) -> bool:
+    """A full date, a year-month, or a bare year."""
+    return bool(re.fullmatch(r"\d{4}(-\d{2}(-\d{2})?)?", v))
 
 
 def load_key(path: Path) -> dict[tuple[str, str], str]:
@@ -102,7 +132,7 @@ def main() -> None:
         if row is None:
             continue
         actual = row.get(field, "")
-        ok = int(normalize(actual) == normalize(expected))
+        ok = int(values_match(expected, actual))
         per_field[field].append(ok)
         per_file[filename].append(ok)
         if not ok:
@@ -111,8 +141,14 @@ def main() -> None:
     def pct(hits: list[int]) -> str:
         return f"{sum(hits)}/{len(hits)}" + f"  {100 * sum(hits) / len(hits):5.0f}%" if hits else "  n/a"
 
+    # Counts come from the file itself, never from a caller's memory of the
+    # run: the same batch gets re-run often, and a percentage quoted without
+    # its source file is unverifiable.
+    stats = run_stats(args.export_csv)
     print(f"\nAccuracy vs answer key: {args.export_csv.name}")
     print("=" * 58)
+    print(stats.summary())
+    print("-" * 58)
     print(f"{'FIELD':<26}{'CORRECT':>14}")
     print("-" * 58)
     for field in sorted(per_field, key=lambda f: sum(per_field[f]) / len(per_field[f])):
