@@ -29,6 +29,7 @@ import config
 from app.excel_writer import build_rows, write_workbook
 from app.ranking import RANKING_DISCLAIMER
 from app.resume_text import UnreadableResumeError, extract_text
+from app.run_stats import stats_from_rows
 from llm.confidence import evaluate
 from llm.interface import ExtractionFailure, LLMProvider, ResumeRecord
 from llm.providers.fake_provider import FakeProvider
@@ -52,13 +53,9 @@ st.set_page_config(page_title="RecruitAI — Resume Extraction", layout="wide")
 def get_provider() -> LLMProvider:
     if config.LLM_PROVIDER == "fake":
         return FakeProvider()
-    if config.LLM_PROVIDER == "gemini":
-        from llm.providers.gemini_provider import GeminiProvider
+    from llm.providers.gemini_provider import GeminiProvider
 
-        return GeminiProvider()
-    from llm.providers.ollama_provider import OllamaProvider
-
-    return OllamaProvider()
+    return GeminiProvider()
 
 
 def process_resume(provider: LLMProvider, filename: str, data: bytes) -> ResumeRecord:
@@ -235,12 +232,28 @@ def main() -> None:
     rows = build_rows(records)
     df = pd.DataFrame(rows)
 
-    review_count = int(df["needs_review"].sum())
+    # Counted by app.run_stats, the same code tools/verify_run.py audits the
+    # downloaded export with. Computing it here independently is how a clean
+    # summary could once be shown for a run the audit would have flagged.
+    stats = stats_from_rows(rows)
+
     st.subheader("Preview")
     st.caption(
-        f"{len(df)} row(s), ranked best-first, {review_count} flagged for review. "
+        f"{stats.extracted_count} of {stats.total_rows} resume(s) extracted, "
+        f"ranked best-first — {stats.review_count_excluding_failures} flagged for review. "
         "Sort or filter any column yourself to compare on a single factor."
     )
+    if stats.failure_count:
+        # Never let a failure hide inside the review count: those rows have
+        # nothing in them to review, and a reviewer who cannot see them will
+        # assume every uploaded resume was read.
+        st.error(
+            f"**{stats.failure_count} of {stats.total_rows} resume(s) produced no data.** "
+            "Their rows are present but empty — see the `parse_error` column. "
+            "They are not included in the review count above.\n\n"
+            + "\n".join(f"- {name}" for name in stats.failed),
+            icon="🚫",
+        )
     st.warning(RANKING_DISCLAIMER, icon="⚠️")
     st.dataframe(df, use_container_width=True, height=420)
     _render_manual_entry_panel(records)

@@ -120,7 +120,11 @@ def main() -> None:
     # values to be right or wrong about. Counting its blanks as wrong answers
     # would conflate "the extractor was unavailable" with "the model misread
     # the resume" — different problems, different fixes.
-    failed_files = {fn for fn, r in rows.items() if (r.get("parse_error") or "").strip()}
+    # Counted by app.run_stats, the same code the dashboard renders from.
+    # Re-deriving it here is how the product and the audit drifted apart once
+    # already. One call, reused for the header further down.
+    stats = run_stats(args.export_csv)
+    failed_files = set(stats.failed)
 
     for (filename, field), expected in key.items():
         if expected.strip().upper() == UNCLEAR:
@@ -144,7 +148,6 @@ def main() -> None:
     # Counts come from the file itself, never from a caller's memory of the
     # run: the same batch gets re-run often, and a percentage quoted without
     # its source file is unverifiable.
-    stats = run_stats(args.export_csv)
     print(f"\nAccuracy vs answer key: {args.export_csv.name}")
     print("=" * 58)
     print(stats.summary())

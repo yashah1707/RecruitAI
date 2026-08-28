@@ -27,6 +27,7 @@ from openpyxl import Workbook
 from openpyxl.styles import Alignment, Font, PatternFill
 from openpyxl.utils import get_column_letter
 
+from app.run_stats import is_failed_row, stats_from_rows
 from llm.interface import FIELD_NAMES
 
 # candidate_name is excluded: it is obvious from the file and not an
@@ -64,7 +65,7 @@ def build(rows: list[dict], blank: bool) -> Workbook:
         cell.fill = HEADER_FILL
 
     for row in rows:
-        if row.get("parse_error"):
+        if is_failed_row(row):
             continue  # nothing to label on a file that never extracted
         for field in LABEL_FIELDS:
             model_value = (row.get(field) or "").strip()
@@ -137,7 +138,9 @@ def main() -> None:
     out = Path(args.out)
     wb.save(out)
 
-    labelled = sum(1 for r in rows if not r.get("parse_error"))
+    # Same shared counter as the dashboard and verify_run, so "N resumes"
+    # here can never mean something different from "N extracted" there.
+    labelled = stats_from_rows(rows, args.export_csv).extracted_count
     print(f"wrote {out}")
     print(f"  {labelled} resumes x {len(LABEL_FIELDS)} fields = {labelled * len(LABEL_FIELDS)} rows to check")
     print(f"  pre-filled: {'no (blank)' if args.blank else 'yes -- verify each against the PDF'}")
