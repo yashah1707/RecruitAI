@@ -191,7 +191,7 @@ def sanitize(result: ExtractionResult, resume_text: str) -> tuple[ExtractionResu
     The counts carry no candidate data, so they are safe to log.
     """
     data = result.model_dump(mode="json")
-    stats = {"ungrounded_evidence": 0, "cgpa_moved_from_marks_pct": 0, "marks_from_wrong_qualification": 0, "net_set_none_tempered": 0, "duplicate_publications_removed": 0, "loose_evidence_match": 0}
+    stats = {"ungrounded_evidence": 0, "cgpa_moved_from_marks_pct": 0, "marks_from_wrong_qualification": 0, "net_set_none_tempered": 0, "duplicate_publications_removed": 0, "loose_evidence_match": 0, "has_phd_realigned_to_phd_status": 0}
 
     for name in FIELD_NAMES:
         evidence = data[name]["evidence"]
@@ -269,6 +269,16 @@ def sanitize(result: ExtractionResult, resume_text: str) -> tuple[ExtractionResu
 
     for name in DATE_FIELDS_WITH_PRECISION:
         data[f"{name}_precision"] = date_precision(data[name]["evidence"]) if data[name]["value"] else None
+
+    # has_phd is COMPLETED restated as a boolean. The model reports both, so
+    # they can disagree ("Thesis Submitted" with has_phd=true); phd_status is
+    # the richer field and wins. Nothing downstream changes -- has_phd keeps
+    # exactly the meaning it always had.
+    if data["phd_status"]["value"] is not None:
+        derived = data["phd_status"]["value"] == "COMPLETED"
+        if data["has_phd"]["value"] != derived:
+            data["has_phd"]["value"] = derived
+            stats["has_phd_realigned_to_phd_status"] += 1
 
     if _temper_negative_net_set(data, result):
         stats["net_set_none_tempered"] += 1

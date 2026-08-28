@@ -32,6 +32,7 @@ def _result(**overrides) -> ExtractionResult:
         marks_pct=_f(None, 0.0, None),
         cgpa=_f(None, 0.0, None),
         has_phd=_f(True, 0.9, "PhD in Mathematics"),
+        phd_status=_f("COMPLETED", 0.9, "PhD in Mathematics"),
         phd_award_date=_f(date(2020, 1, 1), 0.8, "awarded 2020"),
         phd_regulation=_f(None, 0.0, None),
         masters_award_date=_f(None, 0.0, None),

@@ -49,19 +49,22 @@ def test_other_eligibility_tests_are_not_treated_as_net_set(credential):
 
 # --- a PhD in progress is not a PhD -----------------------------------------
 
-@pytest.mark.parametrize(
-    "status_text",
-    [
-        "Ph.D. (Thesis Submitted)",                        # Aparna
-        "Ph. D. (Computer Engineering) Appearing",         # Mahendra
-        "Ph.D. MIT-ADT University, Pune Appearing",        # Chandan
-        "PhD Pursuing",                                    # Mayuri
-        "PhD Pursuing (Computer Science & Engineering)",   # Kavita
-        "PhD Scholar in Computer Science and Engineering", # Anwesha
-        "2026 MGM University - PhD Purusing",              # Bibave (sic)
-    ],
-)
-def test_a_phd_in_progress_does_not_count_as_awarded(status_text):
+# The six candidates whose resumes exposed the gap: has_phd = False collapsed
+# "thesis submitted, decision imminent" into the same value as "no doctoral
+# activity at all". phd_status keeps them apart; has_phd is unchanged.
+PHD_IN_PROGRESS_CASES = [
+    ("Ph.D. (Thesis Submitted)", "THESIS_SUBMITTED"),                    # Aparna
+    ("Ph. D. (Computer Engineering) Appearing", "PURSUING"),             # Mahendra
+    ("Ph.D. MIT-ADT University, Pune Appearing", "PURSUING"),            # Chandan
+    ("PhD Pursuing", "PURSUING"),                                        # Mayuri
+    ("PhD Pursuing (Computer Science & Engineering)", "PURSUING"),       # Kavita
+    ("PhD Scholar in Computer Science and Engineering", "PURSUING"),     # Anwesha
+    ("2026 MGM University - PhD Purusing", "PURSUING"),                  # Bibave (sic)
+]
+
+
+@pytest.mark.parametrize("status_text,expected_status", PHD_IN_PROGRESS_CASES)
+def test_a_phd_in_progress_does_not_count_as_awarded(status_text, expected_status):
     """Submitted / appearing / pursuing / scholar all mean "not yet awarded".
     Treating any of them as a completed PhD would grant an exemption the
     candidate has not earned."""
@@ -69,6 +72,7 @@ def test_a_phd_in_progress_does_not_count_as_awarded(status_text):
     r = _result(
         highest_degree=_f("PG", 0.95, status_text),
         has_phd=_f(False, 0.95, status_text),
+        phd_status=_f(expected_status, 0.95, status_text),
         phd_award_date=_f(None, 0.0, None),
     )
     result, _ = sanitize(r, text)
@@ -79,19 +83,44 @@ def test_a_phd_in_progress_does_not_count_as_awarded(status_text):
     assert "phd_regulation:manual_entry_required" not in outcome.reasons
 
 
-def test_a_completed_phd_is_recognised_and_asks_for_its_regulation():
-    """Abhishek: "2026 Completed" is a real award, unlike the cases above."""
-    text = "Ph.D. [Computer Sci. & Engg.] Sage University, Indore 2026 Completed"
+@pytest.mark.parametrize("status_text,expected_status", PHD_IN_PROGRESS_CASES)
+def test_phd_status_distinguishes_what_has_phd_flattens(status_text, expected_status):
+    """The point of the field: every one of these is has_phd=False, but they
+    are not the same situation, and a reviewer shortlisting on doctoral
+    progress needs to see which is which."""
+    text = f"Candidate resume. {status_text}. M.Tech 2015."
     r = _result(
-        highest_degree=_f("PhD", 0.95, text),
-        has_phd=_f(True, 0.95, text),
-        phd_award_date=_f(date(2026, 1, 1), 0.8, text),
-        phd_regulation=_f(None, 0.0, None),
+        has_phd=_f(False, 0.95, status_text),
+        phd_status=_f(expected_status, 0.95, status_text),
     )
     result, _ = sanitize(r, text)
-    assert result.has_phd.value is True
-    outcome = evaluate(result, threshold=THRESHOLD)
-    assert "phd_regulation:manual_entry_required" in outcome.reasons
+    assert result.phd_status.value == expected_status
+    assert result.phd_status.value != "NOT_APPLICABLE"  # not "no doctoral activity"
+    assert result.has_phd.value is False                 # ...but still not a PhD
+
+
+def test_has_phd_is_realigned_when_it_contradicts_phd_status():
+    """phd_status is the richer field, so it wins a disagreement. A model
+    claiming has_phd=true beside "Thesis Submitted" must not award a degree
+    that hasn't been conferred."""
+    text = "Ph.D. (Thesis Submitted). M.Tech 2015."
+    r = _result(
+        has_phd=_f(True, 0.95, "Ph.D. (Thesis Submitted)"),
+        phd_status=_f("THESIS_SUBMITTED", 0.95, "Ph.D. (Thesis Submitted)"),
+    )
+    result, stats = sanitize(r, text)
+    assert result.has_phd.value is False
+    assert stats["has_phd_realigned_to_phd_status"] == 1
+
+
+def test_a_phd_entrance_test_is_not_doctoral_study():
+    """Nishant: PET is an entrance exam, so there is no doctoral study to
+    record -- NOT_APPLICABLE, not PURSUING."""
+    ev = "Ph.D. Entrance Test (PET), Sant Gadge Baba Amravati University - Qualified"
+    r = _result(has_phd=_f(False, 0.95, ev), phd_status=_f("NOT_APPLICABLE", 0.95, ev))
+    result, _ = sanitize(r, f"resume text {ev}")
+    assert result.phd_status.value == "NOT_APPLICABLE"
+    assert result.has_phd.value is False
 
 
 # --- marks that were read from the right row --------------------------------

@@ -1,7 +1,7 @@
 # Extraction prompt
 
 System instructions sent to the model alongside the resume text. Kept in this
-file (not inlined in `ollama_provider.py`) so prompt iteration doesn't require
+file (not inlined in the provider) so prompt iteration does not require
 touching provider code.
 
 ## Rules given to the model
@@ -58,6 +58,25 @@ touching provider code.
       and any trailing colon or dash.
     - Only if the resume genuinely has no qualifications or education
       section at all should `evidence` be null for a `NONE`.
+- `highest_degree` is the highest qualification the candidate has COMPLETED:
+  `UG` / `PG` / `PhD` / `Post-Doc` / `Diploma`. A qualification still in
+  progress does not raise it -- someone with an M.Tech and an ongoing PhD is
+  `PG`, not `PhD`. Use `Diploma` when a polytechnic/technical diploma is the
+  highest completed qualification; do not round it up to `UG`.
+- `phd_status` records WHERE in the doctoral process the candidate is, using
+  exactly one of these values. Map what the resume states; never infer from
+  how close to finished it sounds:
+  - `COMPLETED` — awarded, "Ph.D. Completed", "awarded 2019", holds the degree.
+  - `THESIS_SUBMITTED` — thesis submitted or "Thesis Submitted", awaiting the
+    outcome. NOT completed.
+  - `REGISTERED` — formally registered/enrolled but not yet actively writing,
+    or stated as "Registered".
+  - `PURSUING` — ongoing: "Pursuing", "Appearing", "PhD Scholar", "Persuing"
+    (a common misspelling), or a stated expected-completion year.
+  - `NOT_APPLICABLE` — the resume shows no doctoral study at all. A Ph.D.
+    ENTRANCE test (PET) is not doctoral study; that is still NOT_APPLICABLE.
+  `has_phd` must be `true` only when `phd_status` is `COMPLETED`, and `false`
+  for every other value including `THESIS_SUBMITTED`.
 - `teaching_years_raw` — the raw, unadjusted TEACHING total. Never subtract
   for leave or concurrency; that adjustment happens downstream. Decide
   between three answers in this order:

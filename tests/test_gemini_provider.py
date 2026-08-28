@@ -2,7 +2,7 @@
 
 No live API key or network call needed -- these test schema construction,
 JSON-payload coercion, the grounding-verification post-processing step
-(shared logic with OllamaProvider, same expectations), and rate-limit error
+(shared logic in llm.postprocess), and rate-limit error
 detection. A real end-to-end call would need config.GEMINI_API_KEY set and
 is out of scope for the automated suite.
 """
@@ -61,6 +61,7 @@ def _payload(**overrides) -> dict:
         "marks_pct": {"value": None, "confidence": 0.0, "evidence": None},
         "cgpa": {"value": None, "confidence": 0.0, "evidence": None},
         "has_phd": {"value": True, "confidence": 0.9, "evidence": "PhD in Mathematics"},
+        "phd_status": {"value": "COMPLETED", "confidence": 0.9, "evidence": "PhD in Mathematics"},
         "phd_award_date": {"value": "2020-01-01", "confidence": 0.8, "evidence": "awarded 2020"},
         "phd_regulation": {"value": None, "confidence": 0.0, "evidence": None},
         "masters_award_date": {"value": None, "confidence": 0.0, "evidence": None},

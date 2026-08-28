@@ -37,6 +37,7 @@ def build(**overrides) -> ExtractionResult:
         marks_pct=_f(70.0),
         cgpa=ABSENT,
         has_phd=_f(False),
+        phd_status=_f("NOT_APPLICABLE"),
         phd_award_date=ABSENT,
         phd_regulation=ABSENT,
         masters_award_date=_f(date(2012, 5, 1)),

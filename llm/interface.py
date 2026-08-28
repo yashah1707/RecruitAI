@@ -16,6 +16,11 @@ from pydantic import BaseModel, Field, field_validator
 T = TypeVar("T")
 
 NetSetStatus = Literal["NET", "SET", "SLET", "NONE"]
+# Both lists are the DataModel workbook's own dropdowns (Lists!DegreeLevel and
+# Lists!PhDStatus), reused verbatim so the extractor and the eventual database
+# cannot drift apart on spelling or membership.
+HighestDegree = Literal["UG", "PG", "PhD", "Post-Doc", "Diploma"]
+PhdStatus = Literal["NOT_APPLICABLE", "PURSUING", "COMPLETED", "REGISTERED", "THESIS_SUBMITTED"]
 PhdRegulation = Literal["2009", "2016"]
 DatePrecision = Literal["year", "month", "full"]
 
@@ -66,7 +71,10 @@ class ExtractionResult(BaseModel):
     """
 
     candidate_name: FieldWithConfidence[str | None]
-    highest_degree: FieldWithConfidence[str]  # UG / PG / PhD / Post-Doc
+    # Diploma was missing here while Lists!DegreeLevel has had it all along --
+    # an upstream gap, not just an untested path: a diploma-holder had no
+    # correct value available and could only be misfiled as UG.
+    highest_degree: FieldWithConfidence[HighestDegree]
     marks_pct: FieldWithConfidence[float | None]
     # Kept separate from marks_pct rather than converted into it: CGPA->%
     # conversion factors differ by university (x10 at some, x9.5 at others),
@@ -74,6 +82,13 @@ class ExtractionResult(BaseModel):
     # the grade point on its own scale loses no information and invents none.
     cgpa: FieldWithConfidence[float | None]
     has_phd: FieldWithConfidence[bool]
+    # has_phd collapses several materially different states into False. On the
+    # 12-resume batch that hid "thesis submitted, decision imminent" behind the
+    # same value as "no doctoral activity at all" -- a real difference when
+    # shortlisting. phd_status keeps the distinction; has_phd stays exactly as
+    # it was and is simply COMPLETED restated as a boolean, so nothing
+    # downstream that already reads has_phd changes behaviour.
+    phd_status: FieldWithConfidence[PhdStatus]
     phd_award_date: FieldWithConfidence[date | None]
     phd_regulation: FieldWithConfidence[PhdRegulation | None]
     masters_award_date: FieldWithConfidence[date | None]
@@ -126,6 +141,7 @@ FIELD_NAMES: tuple[str, ...] = (
     "marks_pct",
     "cgpa",
     "has_phd",
+    "phd_status",
     "phd_award_date",
     "phd_regulation",
     "masters_award_date",

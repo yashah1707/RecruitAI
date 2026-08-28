@@ -1,9 +1,9 @@
 """Cloud extraction via the Gemini API.
 
-Same LLMProvider interface as OllamaProvider, same post-processing pipeline
-(grounding verification via llm.confidence.is_grounded) — the only
-differences are the transport and the schema dialect Gemini's structured
-output expects (an OpenAPI-subset "Schema", not raw JSON Schema).
+The only real provider. Structured output is forced through Gemini's
+`response_schema`, so the model cannot return free-form prose, and every
+response goes through the same deterministic post-processing in
+llm.postprocess as any other source of extracted fields.
 
 PII note (MVP brief section 1.6 / LLM Layer plan section 8): Google's free
 tier permits using submitted prompts for model training. This provider does
@@ -21,14 +21,20 @@ import threading
 import time
 from datetime import date, datetime
 from pathlib import Path
-from typing import Any
+from typing import Any, get_args
 
 from google import genai
 from google.genai import errors as genai_errors
 from google.genai import types
 
 import config
-from llm.interface import ExtractionFailure, ExtractionResult, FieldWithConfidence
+from llm.interface import (
+    ExtractionFailure,
+    ExtractionResult,
+    FieldWithConfidence,
+    HighestDegree,
+    PhdStatus,
+)
 from llm.postprocess import log_stats, sanitize
 
 logger = logging.getLogger("recruitai.gemini_provider")
@@ -93,18 +99,18 @@ def _publication_titles_schema() -> dict:
     }
 
 
-# Gemini's structured-output schema is an OpenAPI 3.0 subset (uppercase
-# type names, a `nullable` flag) rather than raw JSON Schema, so this can't
-# be shared verbatim with ollama_provider.EXTRACTION_JSON_SCHEMA even though
-# it describes the same fields.
+# Gemini's structured-output schema is an OpenAPI 3.0 subset -- uppercase
+# type names and a `nullable` flag -- not plain JSON Schema, so it is written
+# out longhand here rather than derived from the Pydantic model.
 GEMINI_EXTRACTION_SCHEMA = types.Schema(
     type="OBJECT",
     properties={
         "candidate_name": _field_schema("STRING", nullable=True),
-        "highest_degree": _field_schema("STRING", nullable=False, enum=["UG", "PG", "PhD", "Post-Doc"]),
+        "highest_degree": _field_schema("STRING", nullable=False, enum=list(get_args(HighestDegree))),
         "marks_pct": _field_schema("NUMBER", nullable=True),
         "cgpa": _field_schema("NUMBER", nullable=True),
         "has_phd": _field_schema("BOOLEAN", nullable=False),
+        "phd_status": _field_schema("STRING", nullable=False, enum=list(get_args(PhdStatus))),
         "phd_award_date": _field_schema("STRING", nullable=True),
         "phd_regulation": _field_schema("STRING", nullable=True, enum=["2009", "2016"]),
         "masters_award_date": _field_schema("STRING", nullable=True),
@@ -118,7 +124,7 @@ GEMINI_EXTRACTION_SCHEMA = types.Schema(
         "publications_in_progress_titles": _publication_titles_schema(),
     },
     required=[
-        "candidate_name", "highest_degree", "marks_pct", "cgpa", "has_phd", "phd_award_date",
+        "candidate_name", "highest_degree", "marks_pct", "cgpa", "has_phd", "phd_status", "phd_award_date",
         "phd_regulation", "masters_award_date", "net_set_status", "set_state",
         "study_leave_taken", "teaching_years_raw", "publications_count", "publication_titles",
         "publications_in_progress_count", "publications_in_progress_titles",
@@ -312,7 +318,7 @@ class GeminiProvider:
                     "clear until the quota resets. Wait for the reset, enable "
                     "billing for higher limits, switch GEMINI_MODEL to a "
                     "'-lite' model (much larger daily allowance, lower "
-                    "accuracy), or set LLM_PROVIDER=ollama to run locally "
+                    "accuracy), or wait for the quota to reset. "
                     f"with no quota at all. Last error: {last_error}"
                 )
 
@@ -322,7 +328,6 @@ class GeminiProvider:
                 except ExtractionFailure as exc:
                     # Malformed JSON despite schema constraints -- retry, since
                     # Gemini's sampling can produce valid JSON on a later attempt
-                    # even at temperature 0 (matches OllamaProvider's behavior).
                     last_error = exc
                     logger.warning("gemini_extraction_failure attempt=%d", attempt)
                 except genai_errors.APIError as exc:
