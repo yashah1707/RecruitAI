@@ -18,14 +18,12 @@ slice was built against.
    pip install -r requirements.txt
    ```
 
-2. Install [Ollama](https://ollama.com) and pull the local model:
+2. Get a Gemini API key from https://aistudio.google.com/apikey, then copy
+   `.env.example` to `.env` and put the key in it:
 
-   ```bash
-   ollama pull qwen3.5:4b
    ```
-
-3. Make sure the Ollama server is running (it starts automatically on most
-   installs; otherwise run `ollama serve`).
+   GEMINI_API_KEY=your-key-here
+   ```
 
 ## Running the dashboard
 
@@ -38,7 +36,7 @@ the preview table, then **Download Excel workbook**.
 
 ### Running without a model (offline demo)
 
-Set the provider to the canned fake provider — no Ollama call is made:
+The canned fake provider needs no API key and makes no network call:
 
 ```bash
 LLM_PROVIDER=fake streamlit run app/dashboard.py
@@ -46,11 +44,13 @@ LLM_PROVIDER=fake streamlit run app/dashboard.py
 
 (On Windows PowerShell: `$env:LLM_PROVIDER = "fake"; streamlit run app/dashboard.py`)
 
-### Running with Gemini instead of a local model
+### A note on providers
 
-```bash
-LLM_PROVIDER=gemini GEMINI_API_KEY=your-key-here streamlit run app/dashboard.py
-```
+Gemini is the only real provider. Ollama (local `qwen3.5:4b` / `llama3.1:8b`)
+was the original plan and was evaluated properly: it worked, but on the
+target CPU-only machine it ran ~200s per resume against Gemini's ~20s, and
+was measurably weaker on the two highest-risk fields (NET/SET status and PhD
+status). It was removed rather than left as a selectable-but-untested option.
 
 **Read this before using it on real candidate data**: Gemini's free tier
 permits Google to use submitted prompts for model training. The dashboard
@@ -81,10 +81,7 @@ Read once at startup from environment variables, all optional:
 
 | Variable | Default | Purpose |
 |---|---|---|
-| `LLM_PROVIDER` | `ollama` | `ollama`, `fake`, or `gemini` |
-| `LLM_MODEL` | `qwen3.5:4b` | Ollama model tag |
-| `OLLAMA_HOST` | `http://localhost:11434` | Ollama server URL |
-| `LLM_TIMEOUT_SECONDS` | `240` | Per-call timeout (CPU inference is slow) |
+| `LLM_PROVIDER` | `gemini` | `gemini` or `fake` |
 | `GEMINI_API_KEY` | *(empty)* | Required when `LLM_PROVIDER=gemini` |
 | `GEMINI_MODEL` | `auto` | `auto` rotates the pool daily; or pin a model name |
 | `GEMINI_MODEL_POOL` | `gemini-3.5-flash,gemini-3.6-flash` | Models `auto` rotates through and fails over between |
@@ -99,8 +96,8 @@ pytest tests/test_confidence_routing.py tests/test_excel_output.py -q
 
 These run with zero model calls. `tests/test_extraction_accuracy.py` runs the
 synthetic fixture set (`tests/fixtures/synthetic_resumes/`) through the real
-Ollama model and prints a per-field accuracy report — it skips automatically
-if no Ollama server is reachable:
+Gemini model and prints a per-field accuracy report — it is the only test
+that touches the network, and skips automatically without an API key:
 
 ```bash
 python -m pytest tests/test_extraction_accuracy.py -s -q

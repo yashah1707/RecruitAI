@@ -19,7 +19,7 @@ from dotenv import load_dotenv
 # file instead of being typed into a terminal every session.
 load_dotenv(Path(__file__).resolve().parent / ".env")
 
-ProviderName = Literal["ollama", "fake", "gemini"]
+ProviderName = Literal["gemini", "fake"]
 
 
 def _get_str(name: str, default: str) -> str:
@@ -38,20 +38,9 @@ def _get_float(name: str, default: float) -> float:
 
 
 # Which LLMProvider implementation the app instantiates. "fake" runs the whole
-# app end-to-end with zero model calls; "ollama" is the real local extraction.
-LLM_PROVIDER: str = _get_str("LLM_PROVIDER", "ollama").lower()
-
-# Local Ollama model tag. CPU-only inference on the target dev machine.
-LLM_MODEL: str = _get_str("LLM_MODEL", "qwen3.5:4b")
-
-# Ollama HTTP endpoint.
-OLLAMA_HOST: str = _get_str("OLLAMA_HOST", "http://localhost:11434")
-
-# Client-side timeout per model call, in seconds. CPU inference is slow; the
-# brief requires 60s or more. Measured ~140s for a short resume with
-# qwen3.5:4b on the target i5-1145G7 CPU-only machine, so the default leaves
-# real headroom rather than sitting right at the brief's 60s floor.
-LLM_TIMEOUT_SECONDS: float = _get_float("LLM_TIMEOUT_SECONDS", 240.0)
+# app end-to-end with zero model calls and zero network; "gemini" is the real
+# extraction. Ollama was evaluated and dropped -- see README.
+LLM_PROVIDER: str = _get_str("LLM_PROVIDER", "gemini").lower()
 
 # A field at or above this confidence is trusted; below it the row is routed to
 # needs_review and the cell is highlighted in the workbook.
