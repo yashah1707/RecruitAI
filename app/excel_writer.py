@@ -21,8 +21,14 @@ from openpyxl.styles import Alignment, Font, PatternFill
 from openpyxl.utils import get_column_letter
 
 from app.ranking import RANKING_DISCLAIMER, CandidateScore, rank_candidates
-from llm.postprocess import DATE_FIELDS_WITH_PRECISION
-from config import CONFIDENCE_THRESHOLD
+from llm.postprocess import (
+    DATE_FIELDS_WITH_PRECISION,
+    format_degree,
+    format_person_name,
+    format_phd_evidence,
+    format_phd_status,
+)
+from config import CGPA_PERCENT_MULTIPLIER, CGPA_PERCENT_OFFSET, CONFIDENCE_THRESHOLD
 from llm.confidence import evaluate
 from llm.interface import FIELD_NAMES, FieldWithConfidence, ResumeRecord
 
@@ -30,7 +36,67 @@ SHEET_NAME = "candidates"
 
 # candidate_name is shown as a single readable column; every other extracted
 # field gets its value, confidence and evidence side by side.
-_EVIDENCE_FIELDS: tuple[str, ...] = tuple(n for n in FIELD_NAMES if n != "candidate_name")
+#
+# has_phd is not exported at all: it is exactly `phd_status == COMPLETED`
+# restated as a boolean, so the column only repeated the one beside it. The
+# field itself stays -- ranking and the manual-entry panel still read it.
+NOT_EXPORTED: frozenset[str] = frozenset({"has_phd"})
+_EVIDENCE_FIELDS: tuple[str, ...] = tuple(
+    n for n in FIELD_NAMES if n != "candidate_name" and n not in NOT_EXPORTED
+)
+
+# Where the column a reviewer sees is spelled out more fully than the schema
+# field behind it. The field name stays as it is everywhere in the code, the
+# prompt and the answer key; only the exported header changes.
+EXPORT_NAMES: dict[str, str] = {"marks_pct": "masters_percentage", "cgpa": "masters_cgpa"}
+
+# Says whether masters_percentage is the resume's own figure or one worked
+# out from the CGPA, so a converted number is never mistaken for a stated one.
+PERCENTAGE_SOURCE_COLUMN = "masters_percentage_source"
+SOURCE_STATED = "stated on resume"
+SOURCE_CONVERTED = "converted from CGPA"
+
+
+def cgpa_to_percentage(cgpa: float | None) -> float | None:
+    """A 0-10 grade point as a percentage, by the configured formula.
+
+    Deterministic arithmetic in Python -- the model is never asked to do it.
+    Returns None for anything that is not a plausible 10-point CGPA, rather
+    than converting a number on some other scale into a confident percentage.
+    """
+    if cgpa is None or not 0 < cgpa <= 10:
+        return None
+    pct = (cgpa - CGPA_PERCENT_OFFSET) * CGPA_PERCENT_MULTIPLIER
+    return round(min(max(pct, 0.0), 100.0), 2)
+
+# A review reason about a field with no column of its own is reported against
+# the column that shows the same fact.
+_REASON_COLUMN: dict[str, str] = {"has_phd": "phd_status"}
+
+
+def export_name(field: str) -> str:
+    return EXPORT_NAMES.get(field, field)
+
+
+# The main sheet is for comparing and shortlisting, so it shows values, not
+# the quotes behind them. Only the two columns that carry a course name keep
+# a companion column. Every quote is still extracted, grounding-checked and
+# used to decide needs_review / review_reasons, and each one remains readable
+# in the raw_llm_output sheet for anyone auditing a value.
+_KEEPS_COMPANION_COLUMN: frozenset[str] = frozenset({"highest_degree", "phd_status"})
+_NO_EVIDENCE_COLUMN: frozenset[str] = frozenset(FIELD_NAMES) - _KEEPS_COMPANION_COLUMN
+
+# These two "evidence" columns no longer hold a raw quote: they are reduced to
+# the degree and its course in one house style, so they are headed for what
+# they now contain.
+EVIDENCE_EXPORT_NAMES: dict[str, str] = {
+    "highest_degree": "highest_degree_course_name",
+    "phd_status": "phd_course_name",
+}
+
+
+def evidence_column(field: str) -> str:
+    return EVIDENCE_EXPORT_NAMES.get(field, f"{field}_evidence")
 
 # Column names mirror the eventual extracted_data field names, so moving this
 # to Postgres later is a rename and not a redesign.
@@ -48,24 +114,42 @@ COLUMNS: tuple[str, ...] = (
     # (section 9) requires surfacing "only the specific low-confidence
     # fields... not the whole record", which needs a column to surface into.
     "review_reasons",
+    # Value and evidence only. The per-field confidence number is not shown:
+    # it still drives needs_review / review_reasons and the highlight on a
+    # doubtful value, which is the part a reviewer acts on.
     *(
         col
         for name in _EVIDENCE_FIELDS
-        for col in (name, f"{name}_confidence", f"{name}_evidence")
+        for col in (
+            ((export_name(name), PERCENTAGE_SOURCE_COLUMN) if name == "marks_pct" else (export_name(name),))
+            if name in _NO_EVIDENCE_COLUMN
+            else (export_name(name), evidence_column(name))
+        )
     ),
     # Required by the failure-handling rule: a file that could not be read
     # still produces a row, and says why.
     "parse_error",
+    # Why a failed row failed -- api_unavailable and quota are worth re-running,
+    # unreadable (scanned/corrupt) and bad_config are not.
+    "failure_kind",
+    # Which model produced the row; a lighter-fallback row is also routed to
+    # review (see llm.confidence).
+    "extraction_model",
 )
 
-CONFIDENCE_COLUMNS: tuple[str, ...] = tuple(c for c in COLUMNS if c.endswith("_confidence"))
-EVIDENCE_COLUMNS: tuple[str, ...] = tuple(c for c in COLUMNS if c.endswith("_evidence"))
+EVIDENCE_COLUMNS: tuple[str, ...] = tuple(
+    evidence_column(n) for n in _EVIDENCE_FIELDS if n not in _NO_EVIDENCE_COLUMN
+)
 
 LOW_CONFIDENCE_FILL = PatternFill("solid", start_color="FFF2CC", end_color="FFF2CC")
 HEADER_FILL = PatternFill("solid", start_color="E8E8E8", end_color="E8E8E8")
 
 _WIDTHS: dict[str, int] = {
     "rank": 7,
+    PERCENTAGE_SOURCE_COLUMN: 26,
+    "highest_degree_course_name": 44,
+    "phd_course_name": 44,
+    "masters_percentage": 19,
     "score": 8,
     "score_completeness": 18,
     "source_filename": 30,
@@ -80,7 +164,7 @@ _WIDTHS: dict[str, int] = {
 # is the specific way this column misleads. Both get flagged in the sheet.
 INCOMPLETE_SCORE_FILL = PatternFill("solid", start_color="FCE4D6", end_color="FCE4D6")
 MIN_TRUSTWORTHY_COMPLETENESS = 0.6
-_DEFAULT_WIDTHS = {"": 16, "_confidence": 12, "_evidence": 52}
+_DEFAULT_WIDTHS = {"": 16, "_evidence": 52}
 
 _MAX_EVIDENCE_CHARS = 500
 
@@ -108,7 +192,11 @@ def _format_reasons(reasons: list[str]) -> str | None:
     parts = []
     for reason in reasons:
         field_name, _, code = reason.partition(":")
-        parts.append(f"{field_name} ({code.replace('_', ' ')})" if code else field_name)
+        # Named as the column is headed, so the reviewer can find it.
+        field_name = export_name(_REASON_COLUMN.get(field_name, field_name))
+        part = f"{field_name} ({code.replace('_', ' ')})" if code else field_name
+        if part not in parts:
+            parts.append(part)
     return "; ".join(parts)
 
 
@@ -136,32 +224,123 @@ def build_row(
     row["needs_review"] = bool(outcome.needs_review)
     row["review_reasons"] = _format_reasons(outcome.reasons)
     row["parse_error"] = _clean(record.parse_error)
+    row["failure_kind"] = record.failure_kind
 
     result = record.result
     if result is None:
-        # Failed row: every extracted field stays empty at confidence 0.0.
-        for name in _EVIDENCE_FIELDS:
-            row[f"{name}_confidence"] = 0.0
+        # Failed row: every extracted field stays empty.
         return row
 
-    row["candidate_name"] = _clean(result.candidate_name.value)
+    # Formatted here as well as in postprocess so results already in the cache
+    # (stored before the rule existed) come out in the same form.
+    row["candidate_name"] = format_person_name(_clean(result.candidate_name.value))
+    row["extraction_model"] = result.model_used
     for name in _EVIDENCE_FIELDS:
         f: FieldWithConfidence = getattr(result, name)
-        row[name] = _value_for_cell(f)
-        row[f"{name}_confidence"] = round(float(f.confidence), 3)
-        row[f"{name}_evidence"] = _clean(f.evidence)
+        row[export_name(name)] = _value_for_cell(f)
+        if name not in _NO_EVIDENCE_COLUMN:
+            row[evidence_column(name)] = _clean(f.evidence)
+
+    # Degree and course in one house style ("M.Tech Computer Engineering"),
+    # so the column reads uniformly across resumes. The model's verbatim
+    # quote is what was grounding-checked; it remains in raw_llm_output.
+    row[evidence_column("highest_degree")] = _clean(
+        _fuller_course_name(format_degree(result.highest_degree.evidence), result, result.highest_degree.value)
+    )
+
+    # Every candidate with Master's marks gets a percentage: the resume's own
+    # where it gives one, otherwise worked out from the CGPA. The source
+    # column says which, and the CGPA itself stays in its own column.
+    pct_col = export_name("marks_pct")
+    if row[pct_col] is not None:
+        row[PERCENTAGE_SOURCE_COLUMN] = SOURCE_STATED
+    else:
+        converted = cgpa_to_percentage(result.cgpa.value)
+        if converted is not None:
+            row[pct_col] = converted
+            row[PERCENTAGE_SOURCE_COLUMN] = SOURCE_CONVERTED
+
+    # PhD status in readable words ("Thesis Submitted", "NA") and its quote
+    # reduced to "Ph.D. <Course>", matching the degree column's style.
+    row["phd_status"] = format_phd_status(result.phd_status.value)
+    phd_course = format_phd_evidence(result.phd_status.value, result.phd_status.evidence)
+    if result.phd_status.value != "NOT_APPLICABLE":
+        phd_course = _fuller_course_name(phd_course, result, "PhD")
+    row[evidence_column("phd_status")] = _clean(phd_course)
 
     # Show a partially-known date as what the resume actually said. Writing
     # date(2015, 1, 1) for a bare "2015" asserts a January 1st the source
     # never mentioned, and nothing in the row lets a reviewer tell that apart
     # from a genuinely day-accurate date.
     for name in DATE_FIELDS_WITH_PRECISION:
-        precision = getattr(result, f"{name}_precision", None)
-        value = getattr(result, name).value
-        if value is None or precision in (None, "full"):
-            continue
-        row[name] = value.strftime("%Y") if precision == "year" else value.strftime("%Y-%m")
+        row[name] = date_as_stated(getattr(result, name).value, getattr(result, f"{name}_precision", None))
     return row
+
+
+# --- the one date convention -------------------------------------------------
+#
+# Every date in the workbook and the dashboard is written day-month-year:
+#   full date    DD-MM-YYYY        e.g. 12-11-2019
+#   month known  MM-YYYY           e.g. 05-2021
+#   year only    YYYY              e.g. 2015
+#   timestamps   DD-MM-YYYY HH:MM  e.g. 04-10-2026 12:54
+# A date is never padded out to a day or month the resume did not state.
+DATE_FORMAT = "%d-%m-%Y"
+MONTH_FORMAT = "%m-%Y"
+YEAR_FORMAT = "%Y"
+DATETIME_FORMAT = "%d-%m-%Y %H:%M"
+EXCEL_DATE_FORMAT = "dd-mm-yyyy"
+EXCEL_DATETIME_FORMAT = "dd-mm-yyyy hh:mm"
+
+
+def _fuller_course_name(current: str | None, result: Any, level: str | None) -> str | None:
+    """Prefer the education list's course name when it says more.
+
+    The one-line quote behind this column sometimes stops at the degree
+    ("M.Tech") while the same resume's education entry carries the course
+    ("M.Tech Computer Science"). Both come from the resume; the main sheet
+    should not show less than the education sheet does. Only an entry for the
+    same degree is used, and only if it is longer -- it never replaces one
+    degree with another.
+    """
+    degree = (current or "").split(" ")[0]
+    best = current
+    for entry in getattr(result, "education", None) or []:
+        if entry.level != level or not entry.found_in_resume:
+            continue
+        candidate = format_degree(" ".join(p for p in (entry.degree, entry.course) if p))
+        if not candidate:
+            continue
+        if (not degree or candidate.split(" ")[0] == degree) and len(candidate) > len(best or ""):
+            best = candidate
+    return best
+
+
+def date_as_stated(value: date | None, precision: str | None) -> Any:
+    """A date trimmed to what the resume actually gave.
+
+    A full date stays a real date (so the Excel column sorts and filters
+    chronologically; the cell format shows it as DD-MM-YYYY). A partial one
+    becomes text: "05-2021" or "2015".
+    """
+    if value is None or precision in (None, "full"):
+        return value
+    return value.strftime(YEAR_FORMAT) if precision == "year" else value.strftime(MONTH_FORMAT)
+
+
+def date_text(value: Any) -> Any:
+    """Any date-like cell value as text in the house convention, for display
+    where there is no cell format to do it (the dashboard table)."""
+    if isinstance(value, datetime):
+        return value.strftime(DATETIME_FORMAT)
+    if isinstance(value, date):
+        return value.strftime(DATE_FORMAT)
+    return value
+
+
+def rows_for_display(rows: Iterable[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Rows with every date written out as text in the house convention."""
+    return [{k: date_text(v) for k, v in row.items()} for row in rows]
 
 
 def build_rows(
@@ -224,8 +403,15 @@ def build_workbook(
         ws.append([row[c] for c in COLUMNS])
 
     index = {name: i + 1 for i, name in enumerate(COLUMNS)}
+    doubtful = {
+        _clean(rec.source_filename): {
+            name for name in _EVIDENCE_FIELDS if getattr(rec.result, name).confidence < threshold
+        }
+        for rec in records
+        if rec.result is not None
+    }
     for r in range(2, ws.max_row + 1):
-        ws.cell(row=r, column=index["processed_at"]).number_format = "yyyy-mm-dd hh:mm:ss"
+        ws.cell(row=r, column=index["processed_at"]).number_format = EXCEL_DATETIME_FORMAT
         ws.cell(row=r, column=index["score"]).number_format = "0.0"
         completeness = ws.cell(row=r, column=index["score_completeness"])
         completeness.number_format = "0%"
@@ -235,15 +421,20 @@ def build_workbook(
             completeness.fill = INCOMPLETE_SCORE_FILL
             ws.cell(row=r, column=index["score"]).fill = INCOMPLETE_SCORE_FILL
         for name in _EVIDENCE_FIELDS:
-            cell = ws.cell(row=r, column=index[name])
+            cell = ws.cell(row=r, column=index[export_name(name)])
             if isinstance(cell.value, (date, datetime)):
-                cell.number_format = "yyyy-mm-dd"
-            conf = ws.cell(row=r, column=index[f"{name}_confidence"])
-            conf.number_format = "0.00"
-            # Below the routing threshold, so a reviewer spots it without
-            # opening the evidence column.
-            if isinstance(conf.value, (int, float)) and conf.value < threshold:
-                conf.fill = LOW_CONFIDENCE_FILL
+                cell.number_format = EXCEL_DATE_FORMAT
+            # A stated value below the routing threshold is highlighted in
+            # place, so a reviewer spots it without a confidence column.
+            # Blank cells are left alone: absent is not the same as doubtful.
+            filename = ws.cell(row=r, column=index["source_filename"]).value
+            # A converted percentage is only as doubtful as the CGPA it came from.
+            source = "cgpa" if (
+                name == "marks_pct"
+                and ws.cell(row=r, column=index[PERCENTAGE_SOURCE_COLUMN]).value == SOURCE_CONVERTED
+            ) else name
+            if cell.value is not None and source in doubtful.get(filename, ()):
+                cell.fill = LOW_CONFIDENCE_FILL
 
     last_col = get_column_letter(len(COLUMNS))
     ws.freeze_panes = "A2"
@@ -251,6 +442,10 @@ def build_workbook(
     for name, i in index.items():
         ws.column_dimensions[get_column_letter(i)].width = _width_for(name)
 
+    # Imported here: detail_sheets builds on this module's styles and helpers.
+    from app.detail_sheets import add_detail_sheets
+
+    add_detail_sheets(wb, records)
     _add_scoring_sheet(wb)
     _add_raw_output_sheet(wb, records)
     return wb
@@ -318,7 +513,7 @@ def _add_scoring_sheet(wb: Workbook) -> None:
     how_by_name = {
         "teaching_years": "0 years -> 0 pts, 20+ years -> full points (linear)",
         "publications": "0 -> 0 pts, 20+ -> full points (linear)",
-        "academic_marks": "marks_pct (0-100) or cgpa (0-10), whichever the resume gives; they share this budget and are never converted into each other",
+        "academic_marks": "the Master's percentage (0-100) or CGPA (0-10) as stated on the resume, whichever it gives; they share this budget. The score uses the stated figure on its own scale, not the converted percentage shown in masters_percentage",
         "phd": "full points if an awarded PhD, 0 otherwise",
         "net_set": "full points for NET/SET/SLET, 0 for NONE",
     }
@@ -347,6 +542,19 @@ def _add_scoring_sheet(wb: Workbook) -> None:
         "awards, projects and grants."
     ])
     ws.append(["Only publications_count feeds the score; the in-progress figure is shown for context."])
+    ws.append([])
+    ws.append(["How masters_percentage is filled"])
+    ws[ws.max_row][0].font = Font(bold=True)
+    ws.append([
+        "Where the resume states a percentage for the Master's degree, that figure is shown "
+        f"({PERCENTAGE_SOURCE_COLUMN} = '{SOURCE_STATED}')."
+    ])
+    ws.append([
+        "Where it states only a CGPA, the percentage is calculated as "
+        f"(CGPA - {CGPA_PERCENT_OFFSET:g}) x {CGPA_PERCENT_MULTIPLIER:g} "
+        f"({PERCENTAGE_SOURCE_COLUMN} = '{SOURCE_CONVERTED}'). Universities use different "
+        "conversion formulas, so this is an approximation, not the candidate's official percentage."
+    ])
     ws.append([])
     ws.append(["A field the resume never states is EXCLUDED from the score, not counted as zero."])
     ws.append(["score_completeness shows how many of the 5 components actually had data."])

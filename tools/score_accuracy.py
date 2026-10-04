@@ -25,6 +25,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from openpyxl import load_workbook
 
+from app.excel_writer import PERCENTAGE_SOURCE_COLUMN, SOURCE_CONVERTED, export_name
 from tools.verify_run import run_stats
 
 UNCLEAR = "UNCLEAR"
@@ -58,10 +59,22 @@ def normalize(value: str) -> str:
         return str(int(f)) if f == int(f) else str(f)
     except ValueError:
         pass
+    # dates in the export convention (DD-MM-YYYY, MM-YYYY) -> ISO, so they
+    # compare with answer keys written as YYYY-MM-DD
+    m = re.fullmatch(r"(\d{2})-(\d{2})-(\d{4})(?: \d{2}:\d{2}(?::\d{2})?)?", v)
+    if m:
+        return f"{m.group(3)}-{m.group(2)}-{m.group(1)}"
+    m = re.fullmatch(r"(\d{2})-(\d{4})", v)
+    if m:
+        return f"{m.group(2)}-{m.group(1)}"
     # dates: drop any time component
     if len(v) >= 10 and v[4] == "-" and v[7] == "-":
         return v[:10]
-    return low
+    # phd_status is exported in readable words ("Thesis Submitted", "NA")
+    # while answer keys hold the schema spelling ("THESIS_SUBMITTED",
+    # "NOT_APPLICABLE"). Same fact, so they must compare equal.
+    low = low.replace("_", " ")
+    return "na" if low == "not applicable" else low
 
 
 def values_match(expected: str, got: str) -> bool:
@@ -125,6 +138,7 @@ def main() -> None:
     # already. One call, reused for the header further down.
     stats = run_stats(args.export_csv)
     failed_files = set(stats.failed)
+    not_exported: set[str] = set()
 
     for (filename, field), expected in key.items():
         if expected.strip().upper() == UNCLEAR:
@@ -135,7 +149,20 @@ def main() -> None:
         row = rows.get(filename)
         if row is None:
             continue
-        actual = row.get(field, "")
+        # The key is keyed by schema field; the export may head the column
+        # with its fuller name (marks_pct -> marks_percentage). Older exports
+        # still use the field name, so accept either.
+        if export_name(field) not in row and field not in row:
+            # The export has no such column (has_phd is no longer exported).
+            # A missing column is not a wrong answer, so it is not scored.
+            not_exported.add(field)
+            continue
+        actual = row.get(export_name(field)) or row.get(field, "")
+        if field == "marks_pct" and row.get(PERCENTAGE_SOURCE_COLUMN) == SOURCE_CONVERTED:
+            # The export shows a percentage worked out from the CGPA. What was
+            # *extracted* for marks_pct is still blank, and that is what the
+            # key labels -- so score the extraction, not the arithmetic.
+            actual = ""
         ok = int(values_match(expected, actual))
         per_field[field].append(ok)
         per_file[filename].append(ok)
@@ -162,6 +189,8 @@ def main() -> None:
     print(f"{'OVERALL':<26}{pct(all_hits):>14}")
     if skipped:
         print(f"\n({skipped} field(s) marked UNCLEAR were excluded from scoring)")
+    if not_exported:
+        print(f"\nnot scored, no such column in this export: {', '.join(sorted(not_exported))}")
     print(f"\nscored {len(per_file)} resume(s)")
     if failed_files:
         print(f"excluded {len(failed_files)} that failed to extract at all (not a value error):")

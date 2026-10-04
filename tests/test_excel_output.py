@@ -12,10 +12,11 @@ from openpyxl import load_workbook
 
 from app.excel_writer import (
     COLUMNS,
-    CONFIDENCE_COLUMNS,
     EVIDENCE_COLUMNS,
     SHEET_NAME,
     build_row,
+    evidence_column,
+    export_name,
     write_workbook,
 )
 from llm.interface import FIELD_NAMES, ResumeRecord
@@ -58,14 +59,96 @@ def test_header_matches_the_declared_column_order(sheet):
     assert header(sheet) == list(COLUMNS)
 
 
-def test_every_extracted_field_has_confidence_and_evidence_columns(sheet):
+def test_every_extracted_field_has_a_value_column(sheet):
     names = header(sheet)
     for field in FIELD_NAMES:
-        assert field in names
-        if field == "candidate_name":
+        if field == "has_phd":
             continue
-        assert f"{field}_confidence" in names
-        assert f"{field}_evidence" in names
+        assert export_name(field) in names
+
+
+def test_no_evidence_columns_are_exported_only_the_two_course_names(sheet):
+    names = header(sheet)
+    assert not [n for n in names if n.endswith("_evidence")]
+    assert evidence_column("highest_degree") == "highest_degree_course_name" in names
+    assert evidence_column("phd_status") == "phd_course_name" in names
+
+
+def test_has_phd_is_not_exported_but_phd_status_is(sheet):
+    names = header(sheet)
+    assert "has_phd" not in names and "has_phd_evidence" not in names
+    assert "phd_status" in names and "phd_course_name" in names
+
+
+def test_a_has_phd_review_reason_points_at_the_phd_status_column():
+    from app.excel_writer import _format_reasons
+
+    assert _format_reasons(["has_phd:low_confidence", "phd_status:low_confidence"]) == "phd_status (low confidence)"
+
+
+def test_marks_column_is_spelled_out_and_marks_and_cgpa_have_no_evidence_column(sheet):
+    names = header(sheet)
+    assert "masters_percentage" in names and "masters_cgpa" in names
+    assert not {"marks_pct", "marks_percentage", "cgpa"} & set(names)
+    assert not [n for n in names if n.endswith("_evidence") and ("marks" in n or "cgpa" in n or "percentage" in n)]
+
+
+def test_review_reasons_name_the_column_as_it_is_headed():
+    from app.excel_writer import _format_reasons
+
+    assert _format_reasons(["marks_pct:low_confidence"]) == "masters_percentage (low confidence)"
+    assert _format_reasons(["cgpa:low_confidence"]) == "masters_cgpa (low confidence)"
+
+
+def _marks_row(marks, cgpa):
+    from llm.providers.fake_provider import CANNED_RESULTS
+
+    result = CANNED_RESULTS[0].model_copy(deep=True)
+    absent = {"value": None, "confidence": 0.0, "evidence": None}
+    result.marks_pct = type(result.marks_pct)(**({"value": marks, "confidence": 0.9, "evidence": "x"} if marks is not None else absent))
+    result.cgpa = type(result.cgpa)(**({"value": cgpa, "confidence": 0.9, "evidence": "x"} if cgpa is not None else absent))
+    return build_row(ResumeRecord(source_filename="a.pdf", processed_at=datetime(2026, 10, 4), result=result))
+
+
+def test_a_stated_percentage_is_shown_as_stated():
+    row = _marks_row(63.56, None)
+    assert row["masters_percentage"] == 63.56
+    assert row["masters_percentage_source"] == "stated on resume"
+    assert row["masters_cgpa"] is None
+
+
+@pytest.mark.parametrize("cgpa, pct", [(8.2, 74.5), (9.13, 83.8), (7.78, 70.3), (8.79, 80.4), (10.0, 92.5)])
+def test_a_cgpa_is_converted_by_the_aicte_formula_and_marked_as_converted(cgpa, pct):
+    row = _marks_row(None, cgpa)
+    assert row["masters_percentage"] == pytest.approx(pct)
+    assert row["masters_percentage_source"] == "converted from CGPA"
+    assert row["masters_cgpa"] == cgpa  # the stated figure is kept beside it
+
+
+def test_a_stated_percentage_is_never_overwritten_by_a_conversion():
+    row = _marks_row(76.6, 8.0)
+    assert row["masters_percentage"] == 76.6
+    assert row["masters_percentage_source"] == "stated on resume"
+
+
+def test_no_marks_at_all_stays_blank_rather_than_inventing_a_percentage():
+    row = _marks_row(None, None)
+    assert row["masters_percentage"] is None and row["masters_percentage_source"] is None
+
+
+def test_a_number_that_is_not_a_ten_point_cgpa_is_not_converted():
+    from app.excel_writer import cgpa_to_percentage
+
+    assert cgpa_to_percentage(63.5) is None
+    assert cgpa_to_percentage(0) is None
+    assert cgpa_to_percentage(0.5) == 0.0  # never negative
+
+
+def test_no_confidence_columns_are_exported(sheet):
+    """The number is internal: it drives needs_review and the highlight, but
+    is not shown as a column anywhere."""
+    assert not [n for n in header(sheet) if "confidence" in n.lower()]
+    assert not [c for c in COLUMNS if "confidence" in c.lower()]
 
 
 def test_rank_and_score_columns_exist_and_lead_the_sheet(sheet):
@@ -148,18 +231,30 @@ def test_column_widths_are_set_not_left_at_default(sheet):
         assert dim.width and dim.width > floor
 
 
-def test_low_confidence_cells_are_filled_and_high_confidence_ones_are_not(sheet):
+def test_low_confidence_values_are_highlighted_in_place(sheet, records):
+    """With no confidence column, the doubtful value itself carries the fill.
+    Blank cells are never filled: absent is not the same as doubtful."""
+    by_name = {r.source_filename: r for r in records}
+    name_col = column_index(sheet, "source_filename")
     filled, unfilled = 0, 0
-    for name in CONFIDENCE_COLUMNS:
-        col = column_index(sheet, name)
+    for field in FIELD_NAMES:
+        if field in ("candidate_name", "has_phd"):
+            continue
+        col = column_index(sheet, export_name(field))
         for r in range(2, sheet.max_row + 1):
+            record = by_name[sheet.cell(row=r, column=name_col).value]
             cell = sheet.cell(row=r, column=col)
             has_fill = cell.fill is not None and cell.fill.start_color.rgb == "00FFF2CC"
-            if cell.value is not None and cell.value < THRESHOLD:
-                assert has_fill, f"{name} row {r} below threshold but not highlighted"
+            if cell.value is None or record.result is None:
+                assert not has_fill, f"{field} row {r} is blank but highlighted"
+                continue
+            # A converted percentage is only as doubtful as the CGPA behind it.
+            converted = field == "marks_pct" and record.result.marks_pct.value is None
+            if getattr(record.result, "cgpa" if converted else field).confidence < THRESHOLD:
+                assert has_fill, f"{field} row {r} below threshold but not highlighted"
                 filled += 1
-            elif cell.value is not None:
-                assert not has_fill, f"{name} row {r} above threshold but highlighted"
+            else:
+                assert not has_fill, f"{field} row {r} above threshold but highlighted"
                 unfilled += 1
     assert filled > 0 and unfilled > 0
 
@@ -178,7 +273,6 @@ def test_failed_file_row_is_empty_with_a_parse_error_and_needs_review(sheet):
     assert row["needs_review"] is True
     assert row["parse_error"] == "no extractable text in file"
     assert row["candidate_name"] is None
-    assert all(row[c] == 0.0 for c in CONFIDENCE_COLUMNS)
     assert all(row[c] is None for c in EVIDENCE_COLUMNS)
 
 
@@ -190,8 +284,8 @@ def test_dates_are_written_as_dates_so_the_column_sorts_chronologically(sheet):
     assert all(isinstance(v, (date, datetime)) for v in written)
 
 
-def test_absent_field_writes_blank_value_and_zero_confidence():
-    """Absent means empty plus 0.0 — never a plausible-looking default."""
+def test_absent_field_writes_blank_value_and_no_evidence():
+    """Absent means empty — never a plausible-looking default."""
     record = ResumeRecord(
         source_filename="a.pdf",
         processed_at=datetime(2026, 8, 22),
@@ -199,8 +293,8 @@ def test_absent_field_writes_blank_value_and_zero_confidence():
     )
     row = build_row(record, threshold=THRESHOLD)
     assert row["phd_award_date"] is None
-    assert row["phd_award_date_confidence"] == 0.0
-    assert row["phd_award_date_evidence"] is None
+    assert "phd_award_date_confidence" not in row
+    assert "phd_award_date_evidence" not in row
 
 
 def test_set_without_state_row_is_flagged_for_review(sheet):
@@ -214,10 +308,13 @@ def test_set_without_state_row_is_flagged_for_review(sheet):
                 assert sheet.cell(row=r, column=col).value is True
 
 
-def test_evidence_text_is_carried_through_verbatim(sheet):
-    col = column_index(sheet, "net_set_status_evidence")
-    values = [sheet.cell(row=r, column=col).value for r in range(2, sheet.max_row + 1)]
-    assert any(v and "UGC-NET" in v for v in values)
+def test_the_quotes_are_still_available_in_the_raw_output_sheet(records, tmp_path):
+    """Dropping the evidence columns must not drop the evidence: the model's
+    own response, quotes included, stays on the audit sheet."""
+    path = write_workbook(records, tmp_path / "out.xlsx", threshold=THRESHOLD)
+    raw = load_workbook(path)["raw_llm_output"]
+    cells = [raw.cell(row=r, column=2).value or "" for r in range(2, raw.max_row + 1)]
+    assert any("UGC-NET" in c for c in cells)
 
 
 def test_review_reasons_column_exists_and_follows_needs_review():
@@ -310,7 +407,7 @@ def test_a_month_precision_date_shows_year_and_month_only(tmp_path):
     row = build_row(
         ResumeRecord(source_filename="cv.pdf", processed_at=_dt.now(), result=result)
     )
-    assert row["masters_award_date"] == "2021-05"
+    assert row["masters_award_date"] == "05-2021"
 
 
 def test_a_genuinely_full_date_is_still_written_as_a_date(tmp_path):
@@ -354,3 +451,40 @@ def test_a_failed_extraction_still_gets_a_raw_output_row(tmp_path):
     sheet = load_workbook(path)["raw_llm_output"]
     assert sheet["A2"].value == "scanned.pdf"
     assert sheet["B2"].value  # carries the reason rather than being blank
+
+
+# --- one date convention: DD-MM-YYYY ----------------------------------------
+
+
+def test_full_dates_are_real_dates_shown_day_month_year(sheet):
+    col = column_index(sheet, "masters_award_date")
+    cells = [sheet.cell(row=r, column=col) for r in range(2, sheet.max_row + 1)]
+    dated = [c for c in cells if isinstance(c.value, (date, datetime))]
+    assert dated and all(c.number_format == "dd-mm-yyyy" for c in dated)
+
+
+def test_processed_at_uses_the_same_convention(sheet):
+    col = column_index(sheet, "processed_at")
+    assert all(
+        sheet.cell(row=r, column=col).number_format == "dd-mm-yyyy hh:mm" for r in range(2, sheet.max_row + 1)
+    )
+
+
+def test_the_dashboard_table_writes_dates_in_the_same_convention():
+    from app.excel_writer import date_text, rows_for_display
+
+    assert date_text(date(2019, 11, 12)) == "12-11-2019"
+    assert date_text(datetime(2026, 10, 4, 12, 54, 30)) == "04-10-2026 12:54"
+    assert date_text("05-2021") == "05-2021" and date_text("2015") == "2015" and date_text(None) is None
+    shown = rows_for_display([{"phd_award_date": date(2019, 11, 12), "score": 61.2, "needs_review": True}])
+    assert shown == [{"phd_award_date": "12-11-2019", "score": 61.2, "needs_review": True}]
+
+
+def test_accuracy_scoring_reads_the_new_convention_against_iso_answer_keys():
+    from tools.score_accuracy import values_match
+
+    assert values_match("2019-11-12", "12-11-2019")
+    assert values_match("2021-05-01", "05-2021")  # key padded the day; export states the month
+    assert values_match("2015-01-01", "2015")
+    assert not values_match("2019-11-12", "11-12-2019")  # day and month are not interchangeable
+    assert not values_match("2021-05-01", "06-2021")

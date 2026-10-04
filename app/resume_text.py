@@ -34,6 +34,18 @@ class UnreadableResumeError(Exception):
     """
 
 
+class ScannedPdfError(UnreadableResumeError):
+    """Every PDF reader opened the file fine and found no text in it.
+
+    That is a scanned or image-only document, not a broken one. It needs a
+    person (or OCR, which this tool deliberately does not do), and it must
+    say so rather than read like a failed extraction.
+    """
+
+
+SCANNED_LABEL = "scanned or image-only, review manually"
+
+
 @dataclass
 class ResumeText:
     text: str
@@ -66,6 +78,7 @@ def _extract_pdf(fileobj: BinaryIO) -> str:
     against an LLM call measured in seconds.
     """
     errors: list[str] = []
+    opened_without_error = 0
     for name, extractor in (("pymupdf", _extract_pdf_pymupdf), ("pdfplumber", _extract_pdf_pdfplumber)):
         try:
             text = extractor(fileobj)
@@ -74,7 +87,11 @@ def _extract_pdf(fileobj: BinaryIO) -> str:
             continue
         if len(text.strip()) >= MIN_TEXT_CHARS:
             return text
+        opened_without_error += 1
         errors.append(f"{name}: no text layer")
+    if opened_without_error == 2:
+        # Both libraries read the file and agree there is nothing to read.
+        raise ScannedPdfError(f"{SCANNED_LABEL} ({'; '.join(errors)})")
     raise UnreadableResumeError(f"could not read PDF ({'; '.join(errors)})")
 
 

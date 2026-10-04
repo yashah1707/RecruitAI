@@ -27,6 +27,7 @@ from openpyxl import Workbook
 from openpyxl.styles import Alignment, Font, PatternFill
 from openpyxl.utils import get_column_letter
 
+from app.excel_writer import evidence_column, export_name
 from app.run_stats import is_failed_row, stats_from_rows
 from llm.interface import FIELD_NAMES
 
@@ -68,8 +69,8 @@ def build(rows: list[dict], blank: bool) -> Workbook:
         if is_failed_row(row):
             continue  # nothing to label on a file that never extracted
         for field in LABEL_FIELDS:
-            model_value = (row.get(field) or "").strip()
-            evidence = (row.get(f"{field}_evidence") or "").strip()
+            model_value = (row.get(export_name(field)) or row.get(field) or "").strip()
+            evidence = (row.get(evidence_column(field)) or row.get(f"{field}_evidence") or "").strip()
             ws.append([
                 row["source_filename"],
                 field,

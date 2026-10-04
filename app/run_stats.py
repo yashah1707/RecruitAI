@@ -31,6 +31,10 @@ class RunStats:
     total_rows: int
     failed: list[str] = field(default_factory=list)
     needs_review: int = 0
+    # filename -> failure_kind / parse_error text, for failed rows only. Lets
+    # the banner say *why* each one failed without recounting anything.
+    failed_kinds: dict[str, str] = field(default_factory=dict)
+    failed_reasons: dict[str, str] = field(default_factory=dict)
 
     @property
     def failure_count(self) -> int:
@@ -82,7 +86,21 @@ def _stats_from_dicts(rows: Sequence[dict[str, Any]], source: str) -> RunStats:
     needs_review = sum(
         1 for r in rows if str(r.get("needs_review", "")).strip().lower() in ("true", "1")
     )
-    return RunStats(source=source, total_rows=len(rows), failed=failed, needs_review=needs_review)
+    failed_rows = [r for r in rows if is_failed_row(r)]
+    return RunStats(
+        source=source,
+        total_rows=len(rows),
+        failed=failed,
+        needs_review=needs_review,
+        failed_kinds={
+            (r.get("source_filename") or "(unnamed)"): str(r.get("failure_kind") or "unknown")
+            for r in failed_rows
+        },
+        failed_reasons={
+            (r.get("source_filename") or "(unnamed)"): str(r.get("parse_error") or "")
+            for r in failed_rows
+        },
+    )
 
 
 def stats_from_rows(rows: Sequence[dict[str, Any]], source: str = "current run") -> RunStats:
@@ -95,6 +113,21 @@ def stats_from_records(records: Iterable[ResumeRecord], source: str = "current r
     records = list(records)
     failed = [r.source_filename for r in records if (r.parse_error or "").strip()]
     return RunStats(source=source, total_rows=len(records), failed=failed)
+
+
+def retryable_filenames(records: Iterable[ResumeRecord]) -> list[str]:
+    """Failed rows worth re-running as they are.
+
+    Unreadable files (scanned, corrupted) fail identically every time, and a
+    bad key or model name needs fixing first; only API unavailability and
+    quota exhaustion can come right by simply trying again. A failure with no
+    recorded kind is retried, since it can't be shown to be permanent.
+    """
+    return [
+        r.source_filename
+        for r in records
+        if (r.parse_error or "").strip() and r.failure_kind not in ("unreadable", "bad_config")
+    ]
 
 
 def stats_from_export(export_csv: str | Path) -> RunStats:

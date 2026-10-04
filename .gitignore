@@ -7,3 +7,6 @@ __pycache__/
 # what was run locally. Never committed, whatever produced them.
 *.xlsx
 *.csv
+
+# Cached extractions hold extracted candidate fields -- local only.
+.cache/

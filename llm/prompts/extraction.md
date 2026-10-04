@@ -63,6 +63,28 @@ touching provider code.
   progress does not raise it -- someone with an M.Tech and an ongoing PhD is
   `PG`, not `PhD`. Use `Diploma` when a polytechnic/technical diploma is the
   highest completed qualification; do not round it up to `UG`.
+  - Its `evidence` must be ONLY the degree name and its course/specialisation,
+    copied verbatim — nothing else from the row. Leave out marks, percentage,
+    CGPA, class/division ("First Class"), year, university, college, city, and
+    any other qualification (an ongoing or submitted Ph.D. does not belong in
+    the evidence for a `PG`).
+    - A row reading `M.Tech. (Computer) First Class 63.56 2015` is quoted as
+      `M.Tech. (Computer)`.
+    - If the degree and its course are separated by other words in the resume
+      (an institution or a year sitting between them), quote the two parts
+      joined by ` ... ` — e.g. `M.Tech ... Computer Science & Engineering` —
+      rather than quoting the words in between.
+    - ALWAYS look for the course/specialisation and include it. It is often
+      NOT on the same line as the degree: it may be on the next line, in the
+      next table cell, or in a separate "Specialization"/"Branch"/"Subject"
+      column of the same row. A row reading `Master of Engineering (M.E)` with
+      `Computer Engineering` on the line below is quoted as
+      `Master of Engineering (M.E) Computer Engineering`. Quote the degree
+      alone only when the resume states no course for it anywhere.
+    - Copy the words exactly as the resume spells them, abbreviations
+      included; do not expand or tidy them.
+    - If the resume gives only the degree with no course, quote just the
+      degree.
 - `phd_status` records WHERE in the doctoral process the candidate is, using
   exactly one of these values. Map what the resume states; never infer from
   how close to finished it sounds:
@@ -77,6 +99,12 @@ touching provider code.
     ENTRANCE test (PET) is not doctoral study; that is still NOT_APPLICABLE.
   `has_phd` must be `true` only when `phd_status` is `COMPLETED`, and `false`
   for every other value including `THESIS_SUBMITTED`.
+  - The `evidence` for `phd_status` (when it is not `NOT_APPLICABLE`) must be
+    ONLY the Ph.D., its course/specialisation, and the word(s) stating the
+    status, copied verbatim — e.g. `Ph. D. (Computer Engineering) Appearing`.
+    Leave out the university, college, city, guide's name, and years. The
+    course may be on a different line or table cell from the words "Ph.D.";
+    look for it and include it, joining separated parts with ` ... `.
 - `teaching_years_raw` — the raw, unadjusted TEACHING total. Never subtract
   for leave or concurrency; that adjustment happens downstream. Decide
   between three answers in this order:
@@ -157,6 +185,86 @@ touching provider code.
   - Either list may be empty; its count is then 0.
 - Dates are `YYYY-MM-DD`. If only a year or month/year is known, use the
   first day of the known period and lower confidence accordingly.
+
+## Detail lists
+
+Besides the fields above, return five plain lists. These have no confidence
+or evidence; instead every text value must be COPIED from the resume, because
+each item is checked against the resume text afterwards and an item that
+cannot be found there is marked as unverified. Do not tidy, expand, translate
+or re-spell anything — formatting is done later by code. Use `null` for any
+part the resume does not state; never fill a gap with a plausible guess. List
+each item once even if the resume mentions it in two places. Return an empty
+list `[]` when the resume has nothing of that kind.
+
+- `education` — one entry for each of the candidate's Bachelor's (`UG`),
+  Master's (`PG`) and Ph.D. (`PhD`) qualifications, including a Ph.D. that is
+  still in progress. Leave out school (10th/12th) and diplomas. If the
+  candidate has two Master's degrees, list both.
+  - `degree`: the degree as written ("Master of Engineering (M.E)", "B.Tech").
+  - `course`: the specialisation/branch ("Computer Engineering"). It is often
+    on a different line or table cell from the degree — find it.
+  - `college`: the college/institute attended. `university`: the awarding
+    university. If the resume names only one institution, put it in
+    `university` and leave `college` null.
+  - `marks_pct` (0-100) and `cgpa` (0-10): the marks for THAT degree's own
+    row, on whichever scale it is stated; never convert, never borrow a
+    figure from another row. `division`: the class/division as written
+    ("First Class with Distinction", "First").
+  - `completion`: when the degree was completed/awarded, as `YYYY`,
+    `YYYY-MM` or `YYYY-MM-DD` — only as precise as the resume states. `null`
+    if not completed or not stated.
+  - Ph.D. only: `thesis_title` (title or research topic/area), `guide`
+    (supervisor's name), `registration` (when registered/enrolled, same
+    format as `completion`). `null` for other degrees.
+- `publications` — one entry per paper, book chapter or book. Not patents,
+  not conferences merely attended.
+  - `title`: the paper's title only, without authors, venue or year.
+  - `kind`: `JOURNAL`, `CONFERENCE`, `BOOK_CHAPTER`, `BOOK`, or `OTHER`.
+  - `venue`: the journal, conference or publisher name. `year`: `YYYY`.
+  - `status`: `PUBLISHED`, `ACCEPTED`, `UNDER_REVIEW`, `SUBMITTED` or
+    `IN_PREPARATION`. Use `PUBLISHED` unless the resume says otherwise.
+  - `indexing`: "Scopus", "SCI", "Web of Science", "UGC CARE" etc., only if
+    the resume states it for that paper.
+- `events` — one entry per FDP, STTP, workshop, seminar, webinar, conference,
+  training programme or certification course (NPTEL, Coursera and similar).
+  - `kind`: `FDP`, `STTP`, `WORKSHOP`, `SEMINAR`, `WEBINAR`, `CONFERENCE`,
+    `TRAINING`, `COURSE`, or `OTHER`.
+  - `title`: the name/topic of the event, without the organiser or dates.
+  - `role`: `ATTENDED`, `ORGANISED` (coordinator/convener), `RESOURCE_PERSON`
+    (delivered the session), `PRESENTED` (presented a paper), or `OTHER`.
+  - `organiser`: the institution or body that ran it. `duration`: as stated
+    ("5 days", "One Week", "12 weeks"). `year`: `YYYY`.
+- `subjects_taught` — the subjects/courses the candidate has taught, one per
+  item, as named in the resume. Not their research areas.
+- `skills` — technical skills: programming languages, tools, software,
+  platforms, one per item. Not soft skills ("hardworking", "team player").
+- `experience` — one entry per job/post held, most recent first. A promotion
+  at the same institution (Lecturer, then Assistant Professor) is two entries.
+  - `designation`: the post as written. `institution`: the employer's name
+    only, without department, city or dates.
+  - `kind`: `TEACHING` (any teaching post at a college/university),
+    `INDUSTRY`, `RESEARCH` (research fellow, project staff), or `OTHER`.
+  - `start` and `end`: as `YYYY`, `YYYY-MM` or `YYYY-MM-DD`, only as precise
+    as the resume states. For a current post ("till date", "present",
+    "working") set `end` to `PRESENT`. `null` when not stated.
+  - `duration`: only if the resume itself states one for that post
+    ("3 years 2 months"); copy it. Never calculate it.
+- `achievements` — patents, awards/honours, funded research projects and
+  grants, one entry each.
+  - `kind`: `PATENT`, `AWARD`, `FUNDED_PROJECT`, `GRANT`, or `OTHER`.
+  - `title`: the name of the patent, award or project.
+  - `details`: funding agency and amount, patent/application number, or the
+    awarding body, as stated. `year`: `YYYY`. `status`: as stated ("Granted",
+    "Published", "Filed", "Ongoing", "Completed").
+- `guidance` — research/project supervision the candidate has done, one entry
+  per statement ("Guided 12 M.E. dissertations", "2 Ph.D. scholars pursuing").
+  - `level`: `PHD`, `PG`, `UG`, or `OTHER`. `description`: the statement as
+    written. `count`: the number of students only if the resume states it.
+- `memberships` — professional body memberships, one per item, as written
+  ("Life Member, ISTE", "IEEE Member").
+- `email` and `phone` — the candidate's own email address and phone number,
+  copied exactly. `null` if not given. If several are listed, the first.
 
 ## Few-shot example 1 of 2 — FORMAT ONLY, fictional candidate, DO NOT COPY
 

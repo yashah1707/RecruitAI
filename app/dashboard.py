@@ -26,12 +26,13 @@ import pandas as pd
 import streamlit as st
 
 import config
-from app.excel_writer import build_rows, write_workbook
-from app.ranking import RANKING_DISCLAIMER
+from app.excel_writer import build_rows, date_as_stated, date_text, rows_for_display, write_workbook
+from app.result_cache import ResultCache, cache_key
 from app.resume_text import UnreadableResumeError, extract_text
-from app.run_stats import stats_from_rows
+from app.run_stats import retryable_filenames, stats_from_rows
 from llm.confidence import evaluate
 from llm.interface import ExtractionFailure, LLMProvider, ResumeRecord
+from llm.postprocess import format_person_name
 from llm.providers.fake_provider import FakeProvider
 
 # PII rule (brief section 1.6): only field-level confidence and routing
@@ -58,21 +59,45 @@ def get_provider() -> LLMProvider:
     return GeminiProvider()
 
 
-def process_resume(provider: LLMProvider, filename: str, data: bytes) -> ResumeRecord:
+def process_resume(
+    provider: LLMProvider, filename: str, data: bytes, cache: ResultCache | None = None
+) -> ResumeRecord:
     """Extract one resume. Takes bytes, not a Streamlit upload object, so it
-    is safe to call from a worker thread and reusable outside Streamlit."""
+    is safe to call from a worker thread and reusable outside Streamlit.
+
+    An unreadable file (scanned, corrupt) returns before the provider is
+    reached -- the model is never called on empty text.
+    """
     file_id = _log_id(filename)
     try:
         resume = extract_text(io.BytesIO(data), filename)
     except UnreadableResumeError as exc:
         logger.info("parse_error file=%s reason=%s", file_id, exc)
-        return ResumeRecord.failed(filename, str(exc))
+        return ResumeRecord.failed(filename, str(exc), failure_kind="unreadable")
+
+    # Caching is opt-in per provider: only one that can name its model and
+    # prompt version can be trusted to key an entry correctly.
+    model_id = getattr(provider, "cache_model_id", None)
+    key = (
+        cache_key(resume.text, getattr(provider, "prompt_version", ""), model_id)
+        if cache is not None and model_id
+        else None
+    )
+    cached = cache.get(key) if key else None
+    if cached is not None:
+        logger.info("cache_hit file=%s", file_id)
+        return ResumeRecord(source_filename=filename, processed_at=datetime.now(), result=cached)
 
     try:
         result = provider.extract_fields(resume.text)
     except ExtractionFailure as exc:
-        logger.info("extraction_failed file=%s reason=%s", file_id, exc)
-        return ResumeRecord.failed(filename, f"extraction failed: {exc}")
+        logger.info("extraction_failed file=%s kind=%s reason=%s", file_id, exc.kind, exc)
+        return ResumeRecord.failed(filename, f"extraction failed: {exc}", failure_kind=exc.kind)
+
+    # A lighter-model result is a stopgap; caching it would pin the weaker
+    # answer and stop a later run from replacing it with a proper one.
+    if key and not result.lighter_model_fallback:
+        cache.put(key, result)
 
     outcome = evaluate(result)
     logger.info(
@@ -88,6 +113,7 @@ def process_batch(
     provider: LLMProvider,
     uploads: list[tuple[str, bytes]],
     on_progress: Callable[[int, int], None] | None = None,
+    cache: ResultCache | None = None,
 ) -> list[ResumeRecord]:
     """Extract every uploaded resume, respecting the provider's concurrency.
 
@@ -100,14 +126,14 @@ def process_batch(
 
     if workers == 1:
         for i, (filename, data) in enumerate(uploads):
-            records[i] = process_resume(provider, filename, data)
+            records[i] = process_resume(provider, filename, data, cache)
             done += 1
             if on_progress:
                 on_progress(done, len(uploads))
     else:
         with ThreadPoolExecutor(max_workers=workers) as pool:
             futures = {
-                pool.submit(process_resume, provider, filename, data): i
+                pool.submit(process_resume, provider, filename, data, cache): i
                 for i, (filename, data) in enumerate(uploads)
             }
             for future in as_completed(futures):
@@ -116,12 +142,54 @@ def process_batch(
                     records[i] = future.result()
                 except Exception as exc:  # a worker must never sink the batch
                     logger.warning("worker_failed file=%s", _log_id(uploads[i][0]))
-                    records[i] = ResumeRecord.failed(uploads[i][0], f"extraction failed: {exc}")
+                    records[i] = ResumeRecord.failed(
+                        uploads[i][0], f"extraction failed: {exc}", failure_kind="api_unavailable"
+                    )
                 done += 1
                 if on_progress:
                     on_progress(done, len(uploads))
 
     return [r for r in records if r is not None]
+
+
+def retry_failed(
+    provider: LLMProvider,
+    records: list[ResumeRecord],
+    uploads: dict[str, bytes],
+    on_progress: Callable[[int, int], None] | None = None,
+    cache: ResultCache | None = None,
+) -> list[ResumeRecord]:
+    """Re-run only the failures that could clear up, keeping everything else.
+
+    Rows that already extracted are left untouched (no call, no cost);
+    unreadable files and bad-config failures are skipped because a rerun
+    cannot change them. Files no longer in `uploads` are left as they were.
+    """
+    wanted = set(retryable_filenames(records))
+    todo = [(name, uploads[name]) for name in wanted if name in uploads]
+    if not todo:
+        return records
+    fresh = {r.source_filename: r for r in process_batch(provider, todo, on_progress, cache)}
+    return [fresh.get(r.source_filename, r) if r.source_filename in wanted else r for r in records]
+
+
+# What each failure_kind means for the person looking at the banner.
+FAILURE_KIND_HELP: dict[str, str] = {
+    "api_unavailable": "Gemini was overloaded or unreachable — use Retry, it usually clears",
+    "quota": "Gemini quota exhausted — wait for the reset or enable billing, then Retry",
+    "bad_config": "API key or model name rejected — fix GEMINI_API_KEY / GEMINI_MODEL, restart",
+}
+
+
+def _failure_label(kind: str, message: str) -> str:
+    """One line saying why a row failed and what to do about it."""
+    if kind in FAILURE_KIND_HELP:
+        return FAILURE_KIND_HELP[kind]
+    if kind == "unreadable":
+        # The message leads with the reason ("scanned or image-only, review
+        # manually"); the bracketed detail after it is for the export.
+        return message.split(" (")[0] or "unreadable file — review manually"
+    return "failed — see the parse_error column"
 
 
 def _render_manual_entry_panel(records: list[ResumeRecord]) -> None:
@@ -158,8 +226,12 @@ def _render_manual_entry_panel(records: list[ResumeRecord]) -> None:
             [
                 {
                     "source_filename": r.source_filename,
-                    "candidate_name": r.result.candidate_name.value,
-                    "phd_award_date": r.result.phd_award_date.value,
+                    "candidate_name": format_person_name(r.result.candidate_name.value),
+                    # Same trimming as the main table: a bare "2026" must not
+                    # show up here as a 1 January nobody wrote.
+                    "phd_award_date": date_text(
+                        date_as_stated(r.result.phd_award_date.value, r.result.phd_award_date_precision)
+                    ) or "",
                     "awarding institution (from evidence)": (r.result.phd_award_date.evidence
                                                             or r.result.has_phd.evidence or ""),
                     "phd_regulation": "— enter 2009 or 2016 —",
@@ -182,8 +254,7 @@ def main() -> None:
     st.caption(
         f"Provider: **{config.LLM_PROVIDER}**"
         + (f" · Model: **{model_name}**" if model_name else "")
-        + f" · Confidence threshold: **{config.CONFIDENCE_THRESHOLD}** · "
-        "Extracts fields and computes a shortlisting score — no eligibility decision."
+        + " · Extracts fields and computes a shortlisting score — no eligibility decision."
     )
     if model_name and "lite" in str(model_name).lower():
         st.info(
@@ -192,15 +263,11 @@ def main() -> None:
             "testing — fine for checking the UI, not for results you'll rely on.",
             icon="ℹ️",
         )
-    if config.LLM_PROVIDER == "gemini":
-        st.warning(
-            "Cloud provider active: resume text is sent to the Gemini API. "
-            "On the free tier, Google's terms permit using submitted prompts "
-            "for model training. Do not upload real candidate resumes here "
-            "unless you've accepted that tradeoff.",
-            icon="⚠️",
-        )
-
+    cache = ResultCache()
+    with st.sidebar:
+        st.caption(f"Result cache: {cache.count()} resume(s) stored locally")
+        if st.button("Clear result cache"):
+            st.success(f"Cleared {cache.clear()} cached result(s).")
     uploaded_files = st.file_uploader(
         "Upload faculty resumes (PDF or DOCX)",
         type=["pdf", "docx"],
@@ -221,7 +288,7 @@ def main() -> None:
         def on_progress(done: int, total: int) -> None:
             progress.progress(done / total, text=f"Processed {done} of {total}…")
 
-        records = process_batch(provider, uploads, on_progress)
+        records = process_batch(provider, uploads, on_progress, cache)
         progress.progress(1.0, text="Done")
         st.session_state["records"] = records
 
@@ -230,7 +297,9 @@ def main() -> None:
         return
 
     rows = build_rows(records)
-    df = pd.DataFrame(rows)
+    # Same date convention as the workbook (DD-MM-YYYY), written out as text
+    # because the table has no cell formats.
+    df = pd.DataFrame(rows_for_display(rows))
 
     # Counted by app.run_stats, the same code tools/verify_run.py audits the
     # downloaded export with. Computing it here independently is how a clean
@@ -249,12 +318,34 @@ def main() -> None:
         # assume every uploaded resume was read.
         st.error(
             f"**{stats.failure_count} of {stats.total_rows} resume(s) produced no data.** "
-            "Their rows are present but empty — see the `parse_error` column. "
+            "Their rows are present but empty — see the `parse_error` and `failure_kind` columns. "
             "They are not included in the review count above.\n\n"
-            + "\n".join(f"- {name}" for name in stats.failed),
+            + "\n".join(
+                f"- {name} — {_failure_label(stats.failed_kinds.get(name, ''), stats.failed_reasons.get(name, ''))}"
+                for name in stats.failed
+            ),
             icon="🚫",
         )
-    st.warning(RANKING_DISCLAIMER, icon="⚠️")
+        if retryable_filenames(records) and st.button(
+            f"Retry {len(retryable_filenames(records))} failed resume(s)",
+            help="Re-runs only the rows that failed for a reason that can clear up. "
+            "Rows that already extracted are not sent again.",
+        ):
+            current = {f.name: f.getvalue() for f in uploaded_files}
+            progress = st.progress(0.0, text="Retrying failed rows…")
+            st.session_state["records"] = retry_failed(
+                provider,
+                records,
+                current,
+                lambda done, total: progress.progress(done / total, text=f"Retried {done} of {total}…"),
+                cache,
+            )
+            st.rerun()
+    # The ranking caveat is deliberately not a banner here. It still travels
+    # with the workbook -- as a comment on the rank header and a full
+    # how_scoring_works sheet -- which is what actually gets forwarded to
+    # someone who hasn't been told what the score is. Repeating it on every
+    # render for the person who built it just trains them to ignore it.
     st.dataframe(df, use_container_width=True, height=420)
     _render_manual_entry_panel(records)
 

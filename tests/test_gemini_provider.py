@@ -21,9 +21,9 @@ from llm.providers.gemini_provider import (
 
 
 def test_schema_covers_every_extraction_field():
-    from llm.interface import FIELD_NAMES
+    from llm.interface import DETAIL_FIELDS, FIELD_NAMES
 
-    assert set(GEMINI_EXTRACTION_SCHEMA.properties.keys()) == set(FIELD_NAMES)
+    assert set(GEMINI_EXTRACTION_SCHEMA.properties.keys()) == set(FIELD_NAMES) | set(DETAIL_FIELDS)
 
 
 def test_schema_marks_non_optional_fields_non_nullable():

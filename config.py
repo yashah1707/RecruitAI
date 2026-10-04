@@ -27,6 +27,13 @@ def _get_str(name: str, default: str) -> str:
     return value or default
 
 
+def _get_bool(name: str, default: bool) -> bool:
+    raw = os.environ.get(name, "").strip().lower()
+    if not raw:
+        return default
+    return raw in ("1", "true", "yes", "on")
+
+
 def _get_float(name: str, default: float) -> float:
     raw = os.environ.get(name, "").strip()
     if not raw:
@@ -45,6 +52,14 @@ LLM_PROVIDER: str = _get_str("LLM_PROVIDER", "gemini").lower()
 # A field at or above this confidence is trusted; below it the row is routed to
 # needs_review and the cell is highlighted in the workbook.
 CONFIDENCE_THRESHOLD: float = _get_float("CONFIDENCE_THRESHOLD", 0.7)
+
+# How a Master's CGPA (0-10) is shown as a percentage when the resume gives
+# no percentage: (CGPA - offset) x multiplier. The default is the AICTE
+# formula, (CGPA - 0.75) x 10. Universities differ, so this is a display
+# convenience chosen by the user, not the candidate's official percentage;
+# the export marks every converted figure as converted.
+CGPA_PERCENT_OFFSET: float = _get_float("CGPA_PERCENT_OFFSET", 0.75)
+CGPA_PERCENT_MULTIPLIER: float = _get_float("CGPA_PERCENT_MULTIPLIER", 10.0)
 
 # Cloud fallback (Gemini API). Google's free tier permits using submitted
 # prompts for model training — GeminiProvider logs a prominent warning on
@@ -76,3 +91,10 @@ GEMINI_TIMEOUT_SECONDS: float = _get_float("GEMINI_TIMEOUT_SECONDS", 150.0)
 # 0 means "let the provider pick from the model's rate limit"; set a number
 # to override (e.g. after enabling billing, which raises the RPM ceiling).
 GEMINI_MAX_CONCURRENCY: int = int(_get_float("GEMINI_MAX_CONCURRENCY", 0))
+
+# Opt-in, off by default. When every pool model is unavailable or out of
+# quota, retry once on a lighter model instead of failing the row. Lighter
+# models were measurably worse on NET/SET and PhD status, so a row extracted
+# this way is flagged for review rather than passed off as a normal result.
+GEMINI_LIGHTER_FALLBACK: bool = _get_bool("GEMINI_LIGHTER_FALLBACK", False)
+GEMINI_FALLBACK_MODEL: str = _get_str("GEMINI_FALLBACK_MODEL", "gemini-3.5-flash-lite")

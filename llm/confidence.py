@@ -202,6 +202,10 @@ def asserts_absence(name: str, f: FieldWithConfidence) -> bool:
         return f.value == "NONE"
     if name in ("has_phd", "study_leave_taken"):
         return f.value is False
+    # "No doctoral study" is the same kind of claim as has_phd being False:
+    # a resume with no PhD has no line to quote for it.
+    if name == "phd_status":
+        return f.value == "NOT_APPLICABLE"
     # "No publications" and "nothing under review" are absences too: a
     # resume with no publications section has no line to quote for it.
     if name in ("publications_count", "publications_in_progress_count"):
@@ -247,6 +251,12 @@ def evaluate(
     if result is None:
         reasons.append("no_extraction")
         return ReviewOutcome(True, reasons)
+
+    # Extracted by the opt-in lighter model because the normal pool was down.
+    # Lighter models were measurably worse on NET/SET and PhD status, so a
+    # human should look at this row however confident it sounds.
+    if result.lighter_model_fallback:
+        reasons.append("extraction_model:lighter_model_fallback")
 
     for name in FIELD_NAMES:
         f: FieldWithConfidence = getattr(result, name)

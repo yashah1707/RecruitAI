@@ -108,9 +108,30 @@ class FakeProvider:
     # predictable order for tests and demos.
     max_concurrency = 1
 
-    def __init__(self, results: list[ExtractionResult] | None = None) -> None:
+    def __init__(
+        self,
+        results: list[ExtractionResult] | None = None,
+        script: list[ExtractionResult | Exception] | None = None,
+        cache_model_id: str | None = None,
+        prompt_version: str | None = None,
+    ) -> None:
         self._results = list(results or CANNED_RESULTS)
         self._cursor: Iterator[ExtractionResult] = cycle(self._results)
+        # An optional scripted prefix: each call consumes the next item,
+        # raising it if it is an exception and returning it otherwise. Lets
+        # tests replay "503, 503, then success" without any network.
+        self._script = list(script or [])
+        self.calls = 0
+        # Only set these to opt in to the result cache, like a real provider.
+        if cache_model_id is not None:
+            self.cache_model_id = cache_model_id
+            self.prompt_version = prompt_version or "fake-v1"
 
     def extract_fields(self, resume_text: str) -> ExtractionResult:
+        self.calls += 1
+        if self._script:
+            item = self._script.pop(0)
+            if isinstance(item, Exception):
+                raise item
+            return item.model_copy(deep=True)
         return next(self._cursor).model_copy(deep=True)

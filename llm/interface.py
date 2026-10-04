@@ -62,6 +62,97 @@ def absent(confidence: float = 0.0) -> dict:
     return {"value": None, "confidence": confidence, "evidence": None}
 
 
+# --- detail records ----------------------------------------------------------
+#
+# The scalar fields above answer "is this candidate eligible / how do they
+# rank". These lists hold the fuller record a reviewer reads when comparing
+# shortlisted people: each degree, each publication, each FDP. They are
+# extracted as the resume states them and never feed the score or the review
+# routing. Instead of a confidence and a quote per item, each item carries
+# `found_in_resume`: a deterministic check (llm.postprocess) that its key
+# text really appears in the resume, so an invented item is visibly marked.
+
+EducationLevel = Literal["UG", "PG", "PhD"]
+PublicationKind = Literal["JOURNAL", "CONFERENCE", "BOOK_CHAPTER", "BOOK", "OTHER"]
+PublicationStatus = Literal["PUBLISHED", "ACCEPTED", "UNDER_REVIEW", "SUBMITTED", "IN_PREPARATION"]
+EventKind = Literal["FDP", "STTP", "WORKSHOP", "SEMINAR", "WEBINAR", "CONFERENCE", "TRAINING", "COURSE", "OTHER"]
+EventRole = Literal["ATTENDED", "ORGANISED", "RESOURCE_PERSON", "PRESENTED", "OTHER"]
+
+
+class EducationEntry(BaseModel):
+    level: EducationLevel
+    degree: str | None = None  # as written: "Master of Engineering (M.E)"
+    course: str | None = None  # specialisation: "Computer Engineering"
+    college: str | None = None
+    university: str | None = None
+    marks_pct: float | None = None
+    cgpa: float | None = None
+    division: str | None = None  # "First Class with Distinction"
+    completion: str | None = None  # "YYYY", "YYYY-MM" or "YYYY-MM-DD"; null if not completed/stated
+    # Ph.D. only
+    thesis_title: str | None = None
+    guide: str | None = None
+    registration: str | None = None  # same shape as `completion`
+    found_in_resume: bool = True
+
+
+class PublicationEntry(BaseModel):
+    title: str
+    kind: PublicationKind = "OTHER"
+    venue: str | None = None  # journal / conference / publisher name
+    year: str | None = None
+    status: PublicationStatus = "PUBLISHED"
+    indexing: str | None = None  # "Scopus", "SCI", "UGC CARE", as the resume says
+    found_in_resume: bool = True
+
+
+class EventEntry(BaseModel):
+    kind: EventKind = "OTHER"
+    title: str
+    role: EventRole = "ATTENDED"
+    organiser: str | None = None
+    duration: str | None = None  # "5 days", "One week", as stated
+    year: str | None = None
+    found_in_resume: bool = True
+
+
+ExperienceKind = Literal["TEACHING", "INDUSTRY", "RESEARCH", "OTHER"]
+AchievementKind = Literal["PATENT", "AWARD", "FUNDED_PROJECT", "GRANT", "OTHER"]
+GuidanceLevel = Literal["PHD", "PG", "UG", "OTHER"]
+
+
+class ExperienceEntry(BaseModel):
+    designation: str | None = None
+    institution: str | None = None
+    kind: ExperienceKind = "OTHER"
+    start: str | None = None  # "YYYY", "YYYY-MM" or "YYYY-MM-DD"
+    end: str | None = None  # same shape, or "PRESENT"
+    duration: str | None = None  # as the resume states it: "3 years 2 months"
+    found_in_resume: bool = True
+
+
+class AchievementEntry(BaseModel):
+    kind: AchievementKind = "OTHER"
+    title: str
+    details: str | None = None  # funding agency, amount, patent number, awarding body
+    year: str | None = None
+    status: str | None = None  # "Granted", "Published", "Ongoing", "Completed", as stated
+    found_in_resume: bool = True
+
+
+class GuidanceEntry(BaseModel):
+    level: GuidanceLevel = "OTHER"
+    description: str  # as stated: "Guided 12 M.E. dissertations"
+    count: int | None = None
+    found_in_resume: bool = True
+
+
+DETAIL_FIELDS: tuple[str, ...] = (
+    "education", "publications", "events", "subjects_taught", "skills",
+    "experience", "achievements", "guidance", "memberships", "email", "phone",
+)
+
+
 class ExtractionResult(BaseModel):
     """The MVP subset of `extracted_data`.
 
@@ -131,6 +222,26 @@ class ExtractionResult(BaseModel):
     phd_award_date_precision: DatePrecision | None = None
     masters_award_date_precision: DatePrecision | None = None
     raw_llm_output: str = ""
+    # Which model actually produced this result, and whether it was the opt-in
+    # lighter fallback rather than the normal pool. Set by the provider, never
+    # by the model; the fallback flag routes the row to review.
+    model_used: str | None = None
+    lighter_model_fallback: bool = False
+    # Detail records (see above). Empty by default, so results stored before
+    # these existed still load.
+    education: list[EducationEntry] = Field(default_factory=list)
+    publications: list[PublicationEntry] = Field(default_factory=list)
+    events: list[EventEntry] = Field(default_factory=list)
+    subjects_taught: list[str] = Field(default_factory=list)
+    skills: list[str] = Field(default_factory=list)
+    experience: list[ExperienceEntry] = Field(default_factory=list)
+    achievements: list[AchievementEntry] = Field(default_factory=list)
+    guidance: list[GuidanceEntry] = Field(default_factory=list)
+    memberships: list[str] = Field(default_factory=list)
+    # Contact details. Personal data: exported to the workbook because the
+    # user asked for it, never written to logs.
+    email: str | None = None
+    phone: str | None = None
 
 
 # Ordered once here so the workbook, the confidence routing and the UI all
@@ -165,12 +276,25 @@ REQUIRED_FIELDS: frozenset[str] = frozenset(
 OPTIONAL_FIELDS: frozenset[str] = frozenset(FIELD_NAMES) - REQUIRED_FIELDS
 
 
+FailureKind = Literal["api_unavailable", "quota", "unreadable", "bad_config"]
+
+# Worth re-running later without changing anything. "unreadable" will fail the
+# same way every time, and "bad_config" needs a human to fix the key or model.
+RETRYABLE_FAILURE_KINDS: frozenset[str] = frozenset({"api_unavailable", "quota"})
+
+
 class ExtractionFailure(Exception):
     """The provider could not produce a usable ExtractionResult.
 
     Callers turn this into a row with a parse_error and needs_review = TRUE;
-    it must never drop an uploaded resume silently.
+    it must never drop an uploaded resume silently. `kind` says what to do
+    about it: wait and retry (api_unavailable, quota) or fix something first
+    (bad_config).
     """
+
+    def __init__(self, message: str = "", kind: FailureKind = "api_unavailable") -> None:
+        super().__init__(message)
+        self.kind: FailureKind = kind
 
 
 @runtime_checkable
@@ -200,12 +324,16 @@ class ResumeRecord(BaseModel):
     processed_at: datetime
     result: ExtractionResult | None = None
     parse_error: str | None = None
+    failure_kind: FailureKind | None = None
 
     @classmethod
-    def failed(cls, source_filename: str, parse_error: str) -> "ResumeRecord":
+    def failed(
+        cls, source_filename: str, parse_error: str, failure_kind: FailureKind | None = None
+    ) -> "ResumeRecord":
         return cls(
             source_filename=source_filename,
             processed_at=datetime.now(),
             result=None,
             parse_error=parse_error,
+            failure_kind=failure_kind,
         )
