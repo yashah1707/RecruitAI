@@ -1,0 +1,24 @@
+{% extends "base.html" %}
+{% block title %}Faculty openings · MIT-ADT University{% endblock %}
+{% block home %}/apply{% endblock %}
+{% block area %}Faculty openings{% endblock %}
+{% block content %}
+<h1>Faculty openings</h1>
+{% if openings %}
+<table>
+  <thead><tr><th>Post</th><th>School</th><th>Closes</th><th></th></tr></thead>
+  <tbody>
+    {% for o in openings %}
+    <tr>
+      <td>{{ DESIGNATIONS[o.designation] }}{% if o.title %}<br><span class="hint">{{ o.title }}</span>{% endif %}</td>
+      <td>{{ o.school.name }}{% if o.department %}<br><span class="hint">{{ o.department.name }}</span>{% endif %}</td>
+      <td class="nowrap">{{ o.closing_date|ddmmyyyy or "Open-ended" }}</td>
+      <td><a class="button" href="/apply/{{ o.opening_id }}">Apply</a></td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+{% else %}
+<p>There are no openings accepting applications at the moment.</p>
+{% endif %}
+{% endblock %}

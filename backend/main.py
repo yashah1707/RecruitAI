@@ -1,9 +1,8 @@
-"""The HTTP API.
+"""The application: the JSON API here, and the web pages in backend/web.py.
 
-Phase 1 exposes what is needed to prove the foundation end to end: create an
-application with its form fields and resume, run the Reader on it, and read
-back its record, state and audit trail. The screens and the public form are
-later phases.
+The JSON API creates an application with its form fields and resume, runs
+the Reader on it, and reads back its record, state and audit trail. The
+pages HR and applicants use are in backend/web.py.
 
 Run locally:  uvicorn backend.main:app --host 127.0.0.1 --port 8000
 """
@@ -15,6 +14,7 @@ from pathlib import Path
 from typing import Any
 
 from fastapi import Depends, FastAPI, File, Form, HTTPException, UploadFile
+from fastapi.staticfiles import StaticFiles
 from sqlalchemy import select, text
 from sqlalchemy.orm import Session
 
@@ -22,6 +22,7 @@ import config
 from app.result_cache import ResultCache
 from backend import states
 from backend.db import get_session
+from backend.deps import get_cache, get_provider  # noqa: F401  (re-exported for tests)
 from backend.models import (
     Application,
     Candidate,
@@ -38,7 +39,8 @@ from backend.models import (
 )
 from backend.reader_service import read_application
 from backend.storage import RejectedUpload, save_resume
-from llm.interface import ExtractionFailure, LLMProvider
+from backend.web import router as web_router
+from llm.interface import LLMProvider
 
 logger = logging.getLogger("recruitai.api")
 
@@ -48,30 +50,8 @@ RESUME_SOURCES = ("WEB_FORM", "EMAIL", "GOOGLE_FORM", "MANUAL_UPLOAD")
 
 app = FastAPI(title="RecruitAI", version="0.1.0")
 
-_provider: LLMProvider | None = None
-
-
-def get_provider() -> LLMProvider:
-    """The configured LLM provider, built on first use so the API starts
-    (and health checks pass) even when no key is set."""
-    global _provider
-    if _provider is None:
-        if config.LLM_PROVIDER == "fake":
-            from llm.providers.fake_provider import FakeProvider
-
-            _provider = FakeProvider()
-        else:
-            from llm.providers.gemini_provider import GeminiProvider
-
-            try:
-                _provider = GeminiProvider()
-            except ExtractionFailure as exc:
-                raise HTTPException(status_code=503, detail=f"LLM provider is not configured: {exc}") from exc
-    return _provider
-
-
-def get_cache() -> ResultCache:
-    return ResultCache()
+app.mount("/static", StaticFiles(directory=str(Path(__file__).resolve().parent / "static")), name="static")
+app.include_router(web_router)
 
 
 @app.get("/health")

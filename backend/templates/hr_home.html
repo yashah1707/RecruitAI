@@ -1,0 +1,80 @@
+{% extends "base.html" %}
+{% block title %}Openings · RecruitAI{% endblock %}
+{% block area %}HR{% endblock %}
+{% block nav %}<a href="/hr/openings/new">New opening</a> <a href="/apply">Applicant view</a>{% endblock %}
+{% block content %}
+<h1>Openings</h1>
+
+<section class="panel">
+  <h2>Reading queue</h2>
+  {% if reading %}
+  <p class="notice" role="status"><strong>Reading in progress.</strong> {{ due + queue.RUNNING }} application(s) still to go.
+    This page refreshes every few seconds.</p>
+  {% endif %}
+  <p>
+    <strong>{{ due }}</strong> application(s) waiting to be read now
+    {%- if queue.PENDING > due %}, {{ queue.PENDING - due }} scheduled for a later retry{% endif %}.
+  </p>
+  {% if last_run.get("summary") and not reading %}
+  <p class="hint">Last run, finished {{ last_run.finished }}: {{ last_run.summary }}</p>
+  {% endif %}
+  {% if due and not reading %}
+  <form method="post" action="/hr/queue/run" class="inline">
+    <input type="hidden" name="back" value="/">
+    <label>Read up to
+      <select name="limit"><option>1</option><option selected>5</option><option>12</option><option>25</option></select>
+      now
+    </label>
+    <button type="submit">Process queue</button>
+  </form>
+  <p class="hint">Each application read is one request to the language model. Nothing is read until you press this,
+    or run <code>python -m backend.worker</code>.</p>
+  {% endif %}
+</section>
+
+{% if attention or stuck %}
+<section class="panel warn">
+  <h2>Needs attention</h2>
+  <ul>
+    {% for a in attention %}
+    <li>
+      <a href="/hr/openings/{{ a.opening_id }}">{{ a.reference }}</a>:
+      {% if a.status == "FAILED" %}the resume could not be read. {{ (a.transitions[-1].note if a.transitions else "")|why_unreadable }}.
+      {% else %}the email on this resume already belongs to another candidate; check whether it is the same person.{% endif %}
+    </li>
+    {% endfor %}
+    {% for j in stuck %}
+    <li>Application {{ "APP-%06d"|format(j.application_id) }} could not be read after {{ j.attempts }} attempts ({{ j.note }}).</li>
+    {% endfor %}
+  </ul>
+</section>
+{% endif %}
+
+{% if openings %}
+<table>
+  <thead>
+    <tr><th>Reference</th><th>Post</th><th>School</th><th>Rules</th><th>Closes</th><th>Status</th>
+        <th class="num">Applications</th><th class="num">Read</th><th class="num">To check</th><th class="num">Unreadable</th></tr>
+  </thead>
+  <tbody>
+    {% for o in openings %}
+    {% set c = counts.get(o.opening_id, {}) %}
+    <tr>
+      <td class="nowrap"><a href="/hr/openings/{{ o.opening_id }}">{{ o.reference }}</a></td>
+      <td>{{ DESIGNATIONS[o.designation] }}{% if o.title %}<br><span class="hint">{{ o.title }}</span>{% endif %}</td>
+      <td>{{ o.school.name }}{% if o.department %}<br><span class="hint">{{ o.department.name }}</span>{% endif %}</td>
+      <td>{{ "UGC" if o.discipline_group == "GENERAL" else "AICTE" }}</td>
+      <td class="nowrap">{{ o.closing_date|ddmmyyyy or "Open-ended" }}</td>
+      <td>{{ "Accepting" if accepting[o.opening_id] else "Closed" }}</td>
+      <td class="num">{{ c.get("total", 0) }}</td>
+      <td class="num">{{ c.get("EXTRACTED", 0) }}</td>
+      <td class="num">{{ c.get("PENDING_REVIEW", 0) }}</td>
+      <td class="num">{{ c.get("FAILED", 0) }}</td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+{% else %}
+<p>No openings yet. <a href="/hr/openings/new">Create the first one</a>.</p>
+{% endif %}
+{% endblock %}

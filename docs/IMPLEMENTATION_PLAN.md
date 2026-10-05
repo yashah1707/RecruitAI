@@ -9,7 +9,7 @@ decision changes, this file is edited in the same commit and the change is
 noted in the [Change log](#change-log).
 
 - Last updated: 2026-10-06
-- Current phase: **Phase 3 — Intake** (not started)
+- Current phase: **Phase 4 — Reader aligned to the data model, and Gate 1** (not started)
 
 ## Status at a glance
 
@@ -18,7 +18,7 @@ noted in the [Change log](#change-log).
 | 0 | Reader stage: resume to checked, structured fields; Excel export | Done |
 | 1 | Foundation: FastAPI app, PostgreSQL schema, application states, audit trail | Done |
 | 2 | Statutory rules as data: UGC thresholds and score tables with clause and page | Built, UGC and AICTE; awaiting a human check of the transcription |
-| 3 | Intake: job openings, in-app application form, HR manual upload | Not started |
+| 3 | Intake: job openings, in-app application form, HR manual upload | Done |
 | 4 | Reader aligned to the data model; extraction review (Gate 1) | Not started |
 | 5 | Assessor and Decision: the deterministic rule engine | Not started |
 | 6 | HR dashboard: outcomes with reasons, approve or override (Gate 2) | Not started |
@@ -188,20 +188,65 @@ Beyond the document's schema: `relaxation_rules` and `score_rules` tables; `code
 `source_url` and `source_sha256` on `rule_versions`; `min_doctoral_guided` and `notes`
 on `rubric_rules`.
 
-## Phase 3 — Intake
+## Phase 3 — Intake (done)
 
 Goal: applications arrive tied to a specific opening, with the form fields the rules need.
 
-- [ ] Recruitment drives and job openings: create, list, close.
-- [ ] Public application form: school, department (dependent dropdown), designation,
-      category, differently-abled flag, state, study leave taken, resume upload.
-- [ ] HR manual upload against an opening (single and bulk).
-- [ ] Resume file storage; duplicate-applicant detection by email.
-- [ ] Unreadable files go to FAILED with an HR alert (§9.6).
-- [ ] Run the Reader in the background (job table and scheduler), and retry applications
-      sent back to RECEIVED because the model was unavailable.
+- [x] Openings: create, list, close, with an optional closing date. A recruitment drive
+      (advertisement) is created or reused from the advertisement reference.
+- [x] Each opening records the rule set HR chose for it (`discipline_group`): UGC, or an
+      AICTE discipline. The form suggests one from the school's regulator; HR confirms it.
+      This answers "which AICTE discipline does each school fall under" per opening.
+- [x] Departments are created the first time HR names one for a school, and reused after.
+- [x] Public application form: name, email, phone, state, category, differently-abled,
+      study leave, resume, declaration. School, department and designation come from
+      the opening. Errors are shown per field and the answers are kept.
+- [x] HR upload of one or many resumes against an opening; a file that cannot be accepted
+      is reported and the rest still go in.
+- [x] Duplicates: the same email cannot apply twice to one opening; the same person
+      applying to two openings is one candidate; the same file uploaded twice to one
+      opening is refused; an uploaded resume whose email matches an existing candidate
+      is flagged for a person and never merged automatically.
+- [x] Reading queue (`jobs` table): an application is queued on arrival. It is read when HR
+      presses "Process queue" or `python -m backend.worker` runs. When the model is
+      unavailable the job is retried later (2, 4, 8 ... minutes; one hour for a spent
+      quota) and stops after 8 attempts.
+- [x] "Process queue" reads in the background: the button answers at once, the page shows
+      "Reading in progress" and refreshes itself, and a second press cannot start a second
+      run. A job interrupted by a server stop is put back in the queue after 20 minutes.
+- [x] Unreadable files go to FAILED and appear under "Needs attention" on the HR home page.
+- [x] Form answers outrank what the Reader extracts for name, email, phone and state.
+- [x] Web pages: HR home, new opening, opening detail, applicant list, application form,
+      confirmation. Dates in DD-MM-YYYY, times in local time.
 
-Done when: a candidate can apply to an opening and HR can see the application in RECEIVED state.
+Verified: 47 intake tests on SQLite and PostgreSQL (653 tests in total). The pages were run
+against PostgreSQL with the fake provider and made-up files: an opening created, an
+application submitted, a repeat submission refused, three files uploaded, the queue
+processed. The HR home, new-opening and opening-detail pages and the applicant form (at a
+narrow width) were checked by screenshot. Page responses measured 5 to 80 ms; an upload of
+three files, one of 40 pages, took 78 ms. With a provider slowed to 3 seconds per resume,
+"Process queue" answered in 5 ms and the other pages stayed under 80 ms while four resumes
+were read behind it.
+
+Different from the plan as first written:
+
+- **Nothing reads resumes automatically.** The queue runs only when a person starts it.
+  That keeps model requests, and the free-tier quota, under the user's control. A
+  deployment with a paid key would run `python -m backend.worker --loop` as a service.
+- **No HTMX yet.** The pages are plain server-rendered forms and needed no JavaScript.
+  HTMX stays the choice for the first screen that needs partial updates (Gate 1, Phase 4).
+- **The "HR alert" is the Needs attention panel**, not an email or a notification.
+- Applications record what the applicant typed (`applicant_name`, `applicant_email`,
+  `applicant_phone`, `applicant_state`) separately from what the Reader extracts.
+
+Not done, and where it belongs:
+
+- No login: the HR pages are open to anyone who can reach the server (Phase 9). Keep it
+  bound to 127.0.0.1.
+- No CSRF protection or rate limiting on the public form (Phase 9, with sessions).
+- HR cannot yet enter category, state or study leave for an uploaded resume, resolve a
+  possible duplicate, or re-queue a failed job from the screen (Phase 4, Gate 1).
+- An applicant cannot look up the status of an application.
 
 ## Phase 4 — Reader aligned to the data model, and Gate 1
 
@@ -212,6 +257,8 @@ Done when: a candidate can apply to an opening and HR can see the application in
 - [ ] Gate 1 screen: PENDING_REVIEW applications show only the flagged fields for a
       person to complete or correct; edits are audited.
 - [ ] Stop flagging NET/SET "low confidence" when the resume has no NET/SET mention.
+- [ ] HR can enter category, state and study leave for an uploaded resume; resolve a possible
+      duplicate (same person or not); re-queue a job that stopped retrying.
 - [ ] Decide on OCR for scanned resumes.
 
 Done when: an application moves RECEIVED to EXTRACTED, or to PENDING_REVIEW and back
@@ -300,7 +347,7 @@ Development uses made-up resumes only.
 | Which later AICTE clarifications apply; they have not been read | Phase 5 |
 | Does any relaxation or short-listing score apply to AICTE-governed posts? The Regulation has neither | Phase 5 |
 | How to read a CGPA between or above the five points AICTE cl. 7.3 lists | Phase 5 |
-| Which AICTE discipline group each school and department falls under | Phase 3 (form) and Phase 5 |
+| Should resumes be read automatically on arrival once a paid key is in use? | Before go-live |
 | Table 2: do impact-factor points add to or replace the 8/10 per paper? | Phase 5 (Research Score) |
 | Table 3A: does an M.Tech/M.E. score as Post-Graduation, under S.No. 3, or both? | Phase 5 (short-listing score) |
 | How is a CGPA placed in the percentage bands of Table 3A? | Phase 5 |
@@ -313,7 +360,8 @@ Development uses made-up resumes only.
 | A UGC table is transcribed wrongly | Source-cited rows; figures cross-checked against the gazette text; tests typed independently of the data; mentor checks the transcription sheet |
 | Technical posts assessed on UGC cl. 4.1 instead of AICTE norms | AICTE rules are loaded per discipline group; the engine selects the rule set from the school, and the reading is put to the mentor for confirmation |
 | The 2025 draft Regulations are notified mid-project | Rules are versioned data; a new instrument is new rows |
-| Free-tier quota blocks testing | Result cache; made-up resumes; paid key before real use |
+| Free-tier quota blocks testing | Result cache; made-up resumes; the queue runs only when started; paid key before real use |
+| The public form has no login, CSRF protection or rate limit | Phase 9; until then the server stays on 127.0.0.1 |
 | Research Score needs evidence resumes lack | Labelled as claimed; verified at document check |
 | Older commits on GitHub still contain tests naming real candidates (removed from current code in Phase 1) | Rewrite history only if the user asks |
 | SQLite and PostgreSQL behave differently in places | Run the backend tests with `TEST_DATABASE_URL` set before each commit that touches the schema |
@@ -327,3 +375,4 @@ Development uses made-up resumes only.
 | 2026-10-05 | PostgreSQL 16 installed natively (not Docker). Phase 1 verified on it and closed; a missing foreign key in the migration was found and fixed. |
 | 2026-10-05 | Phase 2 built from the gazette PDFs. Added `relaxation_rules` and `score_rules` tables. Finding: UGC cl. 4 has no engineering section, so AICTE norms govern the technical schools and must be transcribed before Phase 5 can assess them. Five open questions added. |
 | 2026-10-06 | AICTE (Degree) Regulation, 2019 loaded after the user supplied the HR portal's files. `rubric_rules` gained `discipline_group` and `criteria`. Mentor review document added. Differences between the State G.R. and the UGC gazette recorded. Phase 5 must now choose between two rule sets by school, and the home-made ranking's replacement (Table 3A) applies to UGC-governed posts only. |
+| 2026-10-06 | Phase 3 built. The rule set is chosen by HR per opening. Reading is queued and started by a person, not automatic. HTMX deferred to Phase 4. Gate 1 (Phase 4) gains: entering form answers for HR uploads, resolving possible duplicates, re-queuing failed jobs. Reading moved off the request into the background after the first version made the page wait for every resume. |

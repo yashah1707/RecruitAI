@@ -1,0 +1,77 @@
+{% extends "base.html" %}
+{% block title %}Apply: {{ DESIGNATIONS[o.designation] }} · MIT-ADT University{% endblock %}
+{% block home %}/apply{% endblock %}
+{% block area %}Faculty openings{% endblock %}
+{% block nav %}<a href="/apply">All openings</a>{% endblock %}
+{% macro err(name) %}{% if f.errors.get(name) %}<span class="error">{{ f.errors[name] }}</span>{% endif %}{% endmacro %}
+{% block content %}
+<h1>Apply: {{ DESIGNATIONS[o.designation] }}</h1>
+<dl class="facts">
+  <dt>School</dt><dd>{{ o.school.name }}</dd>
+  {% if o.department %}<dt>Department</dt><dd>{{ o.department.name }}</dd>{% endif %}
+  {% if o.title %}<dt>Post</dt><dd>{{ o.title }}</dd>{% endif %}
+  <dt>Reference</dt><dd>{{ o.reference }}</dd>
+  <dt>Closing date</dt><dd>{{ o.closing_date|ddmmyyyy or "Open-ended" }}</dd>
+</dl>
+
+{% if not accepting %}
+<p class="notice">This opening is no longer accepting applications.</p>
+{% else %}
+{% if f.errors %}<p class="error" role="alert">Please correct the highlighted fields. Nothing has been submitted yet.</p>{% endif %}
+{{ err("opening") }}
+<form method="post" action="/apply/{{ o.opening_id }}" enctype="multipart/form-data" class="stack" novalidate>
+  <label>Full name
+    <input name="full_name" value="{{ f.full_name }}" maxlength="200" autocomplete="name" required>
+    {{ err("full_name") }}
+  </label>
+  <label>Email address
+    <input type="email" name="email" value="{{ f.email }}" maxlength="254" autocomplete="email" required>
+    {{ err("email") }}
+  </label>
+  <label>Phone number
+    <input name="phone" value="{{ f.phone }}" maxlength="40" autocomplete="tel" required>
+    {{ err("phone") }}
+  </label>
+  <label>State you live in
+    <select name="state" required>
+      <option value="">Choose a state</option>
+      {% for s in states %}<option {{ "selected" if f.state == s }}>{{ s }}</option>{% endfor %}
+    </select>
+    {{ err("state") }}
+  </label>
+  <label>Category
+    <select name="category" required>
+      <option value="">Choose a category</option>
+      {% for c in categories %}<option {{ "selected" if f.category == c }}>{{ c }}</option>{% endfor %}
+    </select>
+    {{ err("category") }}
+    <span class="hint">Used only to apply the relaxation in marks that the regulations allow.</span>
+  </label>
+  <fieldset>
+    <legend>Are you a person with a disability (differently-abled)?</legend>
+    <label class="choice"><input type="radio" name="differently_abled" value="yes" {{ "checked" if f.differently_abled == "yes" }}> Yes</label>
+    <label class="choice"><input type="radio" name="differently_abled" value="no" {{ "checked" if f.differently_abled == "no" }}> No</label>
+    {{ err("differently_abled") }}
+  </fieldset>
+  <fieldset>
+    <legend>Did you take study leave while doing an M.Phil. or Ph.D.?</legend>
+    <label class="choice"><input type="radio" name="study_leave_taken" value="yes" {{ "checked" if f.study_leave_taken == "yes" }}> Yes, I took study leave</label>
+    <label class="choice"><input type="radio" name="study_leave_taken" value="no" {{ "checked" if f.study_leave_taken == "no" }}> No, I continued teaching without leave</label>
+    <label class="choice"><input type="radio" name="study_leave_taken" value="na" {{ "checked" if f.study_leave_taken == "na" }}> Not applicable, I have not done an M.Phil. or Ph.D.</label>
+    {{ err("study_leave_taken") }}
+    <span class="hint">This affects how your teaching experience is counted, so it is asked here and not read from your resume.</span>
+  </fieldset>
+  <label>Resume (PDF or DOCX, up to 15 MB)
+    <input type="file" name="resume" accept=".pdf,.docx" required>
+    {{ err("resume") }}
+    <span class="hint">A scanned or photographed resume cannot be read. Please upload one exported from a word processor.</span>
+  </label>
+  <label class="choice">
+    <input type="checkbox" name="declaration" value="yes" {{ "checked" if f.declaration }}>
+    I confirm that the information given here and in my resume is true.
+  </label>
+  {{ err("declaration") }}
+  <button type="submit">Submit application</button>
+</form>
+{% endif %}
+{% endblock %}

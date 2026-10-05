@@ -112,7 +112,22 @@ generated from that file for a person to check against the gazette; regenerate
 them with `python -m backend.rules_seed --write-transcription` and
 `python tools/make_mentor_review_docx.py` after any correction.
 
-Interactive API documentation is then at http://127.0.0.1:8000/docs.
+Then open http://127.0.0.1:8000/ for the HR pages (openings, uploads, the reading
+queue) and http://127.0.0.1:8000/apply for the applicant view. There is no login
+yet, so keep the server on 127.0.0.1.
+
+Applications are queued for reading and nothing is read until you press
+"Process queue" on the HR page or run the worker:
+
+```
+python -m backend.worker           process what is waiting, then exit
+python -m backend.worker --loop    keep processing
+```
+
+Each application read is one request to the language model. Set
+`LLM_PROVIDER=fake` to try the pages without using any.
+
+Interactive API documentation is at http://127.0.0.1:8000/docs.
 `STORAGE_DIR` sets where uploaded resumes are kept (default `storage/resumes`,
 gitignored).
 

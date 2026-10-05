@@ -1,0 +1,76 @@
+{% extends "base.html" %}
+{% block title %}{{ o.reference }} · RecruitAI{% endblock %}
+{% block area %}HR{% endblock %}
+{% block nav %}<a href="/">Openings</a> <a href="/apply/{{ o.opening_id }}">Application form</a>{% endblock %}
+{% block content %}
+<h1>{{ o.reference }}: {{ DESIGNATIONS[o.designation] }}</h1>
+<dl class="facts">
+  <dt>School</dt><dd>{{ o.school.name }}</dd>
+  {% if o.department %}<dt>Department</dt><dd>{{ o.department.name }}</dd>{% endif %}
+  {% if o.title %}<dt>Title</dt><dd>{{ o.title }}</dd>{% endif %}
+  <dt>Rules that apply</dt><dd>{{ DISCIPLINE_GROUPS[o.discipline_group] }}</dd>
+  {% if o.drive %}<dt>Advertisement</dt><dd>{{ o.drive.advertisement_ref }}, published {{ o.drive.advertisement_date|ddmmyyyy }}</dd>{% endif %}
+  <dt>Closing date</dt><dd>{{ o.closing_date|ddmmyyyy or "Open-ended" }}</dd>
+  <dt>Status</dt><dd>{{ "Accepting applications" if accepting else "Closed" }}</dd>
+  <dt>Link for applicants</dt><dd><code>/apply/{{ o.opening_id }}</code></dd>
+</dl>
+
+{% if o.status == "OPEN" %}
+<form method="post" action="/hr/openings/{{ o.opening_id }}/close" class="inline">
+  <button type="submit" class="quiet">Close this opening</button>
+</form>
+{% endif %}
+
+<section class="panel">
+  <h2>Add resumes you already hold</h2>
+  <form method="post" action="/hr/openings/{{ o.opening_id }}/upload" enctype="multipart/form-data" class="inline">
+    <label>PDF or DOCX files <input type="file" name="resumes" accept=".pdf,.docx" multiple required></label>
+    <button type="submit">Upload</button>
+  </form>
+  <p class="hint">Uploaded resumes have no form answers: category, state and study leave stay empty until someone enters them.</p>
+  {% if outcomes %}
+  <ul>
+    {% for u in outcomes %}
+    <li>{{ u.filename }}:
+      {% if u.application %}added as {{ u.application.reference }}{% else %}<span class="error">not added, {{ u.problem }}</span>{% endif %}
+    </li>
+    {% endfor %}
+  </ul>
+  {% endif %}
+</section>
+
+<h2>Applications ({{ rows|length }})</h2>
+{% if reading %}
+<p class="notice" role="status"><strong>Reading in progress.</strong> This page refreshes every few seconds.</p>
+{% elif due %}
+<form method="post" action="/hr/queue/run" class="inline">
+  <input type="hidden" name="back" value="/hr/openings/{{ o.opening_id }}">
+  <input type="hidden" name="limit" value="12">
+  <button type="submit">Read waiting applications (up to 12)</button>
+  <span class="hint">{{ due }} waiting across all openings. Each is one request to the language model.</span>
+</form>
+{% endif %}
+{% if rows %}
+<table>
+  <thead><tr><th>Reference</th><th>Name</th><th>Received</th><th>Source</th><th>Category</th><th>Status</th></tr></thead>
+  <tbody>
+    {% for r in rows %}
+    <tr>
+      <td class="nowrap">{{ r.a.reference }}</td>
+      <td>{{ r.name or "Not yet known" }}</td>
+      <td class="nowrap">{{ r.a.created_at|ddmmyyyy }}</td>
+      <td>{{ {"WEB_FORM": "Application form", "MANUAL_UPLOAD": "HR upload", "EMAIL": "Email", "GOOGLE_FORM": "Google Form"}.get(r.a.resume_source, r.a.resume_source) }}</td>
+      <td>{{ r.a.category or "Not given" }}</td>
+      <td>
+        {{ STATE_LABELS.get(r.a.status, r.a.status) }}
+        {% if r.failed_note %}<br><span class="error">{{ r.failed_note|why_unreadable }}</span>{% endif %}
+        {% if r.a.possible_duplicate_candidate_id %}<br><span class="error">Possible duplicate of an existing candidate</span>{% endif %}
+      </td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+{% else %}
+<p>No applications yet.</p>
+{% endif %}
+{% endblock %}

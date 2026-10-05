@@ -1,0 +1,17 @@
+{% extends "base.html" %}
+{% block title %}Application received · MIT-ADT University{% endblock %}
+{% block home %}/apply{% endblock %}
+{% block area %}Faculty openings{% endblock %}
+{% block nav %}<a href="/apply">All openings</a>{% endblock %}
+{% block content %}
+<h1>Application received</h1>
+<p class="notice">Your application reference is <strong>{{ a.reference }}</strong>. Please keep it.</p>
+<dl class="facts">
+  <dt>Post</dt><dd>{{ DESIGNATIONS[o.designation] }}{% if o.title %}, {{ o.title }}{% endif %}</dd>
+  <dt>School</dt><dd>{{ o.school.name }}</dd>
+  <dt>Opening</dt><dd>{{ o.reference }}</dd>
+  <dt>Received</dt><dd>{{ a.created_at|ddmmyyyy }}</dd>
+</dl>
+<p>Your application will be checked against the minimum qualifications and reviewed by the university.
+  Selection is made by the Selection Committee at interview.</p>
+{% endblock %}

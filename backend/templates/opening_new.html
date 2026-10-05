@@ -1,0 +1,70 @@
+{% extends "base.html" %}
+{% block title %}New opening · RecruitAI{% endblock %}
+{% block area %}HR{% endblock %}
+{% block nav %}<a href="/">Openings</a>{% endblock %}
+{% macro err(name) %}{% if errors.get(name) %}<span class="error">{{ errors[name] }}</span>{% endif %}{% endmacro %}
+{% block content %}
+<h1>New opening</h1>
+<form method="post" action="/hr/openings" class="stack">
+  <label>School
+    <select name="school_id" required>
+      <option value="">Choose a school</option>
+      {% for s in schools %}
+      <option value="{{ s.school_id }}" {{ "selected" if v.get("school_id") == s.school_id }}>
+        {{ s.name }} ({{ "AICTE" if suggested[s.school_id] != "GENERAL" else s.regulator_id }})
+      </option>
+      {% endfor %}
+    </select>
+    {{ err("school_id") }}
+  </label>
+
+  <label>Department <span class="hint">(optional; leave empty if the school has none)</span>
+    <input name="department_name" value="{{ v.get('department_name', '') }}" maxlength="200">
+  </label>
+
+  <label>Designation
+    <select name="designation" required>
+      <option value="">Choose a designation</option>
+      {% for code, text in DESIGNATIONS.items() %}
+      <option value="{{ code }}" {{ "selected" if v.get("designation") == code }}>{{ text }}</option>
+      {% endfor %}
+    </select>
+    {{ err("designation") }}
+  </label>
+
+  <label>Rules that apply to this post
+    <select name="discipline_group" required>
+      <option value="">Choose the rule set</option>
+      {% for code, text in DISCIPLINE_GROUPS.items() %}
+      <option value="{{ code }}" {{ "selected" if v.get("discipline_group") == code }}>{{ text }}</option>
+      {% endfor %}
+    </select>
+    {{ err("discipline_group") }}
+    <span class="hint">This decides which regulation applicants are judged under. For a post in a technical
+      school (the label after the school name says AICTE) choose the matching AICTE discipline; otherwise choose UGC.
+      It is your decision and is never guessed from a resume.</span>
+  </label>
+
+  <label>Title <span class="hint">(optional, shown to applicants, e.g. "Assistant Professor, Data Science")</span>
+    <input name="title" value="{{ v.get('title', '') }}" maxlength="200">
+  </label>
+
+  <label>Closing date <span class="hint">(optional)</span>
+    <input type="date" name="closing_date" value="{{ v.get('closing_date', '') }}">
+    {{ err("closing_date") }}
+  </label>
+
+  <fieldset>
+    <legend>Advertisement <span class="hint">(optional)</span></legend>
+    <label>Reference number
+      <input name="advertisement_ref" value="{{ v.get('advertisement_ref', '') }}" maxlength="80">
+    </label>
+    <label>Date published
+      <input type="date" name="advertisement_date" value="{{ v.get('advertisement_date', '') }}">
+      {{ err("advertisement_date") }}
+    </label>
+  </fieldset>
+
+  <button type="submit">Create opening</button>
+</form>
+{% endblock %}

@@ -162,22 +162,31 @@ def store_extraction(
     )
 
     personal = session.get(CandidatePersonalDetails, cand_id) or CandidatePersonalDetails(candidate_id=cand_id)
-    personal.full_name = _cut(format_person_name(result.candidate_name.value), 200)
-    personal.contact_email = _cut((result.email or "").lower() or None, 254)
-    personal.contact_phone = _cut(result.phone, 40)
+    extracted_email = (result.email or "").strip().lower() or None
+    # What the applicant typed on the form outranks what was read off the
+    # resume: they were asked directly. The resume fills what the form left
+    # empty, which for an HR upload is everything.
+    personal.full_name = _cut(application.applicant_name or format_person_name(result.candidate_name.value), 200)
+    personal.contact_email = _cut(application.applicant_email or extracted_email, 254)
+    personal.contact_phone = _cut(application.applicant_phone or result.phone, 40)
+    personal.state = application.applicant_state or personal.state
     # Category and disability status are form inputs; copy them, never infer them.
     personal.category = application.category
     personal.differently_abled_flag = application.differently_abled
     session.add(personal)
 
-    # A manual upload starts with no email on record. Adopt the one read from
-    # the resume unless another candidate already holds it -- that is a
-    # possible duplicate applicant, which Phase 3 resolves with a person.
+    # Is this someone we already hold? The email on the resume is the test.
+    # An HR upload starts with no email: adopt the resume's, unless another
+    # candidate already has it. A match is only ever flagged for a person to
+    # decide -- two people can share an address, and nothing is merged here.
     candidate = application.candidate
-    if personal.contact_email and candidate.email is None:
-        holder = session.scalar(select(Candidate).where(Candidate.email == personal.contact_email))
-        if holder is None:
-            candidate.email = personal.contact_email
+    application.possible_duplicate_candidate_id = None
+    if extracted_email:
+        holder = session.scalar(select(Candidate).where(Candidate.email == extracted_email))
+        if holder is not None and holder.candidate_id != candidate.candidate_id:
+            application.possible_duplicate_candidate_id = holder.candidate_id
+        elif holder is None and candidate.email is None:
+            candidate.email = extracted_email
 
     highest_level = max((_LEVEL_ORDER.get(e.level, -1) for e in result.education), default=-1)
     qualifications = []

@@ -50,6 +50,14 @@ def get_engine() -> Engine:
     return _engine
 
 
+def get_session_factory() -> sessionmaker[Session]:
+    """FastAPI dependency for work that outlives the request (the reading
+    queue): it opens its own sessions instead of borrowing the request's."""
+    get_engine()
+    assert _SessionLocal is not None
+    return _SessionLocal
+
+
 def get_session() -> Iterator[Session]:
     """FastAPI dependency: one session per request, rolled back on error."""
     get_engine()

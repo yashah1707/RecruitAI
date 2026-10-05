@@ -111,8 +111,23 @@ class JobOpening(Base):
     department_id: Mapped[int | None] = mapped_column(ForeignKey("departments.department_id"))
     designation: Mapped[str] = mapped_column(String(40))
     title: Mapped[str | None] = mapped_column(String(200))
+    # Which rule set applies: "GENERAL" (UGC cl. 4.1) or an AICTE discipline
+    # group. Chosen by HR when the opening is created, never inferred from a
+    # resume: it decides which regulation the candidate is judged under.
+    discipline_group: Mapped[str] = mapped_column(String(40), default="GENERAL", server_default="GENERAL")
+    closing_date: Mapped[date | None] = mapped_column(Date)
     status: Mapped[str] = mapped_column(String(20), default="OPEN")
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
+    closed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+    school: Mapped[School] = relationship()
+    department: Mapped[Department | None] = relationship()
+    drive: Mapped[RecruitmentDrive | None] = relationship()
+
+    @property
+    def reference(self) -> str:
+        """The code a candidate or an email quotes to name this opening."""
+        return f"OPN-{self.opening_id:05d}"
 
 
 # --- candidates and applications --------------------------------------------
@@ -129,7 +144,9 @@ class Candidate(Base):
     email: Mapped[str | None] = mapped_column(String(254), unique=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
 
-    applications: Mapped[list["Application"]] = relationship(back_populates="candidate")
+    applications: Mapped[list["Application"]] = relationship(
+        back_populates="candidate", foreign_keys="Application.candidate_id"
+    )
 
 
 class Application(Base):
@@ -150,6 +167,19 @@ class Application(Base):
     category: Mapped[str | None] = mapped_column(String(20))  # drives the cl. 3.4 relaxation
     differently_abled: Mapped[bool | None] = mapped_column(Boolean)
     study_leave_taken: Mapped[bool | None] = mapped_column(Boolean)  # asked on the form (Section 9.5)
+    # What the applicant typed on the form. Kept separately from what the
+    # Reader later extracts, so the two can be compared and neither overwrites
+    # the other. Empty for an HR upload, where there was no form.
+    applicant_name: Mapped[str | None] = mapped_column(String(200))
+    applicant_email: Mapped[str | None] = mapped_column(String(254), index=True)
+    applicant_phone: Mapped[str | None] = mapped_column(String(40))
+    applicant_state: Mapped[str | None] = mapped_column(String(60))
+    # Set when the email read from the resume already belongs to another
+    # candidate. A person decides whether they are the same; nothing is merged
+    # automatically.
+    possible_duplicate_candidate_id: Mapped[int | None] = mapped_column(
+        ForeignKey("candidates.candidate_id", name="fk_applications_possible_duplicate")
+    )
     status: Mapped[str] = mapped_column(String(30), default="RECEIVED", index=True)
     resume_source: Mapped[str] = mapped_column(String(20), default="MANUAL_UPLOAD")
     resume_filename: Mapped[str] = mapped_column(String(255))
@@ -157,12 +187,38 @@ class Application(Base):
     resume_sha256: Mapped[str] = mapped_column(String(64), index=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
 
-    candidate: Mapped[Candidate] = relationship(back_populates="applications")
+    candidate: Mapped[Candidate] = relationship(back_populates="applications", foreign_keys=[candidate_id])
+    opening: Mapped["JobOpening | None"] = relationship()
     school: Mapped[School] = relationship()
+    @property
+    def reference(self) -> str:
+        """The number shown to the applicant on the confirmation page."""
+        return f"APP-{self.application_id:06d}"
+
     transitions: Mapped[list["StateTransition"]] = relationship(
         back_populates="application", order_by="StateTransition.transition_id"
     )
     extracted: Mapped["ExtractedData | None"] = relationship(back_populates="application", uselist=False)
+
+
+class Job(Base):
+    """Background work waiting to be done. One kind so far: read an application.
+
+    A table, not a message broker: the queue survives a restart, can be
+    inspected with a query, and needs nothing installed beyond the database.
+    """
+
+    __tablename__ = "jobs"
+
+    job_id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    kind: Mapped[str] = mapped_column(String(30))
+    application_id: Mapped[int] = mapped_column(ForeignKey("applications.application_id"), index=True)
+    status: Mapped[str] = mapped_column(String(10), default="PENDING", index=True)  # PENDING / RUNNING / DONE / FAILED
+    attempts: Mapped[int] = mapped_column(Integer, default=0)
+    run_after: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
+    note: Mapped[str | None] = mapped_column(String(300))  # reason codes only, never personal data
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
+    finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
 
 class StateTransition(Base):

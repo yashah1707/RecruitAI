@@ -1,0 +1,25 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{% block title %}RecruitAI{% endblock %}</title>
+  {% if reading %}<meta http-equiv="refresh" content="5">{% endif %}
+  <link rel="stylesheet" href="/static/app.css">
+</head>
+<body>
+  <header class="top">
+    <a class="brand" href="{% block home %}/{% endblock %}">RecruitAI</a>
+    <span class="sub">{% block area %}Faculty recruitment{% endblock %}</span>
+    <nav>{% block nav %}{% endblock %}</nav>
+  </header>
+  <main>
+    {% if msg %}<p class="notice" role="status">{{ msg }}</p>{% endif %}
+    {% block content %}{% endblock %}
+  </main>
+  <footer>
+    A short-listing aid. Selection is made by the Selection Committee at interview
+    (UGC Regulations, 2018, clause 4.1 Note).
+  </footer>
+</body>
+</html>

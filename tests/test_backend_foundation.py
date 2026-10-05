@@ -18,7 +18,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session, sessionmaker
 
 from backend import states
-from backend.db import Base, get_session, make_engine
+from backend.db import Base, get_session, get_session_factory, make_engine
 from backend.main import app, get_cache, get_provider
 from backend.models import (
     Application,
@@ -341,6 +341,7 @@ def client(engine, tmp_path, monkeypatch):
 
     provider = FakeProvider(script=[_clean_result()])
     app.dependency_overrides[get_session] = _session
+    app.dependency_overrides[get_session_factory] = lambda: factory
     app.dependency_overrides[get_provider] = lambda: provider
     app.dependency_overrides[get_cache] = lambda: None
     yield TestClient(app)
