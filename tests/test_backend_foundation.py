@@ -476,3 +476,26 @@ def test_an_over_long_or_path_like_filename_is_stored_safely(client, engine):
     with Session(engine) as s:
         stored = s.scalars(select(Application)).one().resume_filename
     assert len(stored) <= 255 and stored.endswith(".docx") and "Users" not in stored
+
+
+# --- rules API ---------------------------------------------------------------
+
+
+def test_rules_endpoints_serve_thresholds_and_score_tables_with_citations(client, engine):
+    from backend.rules_seed import seed_rules
+
+    with Session(engine) as s:
+        seed_rules(s)
+        s.commit()
+    rules = client.get("/rules").json()
+    ap = next(t for t in rules["thresholds"] if t["designation"] == "ASSISTANT_PROFESSOR" and t["discipline_group"] == "GENERAL")
+    assert ap["net_set_required"] is True and ap["requires_phd"] is False and ap["rule_version"] == "UGC-2018-AMD2-2023"
+    eng = next(t for t in rules["thresholds"] if t["discipline_group"] == "ENGINEERING_TECHNOLOGY")
+    assert eng["net_set_required"] is False and eng["criteria"]["first_class"] == "ANY_ONE_DEGREE"
+    assert eng["rule_version"] == "AICTE-DEGREE-2019"
+    assert len(rules["instruments"]) == 6 and len(rules["relaxations"]) == 2
+
+    table = client.get("/rules/score-tables/table_3a").json()
+    assert next(r for r in table if r["row_code"] == "PHD")["points"] == 30
+    assert all(r["authority_page"] for r in table)
+    assert client.get("/rules/score-tables/TABLE_9").status_code == 404

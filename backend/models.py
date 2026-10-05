@@ -411,35 +411,101 @@ class RuleVersion(Base):
     """One notified instrument. A new notification is a new row, not a rewrite."""
 
     __tablename__ = "rule_versions"
+    __table_args__ = (UniqueConstraint("code", name="uq_rule_versions_code"),)
 
     rule_version_id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    code: Mapped[str] = mapped_column(String(40))  # "UGC-2018-AMD2-2023"
     regulator_id: Mapped[str] = mapped_column(ForeignKey("regulators.regulator_id"))
-    instrument_name: Mapped[str] = mapped_column(String(300))
+    instrument_name: Mapped[str] = mapped_column(String(500))
     notification_no: Mapped[str | None] = mapped_column(String(120))
     gazette_ref: Mapped[str | None] = mapped_column(String(200))
     notified_date: Mapped[date | None] = mapped_column(Date)
     effective_from: Mapped[date | None] = mapped_column(Date)
     superseded_on: Mapped[date | None] = mapped_column(Date)
     note: Mapped[str | None] = mapped_column(String(300))
+    # Where the text was read from, and the hash of that exact file, so a
+    # transcription can be checked against the same document later.
+    source_url: Mapped[str | None] = mapped_column(String(300))
+    source_sha256: Mapped[str | None] = mapped_column(String(64))
 
 
 class RubricRule(Base):
     """Versioned thresholds for one designation, each carrying its own citation."""
 
     __tablename__ = "rubric_rules"
-    __table_args__ = (UniqueConstraint("rule_version_id", "designation"),)
+    __table_args__ = (
+        UniqueConstraint("rule_version_id", "designation", "discipline_group", name="uq_rubric_rules_version_designation_group"),
+    )
 
     rubric_rule_id: Mapped[int] = mapped_column(Integer, primary_key=True)
     rule_version_id: Mapped[int] = mapped_column(ForeignKey("rule_versions.rule_version_id"))
     designation: Mapped[str] = mapped_column(String(40))
+    # UGC cl. 4.1 is one rule for a list of disciplines ("GENERAL"). AICTE sets
+    # a different rule per discipline: ENGINEERING_TECHNOLOGY, MANAGEMENT, MCA...
+    discipline_group: Mapped[str] = mapped_column(String(40), default="GENERAL")
     min_years: Mapped[float | None] = mapped_column(Float)
     min_publications: Mapped[int | None] = mapped_column(Integer)
     requires_phd: Mapped[bool] = mapped_column(Boolean, default=False)
     min_marks_pct: Mapped[float | None] = mapped_column(Float)
     research_score_threshold: Mapped[float | None] = mapped_column(Float)
     net_set_required: Mapped[bool] = mapped_column(Boolean, default=False)
-    authority_clause: Mapped[str] = mapped_column(String(120))
+    # Professor: evidence of one doctoral candidate guided; Senior Professor: two.
+    min_doctoral_guided: Mapped[int | None] = mapped_column(Integer)
+    authority_clause: Mapped[str] = mapped_column(String(160))
+    authority_page: Mapped[str] = mapped_column(String(60))
+    # Requirements that do not fit the common columns: which degree must be
+    # First Class, years after the Ph.D., alternative routes. Structured so
+    # the engine can read them; the gazette wording is in `notes`.
+    criteria: Mapped[dict | None] = mapped_column(JSON)
+    notes: Mapped[str | None] = mapped_column(Text)
+
+
+class RelaxationRule(Base):
+    """A relaxation of the marks threshold (cl. 3.4, cl. 3.5), as data."""
+
+    __tablename__ = "relaxation_rules"
+    __table_args__ = (UniqueConstraint("rule_version_id", "code"),)
+
+    relaxation_rule_id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    rule_version_id: Mapped[int] = mapped_column(ForeignKey("rule_versions.rule_version_id"))
+    code: Mapped[str] = mapped_column(String(40))
+    relaxation_pct: Mapped[float] = mapped_column(Float)
+    applies_to_levels: Mapped[list] = mapped_column(JSON)  # ["UG", "PG"]
+    applies_to_categories: Mapped[list | None] = mapped_column(JSON)  # None = not category-based
+    condition: Mapped[dict | None] = mapped_column(JSON)
+    description: Mapped[str] = mapped_column(Text)
+    authority_clause: Mapped[str] = mapped_column(String(160))
+    authority_page: Mapped[str] = mapped_column(String(60))
+
+
+class ScoreRule(Base):
+    """One row of a UGC Appendix II score table, with the page it was read from.
+
+    `kind` says how to read the row: POINTS (a fixed or per-unit award), BAND
+    (an award for a value in [band_min, band_max)), MULTIPLIER (a share of
+    another row's points), CAP (an upper limit) or CONSTRAINT (a condition on
+    the score as a whole). See backend/rules_data.py.
+    """
+
+    __tablename__ = "score_rules"
+    __table_args__ = (UniqueConstraint("table_code", "row_code"),)
+
+    score_rule_id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    rule_version_id: Mapped[int] = mapped_column(ForeignKey("rule_versions.rule_version_id"))
+    table_code: Mapped[str] = mapped_column(String(20), index=True)  # TABLE_2 / TABLE_3A / TABLE_3B
+    row_code: Mapped[str] = mapped_column(String(40))
+    section: Mapped[str] = mapped_column(String(20))  # the S.N. or note it sits under
+    description: Mapped[str] = mapped_column(Text)
+    kind: Mapped[str] = mapped_column(String(12))
+    faculty_group: Mapped[str] = mapped_column(String(10), default="ALL")
+    points: Mapped[float | None] = mapped_column(Float)
+    unit: Mapped[str | None] = mapped_column(String(40))
+    band_min: Mapped[float | None] = mapped_column(Float)
+    band_max: Mapped[float | None] = mapped_column(Float)
+    max_points: Mapped[float | None] = mapped_column(Float)
+    applies_to_categories: Mapped[list | None] = mapped_column(JSON)
     authority_page: Mapped[str] = mapped_column(String(40))
+    sort_order: Mapped[int] = mapped_column(Integer, default=0)
 
 
 class EvaluationResult(Base):

@@ -30,7 +30,11 @@ from backend.models import (
     CandidateQualification,
     CandidateExperience,
     Department,
+    RelaxationRule,
+    RubricRule,
+    RuleVersion,
     School,
+    ScoreRule,
 )
 from backend.reader_service import read_application
 from backend.storage import RejectedUpload, save_resume
@@ -90,6 +94,59 @@ def list_schools(session: Session = Depends(get_session)) -> list[dict[str, Any]
             "regulator_implemented": s.regulator.is_implemented,
         }
         for s in rows
+    ]
+
+
+@app.get("/rules")
+def get_rules(session: Session = Depends(get_session)) -> dict[str, Any]:
+    """The statutory thresholds and relaxations as loaded, each with its citation."""
+    versions = {v.rule_version_id: v for v in session.scalars(select(RuleVersion))}
+    return {
+        "instruments": [
+            {
+                "code": v.code, "instrument": v.instrument_name, "gazette_ref": v.gazette_ref,
+                "effective_from": v.effective_from.isoformat() if v.effective_from else None, "note": v.note,
+            }
+            for v in sorted(versions.values(), key=lambda v: v.rule_version_id)
+        ],
+        "thresholds": [
+            {
+                "designation": r.designation, "discipline_group": r.discipline_group, "criteria": r.criteria,
+                "requires_phd": r.requires_phd, "net_set_required": r.net_set_required,
+                "min_marks_pct": r.min_marks_pct, "min_years": r.min_years, "min_publications": r.min_publications,
+                "research_score_threshold": r.research_score_threshold, "min_doctoral_guided": r.min_doctoral_guided,
+                "authority_clause": r.authority_clause, "authority_page": r.authority_page,
+                "rule_version": versions[r.rule_version_id].code,
+            }
+            for r in session.scalars(select(RubricRule).order_by(RubricRule.rubric_rule_id))
+        ],
+        "relaxations": [
+            {
+                "code": r.code, "relaxation_pct": r.relaxation_pct, "levels": r.applies_to_levels,
+                "categories": r.applies_to_categories, "condition": r.condition,
+                "authority_clause": r.authority_clause, "authority_page": r.authority_page,
+            }
+            for r in session.scalars(select(RelaxationRule).order_by(RelaxationRule.relaxation_rule_id))
+        ],
+    }
+
+
+@app.get("/rules/score-tables/{table_code}")
+def get_score_table(table_code: str, session: Session = Depends(get_session)) -> list[dict[str, Any]]:
+    """One UGC Appendix II table (TABLE_2, TABLE_3A or TABLE_3B), row by row."""
+    rows = session.scalars(
+        select(ScoreRule).where(ScoreRule.table_code == table_code.upper()).order_by(ScoreRule.sort_order)
+    ).all()
+    if not rows:
+        raise HTTPException(status_code=404, detail="no such score table")
+    return [
+        {
+            "row_code": r.row_code, "section": r.section, "description": r.description, "kind": r.kind,
+            "faculty_group": r.faculty_group, "points": r.points, "unit": r.unit, "band_min": r.band_min,
+            "band_max": r.band_max, "max_points": r.max_points, "categories": r.applies_to_categories,
+            "authority_page": r.authority_page,
+        }
+        for r in rows
     ]
 
 

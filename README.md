@@ -100,6 +100,18 @@ python -m backend.seed
 uvicorn backend.main:app --host 127.0.0.1 --port 8000
 ```
 
+Load the statutory rules (UGC and AICTE thresholds and score tables) after the migration:
+
+```
+python -m backend.rules_seed
+```
+
+They live in `backend/rules_data.py`, each with its clause and gazette page.
+`docs/ugc_rules_transcription.md` and `docs/UGC_Rules_Mentor_Review.docx` are
+generated from that file for a person to check against the gazette; regenerate
+them with `python -m backend.rules_seed --write-transcription` and
+`python tools/make_mentor_review_docx.py` after any correction.
+
 Interactive API documentation is then at http://127.0.0.1:8000/docs.
 `STORAGE_DIR` sets where uploaded resumes are kept (default `storage/resumes`,
 gitignored).
