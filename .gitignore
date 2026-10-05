@@ -10,3 +10,7 @@ __pycache__/
 
 # Cached extractions hold extracted candidate fields -- local only.
 .cache/
+
+# Uploaded resumes and local development databases -- personal data, local only.
+storage/
+*.db

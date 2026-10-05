@@ -75,6 +75,35 @@ real resumes, which are the two highest-risk fields here. Use them via
 `GEMINI_MODEL=gemini-3.5-flash-lite` for UI/plumbing testing where accuracy
 doesn't matter, not for runs that count.
 
+## Running the backend (web application)
+
+The backend is the start of the full system: a database, the application
+workflow with its audit trail, and an API. The build plan is in
+[docs/IMPLEMENTATION_PLAN.md](docs/IMPLEMENTATION_PLAN.md).
+
+PostgreSQL is the target database. With Docker installed:
+
+```
+docker compose up -d
+alembic upgrade head
+python -m backend.seed
+uvicorn backend.main:app --host 127.0.0.1 --port 8000
+```
+
+Without PostgreSQL, set `DATABASE_URL` to a SQLite file for local
+development (the test suite runs this way):
+
+```
+set DATABASE_URL=sqlite:///recruitai_dev.db
+alembic upgrade head
+python -m backend.seed
+uvicorn backend.main:app --host 127.0.0.1 --port 8000
+```
+
+Interactive API documentation is then at http://127.0.0.1:8000/docs.
+`STORAGE_DIR` sets where uploaded resumes are kept (default `storage/resumes`,
+gitignored).
+
 ## Configuration
 
 Read once at startup from environment variables, all optional:

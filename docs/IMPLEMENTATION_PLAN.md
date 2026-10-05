@@ -8,15 +8,15 @@ and its data-model workbook. Section numbers below (§) refer to that document.
 decision changes, this file is edited in the same commit and the change is
 noted in the [Change log](#change-log).
 
-- Last updated: 2026-10-04
-- Current phase: **Phase 1 — Foundation** (not started)
+- Last updated: 2026-10-05
+- Current phase: **Phase 2 — Statutory rules as data** (not started)
 
 ## Status at a glance
 
 | Phase | What it delivers | Status |
 |---|---|---|
 | 0 | Reader stage: resume to checked, structured fields; Excel export | Done |
-| 1 | Foundation: FastAPI app, PostgreSQL schema, application states, audit trail | Not started |
+| 1 | Foundation: FastAPI app, PostgreSQL schema, application states, audit trail | Done |
 | 2 | Statutory rules as data: UGC thresholds and score tables with clause and page | Not started |
 | 3 | Intake: job openings, in-app application form, HR manual upload | Not started |
 | 4 | Reader aligned to the data model; extraction review (Gate 1) | Not started |
@@ -71,25 +71,53 @@ recorded below.
 Known gaps carried forward: one scanned resume unreadable (no OCR); teaching years
 blank where the resume gives no total; some experience rows lack designation or dates.
 
-## Phase 1 — Foundation
+## Phase 1 — Foundation (done)
 
 Goal: a running web application with a database that everything later builds on.
 
-- [ ] Project layout: `backend/` FastAPI app; existing `llm/` and extraction code reused as a library.
-- [ ] Local PostgreSQL via Docker Compose; settings from `.env`.
-- [ ] SQLAlchemy models and Alembic migrations for §10.2: regulators, schools, departments,
+- [x] `backend/` FastAPI app; the existing `llm/` and extraction code reused as a library.
+- [x] SQLAlchemy models and an Alembic migration for §10.2: regulators, schools, departments,
       candidates, applications, extracted_data, evaluation_results, rule_versions,
       rubric_rules, state_transitions.
-- [ ] Models for §17: candidate_profile, personal_details, qualifications, experience,
-      research_profile, publications, subjects_taught, skills, highlights,
+- [x] Models for §17: candidate_profile, personal_details, qualifications, experience,
+      research_profile, publications, subjects_taught, skills, hobbies, highlights,
       institutions_master, recruitment_drives, job_openings.
-- [ ] Seed data: 21 schools with regulator and `is_hiring_unit` (§7.3), regulators (§5.3).
-- [ ] Application state machine (§9.3) with every transition written to `state_transitions`.
-- [ ] Persist a Reader result into the entity tables.
-- [ ] Health check, structured logging without personal data, test database fixture.
+- [x] Seed data: 21 schools with regulator, AICTE overlay and `is_hiring_unit`; 6 regulators.
+- [x] Application state machine (§9.3); every transition written to `state_transitions`.
+- [x] The Reader as a workflow step: its result is stored in the entity tables.
+- [x] API: health, schools, create application, run Reader, read record, read audit trail.
+- [x] Resume storage by content hash; logging without personal data; tests on a test database.
+- [x] Real candidates' first names and institutions removed from the older tests.
+- [x] PostgreSQL 16 installed on the development machine; migration applied and reference
+      data seeded. `TEST_DATABASE_URL` runs the backend tests against a scratch
+      PostgreSQL database.
 
-Done when: a resume can be processed through an API call and its record, state and
-audit trail are in PostgreSQL, with tests.
+Verified: 41 backend tests on SQLite and on PostgreSQL 16 (523 tests in total); a live run
+of the API on PostgreSQL with the fake provider, covering EXTRACTED, PENDING_REVIEW, a
+scanned file going to FAILED, a refused second read and refused bad input; and the
+migration applied, checked for drift, downgraded and re-applied on PostgreSQL.
+
+Running on PostgreSQL found one defect SQLite had hidden: a foreign key declared inside
+`create_table` was skipped, leaving `candidate_profile.highest_qualification_id`
+unconstrained. The migration now adds it explicitly. The review before commit also added:
+text from the model is cut to its column length (PostgreSQL rejects over-long values that
+SQLite accepts), the stored filename is reduced to its last path component, and the
+Reader endpoint takes a row lock so two requests cannot read one application twice.
+
+Known limits, by design at this phase: the API has no login (Phase 9) and must stay
+bound to 127.0.0.1; every upload creates a new candidate (duplicate detection is Phase 3).
+
+Differences from the design document, all recorded in `backend/models.py` and `backend/states.py`:
+
+- A school has a primary regulator and an optional overlay, in place of the text "UGC + AICTE".
+- Partly stated dates ("2014", "2021-05") are stored as stated, not padded to a full date.
+- Four extra tables (events, achievements, guidance, memberships) hold lists the Reader
+  extracts that the data model has no sheet for.
+- Three extra state moves: NEEDS_JOB_MATCH (§16.1); PARSING back to RECEIVED when the
+  model is unavailable, so a quota error is not recorded as an unreadable file; FAILED
+  back to RECEIVED when a candidate re-uploads.
+- The Reader runs when its endpoint is called. Running it in the background is Phase 3.
+- Tables for users, access, policy rules and views are left to Phase 9.
 
 ## Phase 2 — Statutory rules as data
 
@@ -115,6 +143,8 @@ Goal: applications arrive tied to a specific opening, with the form fields the r
 - [ ] HR manual upload against an opening (single and bulk).
 - [ ] Resume file storage; duplicate-applicant detection by email.
 - [ ] Unreadable files go to FAILED with an HR alert (§9.6).
+- [ ] Run the Reader in the background (job table and scheduler), and retry applications
+      sent back to RECEIVED because the model was unavailable.
 
 Done when: a candidate can apply to an opening and HR can see the application in RECEIVED state.
 
@@ -205,7 +235,7 @@ Development uses made-up resumes only.
 
 | Question | Needed by |
 |---|---|
-| HR-confirmed school list and which schools have departments (§7.4) | Phase 1 seed data |
+| HR-confirmed school list and which schools have departments (§7.4) | Before go-live (seeded with the document's 21) |
 | Regulator for School of Education (NCTE?) and Allied Healthcare (§7.4) | Phase 5 |
 | Are category and contact details hidden from the interview panel? (§17.5) | Phase 9 |
 | Which college mailbox, and who grants access | Phase 8 |
@@ -220,10 +250,13 @@ Development uses made-up resumes only.
 | The 2025 draft Regulations are notified mid-project | Rules are versioned data; a new instrument is new rows |
 | Free-tier quota blocks testing | Result cache; made-up resumes; paid key before real use |
 | Research Score needs evidence resumes lack | Labelled as claimed; verified at document check |
-| Tests in the repository reference real candidates' first names (pre-existing) | Clean up in Phase 1 |
+| Older commits on GitHub still contain tests naming real candidates (removed from current code in Phase 1) | Rewrite history only if the user asks |
+| SQLite and PostgreSQL behave differently in places | Run the backend tests with `TEST_DATABASE_URL` set before each commit that touches the schema |
 
 ## Change log
 
 | Date | Change |
 |---|---|
 | 2026-10-04 | Plan created after reviewing the Part 1 document and data model. |
+| 2026-10-04 | Phase 1 built. PostgreSQL verification left open (not installed on the dev machine). Four detail tables and three state moves added beyond the document. Background running of the Reader moved from Phase 1 to Phase 3. |
+| 2026-10-05 | PostgreSQL 16 installed natively (not Docker). Phase 1 verified on it and closed; a missing foreign key in the migration was found and fixed. |
