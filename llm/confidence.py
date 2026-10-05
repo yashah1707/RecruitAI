@@ -83,7 +83,7 @@ def grounding_quality(resume_text: str, evidence: str | None) -> str:
 
 
 # A model citing a table row often skips the columns it doesn't need, joining
-# the parts with an ellipsis: "2015-17 Amrutvahini College ... M.E.(Comp.Engg)"
+# the parts with an ellipsis: "2015-17 Placeholder College ... M.E.(Comp.Engg)"
 # elides the "8.2%" sitting between them. Every fragment is genuinely in the
 # resume, so rejecting the whole quote loses real evidence -- and on one real
 # row it cost the date its precision, which silently reinstated a fabricated

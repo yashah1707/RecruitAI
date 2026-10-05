@@ -64,13 +64,13 @@ def test_a_matching_claim_passes(tmp_path):
 def test_the_mismatch_message_names_the_failing_files(tmp_path):
     """So the reader can check the claim themselves rather than trusting it."""
     path = _export(tmp_path, [
-        {"source_filename": "kavita.pdf", "parse_error": "504"},
-        {"source_filename": "suvarna.pdf", "parse_error": "504"},
+        {"source_filename": "cv_a.pdf", "parse_error": "504"},
+        {"source_filename": "cv_b.pdf", "parse_error": "504"},
     ])
     with pytest.raises(RunClaimMismatch) as exc:
         assert_claim(run_stats(path), expect_failures=0)
-    assert "kavita.pdf" in str(exc.value)
-    assert "suvarna.pdf" in str(exc.value)
+    assert "cv_a.pdf" in str(exc.value)
+    assert "cv_b.pdf" in str(exc.value)
 
 
 def test_whitespace_only_parse_error_is_not_a_failure(tmp_path):

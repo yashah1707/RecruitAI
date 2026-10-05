@@ -198,7 +198,7 @@ def test_rejected_row_keeps_its_evidence_for_the_reviewer():
     "evidence",
     [
         "M.Tech in Computer Science and Engineering, IIIT Guwahati, GPA: 7.78",
-        "M.E.(CSE/SE) Dr.B.A.M.University, Aurangabad. 2017 61.12%",
+        "M.E.(CSE/SE) Sample University, Sampletown. 2017 61.12%",
         "M.Tech. (Computer) First Class 63.56 2015",
         "Ph.D. [Computer Sci. & Engg.] Sage University 2026",
     ],
@@ -288,10 +288,10 @@ def test_a_positive_net_set_finding_is_left_alone():
 
 
 def test_pet_is_not_net_set_and_stays_a_grounded_none():
-    """Regression: Nishant's resume states a Ph.D. Entrance Test (PET), which
+    """Regression: one resume states a Ph.D. Entrance Test (PET), which
     is NOT NET/SET/SLET. This is the one row where a grounded NONE already
     worked -- a fix to the negative path must not break it."""
-    ev = "Ph.D. Entrance Test (PET), Sant Gadge Baba Amravati University - Qualified"
+    ev = "Ph.D. Entrance Test (PET), Sample State University - Qualified"
     r = _result(
         net_set_status=_f("NONE", 0.95, ev),
         masters_award_date=_f(date(2023, 1, 1), 0.9, "M.Tech 2023"),
