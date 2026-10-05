@@ -14,3 +14,8 @@ __pycache__/
 # Uploaded resumes and local development databases -- personal data, local only.
 storage/
 *.db
+
+# Personal working copies of the mentor review sheet (may carry names).
+# The generated docs/UGC_Rules_Mentor_Review.docx is the tracked one.
+docs/UGC_Rules_*_Review.docx
+!docs/UGC_Rules_Mentor_Review.docx
