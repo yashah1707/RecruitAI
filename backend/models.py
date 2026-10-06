@@ -612,3 +612,8 @@ class EvaluationResult(Base):
     failing_clause_page: Mapped[str | None] = mapped_column(String(40))
     rule_version_id: Mapped[int | None] = mapped_column(ForeignKey("rule_versions.rule_version_id"))
     evaluated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
+    # The whole working: every check for every rank looked at, each with its
+    # result, the figures compared and its clause and page; the open points a
+    # person must settle; the score bounds. Candidate data, so it lives here
+    # and never in a log or in `state_transitions.note`.
+    details: Mapped[dict | None] = mapped_column(JSON)

@@ -133,6 +133,13 @@ reason and the line quoted from the resume; saving it records every change and
 moves the application on. A resume HR uploaded always stops there once, for the
 category, State and study-leave answers an application form would have given.
 
+Once applications are read, "Assess read applications" on the opening's page
+checks each against the rules chosen for that opening (UGC, or an AICTE
+discipline). No language model is used. Each application's page then shows
+the outcome, every requirement with the figures compared and its clause and
+gazette page, and anything a person still has to settle. The outcome is the
+engine's finding, not a decision: HR approves or overrides it.
+
 Institutions and their tiers are HR's list. Load or update it from a CSV with
 the columns `institution_name, tier, category, aliases` (aliases separated by `;`):
 

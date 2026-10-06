@@ -45,6 +45,13 @@ DISCIPLINE_GROUPS: dict[str, str] = {
     "TOWN_PLANNING": "AICTE: Town Planning",
     "FINE_ARTS": "AICTE: Fine Arts",
     "SCIENCE_HUMANITIES": "AICTE institution, science and humanities faculty (assessed under UGC)",
+    # Disciplines with their own clause in the UGC Regulations. Their rules are not loaded,
+    # so these posts are assessed by a person; choosing "UGC" for them would apply the wrong clause.
+    "UGC_4_2_PERFORMING_VISUAL_ARTS": "UGC cl. 4.2: music, performing arts, visual arts (assessed by a person)",
+    "UGC_4_3_DRAMA": "UGC cl. 4.3: drama (assessed by a person)",
+    "UGC_4_4_YOGA": "UGC cl. 4.4: yoga (assessed by a person)",
+    "UGC_4_5_OCCUPATIONAL_THERAPY": "UGC cl. 4.5: occupational therapy (assessed by a person)",
+    "UGC_4_6_PHYSIOTHERAPY": "UGC cl. 4.6: physiotherapy (assessed by a person)",
 }
 
 _EMAIL_RE = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
@@ -61,9 +68,13 @@ class IntakeError(Exception):
 
 def suggested_discipline_group(school: School) -> str:
     """A starting value for the opening form. HR confirms or changes it."""
-    if school.overlay_regulator_id != "AICTE":
-        return "GENERAL"
     name = school.name.lower()
+    if school.overlay_regulator_id != "AICTE":
+        if "drama" in name:
+            return "UGC_4_3_DRAMA"
+        if "fine arts" in name or "sangeet" in name or "music" in name:
+            return "UGC_4_2_PERFORMING_VISUAL_ARTS"
+        return "GENERAL"
     if "design" in name:
         return "DESIGN"
     if "management" in name or "business" in name:

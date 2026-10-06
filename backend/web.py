@@ -21,7 +21,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.result_cache import ResultCache
-from backend import gate1, intake, jobs, states
+from backend import assessor_service, gate1, intake, jobs, states
 from backend.db import get_session, get_session_factory
 from backend.deps import get_cache, get_provider
 from backend.models import (
@@ -81,6 +81,10 @@ STATE_LABELS = {
     states.FAILED: "Could not be read",
     states.NEEDS_JOB_MATCH: "No matching opening",
     states.WITHDRAWN: "Withdrawn",
+    states.SHORTLISTED: "Assessed: meets the minimum qualifications for the post applied for",
+    states.RE_CATEGORISED: "Assessed: meets the minimum qualifications for a lower post",
+    states.NOT_ELIGIBLE: "Assessed: does not meet the minimum qualifications",
+    states.MANUAL_REVIEW: "Assessed: needs a person to decide",
 }
 templates.env.globals["STATE_LABELS"] = STATE_LABELS
 
@@ -202,6 +206,21 @@ def opening_detail(request: Request, opening_id: int, msg: str = "", session: Se
     })
 
 
+_OUTCOME_WORDS = {"SHORTLISTED": "meet the post applied for", "RE_CATEGORISED": "meet a lower post",
+                  "NOT_ELIGIBLE": "do not meet the minimum qualifications", "MANUAL_REVIEW": "need a person to decide"}
+
+
+@router.post("/hr/openings/{opening_id}/assess")
+def opening_assess(opening_id: int, session: Session = Depends(get_session)):
+    """Assess every read application of this opening against the rules. No model is called."""
+    _opening_or_404(session, opening_id)
+    counts = assessor_service.assess_opening(session, opening_id)
+    text = ("Assessed " + str(sum(counts.values())) + " application(s): "
+            + "; ".join(f"{n} {_OUTCOME_WORDS[o]}" for o, n in counts.items()) + "."
+            if counts else "No read application was waiting to be assessed.")
+    return RedirectResponse(f"/hr/openings/{opening_id}?msg=" + quote(text), status_code=303)
+
+
 @router.post("/hr/openings/{opening_id}/close")
 def opening_close(opening_id: int, session: Session = Depends(get_session)):
     intake.close_opening(session, _opening_or_404(session, opening_id))
@@ -320,6 +339,7 @@ def _review_page(request: Request, session: Session, a: Application, *, msg: str
         "experience": rows(CandidateExperience, CandidateExperience.experience_id),
         "failed_note": a.transitions[-1].note if a.status == states.FAILED and a.transitions else None,
         "can_withdraw": states.WITHDRAWN in states.ALLOWED[a.status], "field_labels": _FIELD_LABELS,
+        "evaluation": assessor_service.latest_evaluation(session, a.application_id),
     }, status_code=status_code)
 
 

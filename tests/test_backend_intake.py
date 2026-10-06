@@ -19,7 +19,9 @@ from llm.providers.fake_provider import FakeProvider
 from tests.test_backend_foundation import _clean_result, _docx, _scanned_pdf, client, engine, session  # noqa: F401
 
 DOCX = "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
-NOW = datetime(2026, 10, 6, 12, 0, tzinfo=timezone.utc)
+# Later than any real clock these tests will run under: jobs are queued at the real time, and
+# must already be due at NOW. (A date in 2026 here made three tests fail once that moment passed.)
+NOW = datetime(2099, 1, 1, 12, 0, tzinfo=timezone.utc)
 
 
 @pytest.fixture(autouse=True)

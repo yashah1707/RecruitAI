@@ -9,7 +9,7 @@ decision changes, this file is edited in the same commit and the change is
 noted in the [Change log](#change-log).
 
 - Last updated: 2026-10-06
-- Current phase: **Phase 4 — Reader aligned to the data model, and Gate 1** (built and merged; accuracy of the new fields still to be measured)
+- Current phase: **Phase 5 — Assessor and Decision** (built; awaiting the user's check)
 
 ## Status at a glance
 
@@ -20,7 +20,7 @@ noted in the [Change log](#change-log).
 | 2 | Statutory rules as data: UGC thresholds and score tables with clause and page | Built, UGC and AICTE; awaiting a human check of the transcription |
 | 3 | Intake: job openings, in-app application form, HR manual upload | Done |
 | 4 | Reader aligned to the data model; extraction review (Gate 1) | Built; new fields' accuracy not yet measured |
-| 5 | Assessor and Decision: the deterministic rule engine | Not started |
+| 5 | Assessor and Decision: the deterministic rule engine | Built; several readings await the mentor |
 | 6 | HR dashboard: outcomes with reasons, approve or override (Gate 2) | Not started |
 | 7 | Reporting: digest, plain-language reasons, drafted emails (Gate 3) | Not started |
 | 8 | More intake channels: email inbox, Google Forms | Not started |
@@ -321,20 +321,98 @@ Not done, and where it belongs:
 Done when: an application moves RECEIVED to EXTRACTED, or to PENDING_REVIEW and back
 after a human fills the gaps. Both paths are covered by tests.
 
-## Phase 5 — Assessor and Decision (the rule engine)
+## Phase 5 — Assessor and Decision (the rule engine) (built; several readings await the mentor)
 
-- [ ] Regulator resolution from the school; unimplemented regulators go to MANUAL_REVIEW (cl. 1.1).
-- [ ] NET/SET logic with every branch in §6.2, including SET state validity.
-- [ ] Marks threshold with the cl. 3.4 and cl. 3.5 relaxations.
-- [ ] Adjusted experience under the two-part cl. 3.11 rule (§9.5); when study leave is
-      unknown, compute both ways and route to review if the outcome differs.
-- [ ] Research Score (Table 2), labelled as claimed pending verification.
-- [ ] Shortlisting score (Table 3A). This replaces the current home-made ranking.
-- [ ] Decision: applied rank first, then walk down the ranks (§9.4); outcome records
-      the failing clause, page and rule version.
-- [ ] The 13 test cases in §12 as automated tests.
+Goal: every read application gets an outcome worked out by Python from the rule tables, traceable to a clause and page.
 
-Done when: all §12 cases pass and every outcome can be traced to a clause and page.
+- [x] `backend/engine/`: facts, experience, scores, rules, decision. No model is called anywhere in it.
+- [x] Three answers, not two. Each requirement is met, not met, or cannot be told from what is known. A quantity
+      a resume gives loosely (a post dated "2014 to 2019") is carried as a lower and an upper bound. A rank is
+      met only if every requirement is met; if one cannot be told, the application goes to MANUAL_REVIEW with the
+      open point named. Nothing unknown is rounded either way. This is how Section 9.6's "compute both ways" is done.
+- [x] Regulator resolution from the school; BCI, COA and DG Shipping posts go to MANUAL_REVIEW with no threshold applied (cl. 1.1).
+- [x] The rule set follows the opening's `discipline_group`: UGC cl. 4.1, or AICTE cl. 5.1 for the discipline and
+      cl. 5.2 for Associate Professor and Professor. AICTE cl. 5.1(j) sends science and humanities faculty to the UGC rule.
+- [x] NET/SET with every branch that can be read: NET; SET/SLET valid only in the institution's State; the Ph.D.
+      exemption under the 2009 or 2016 Regulations. A Ph.D. whose Regulations are not known, and a SET whose State
+      is not known, are open points. A Ph.D. holder with a SET from another State is still exempt (the design
+      document's sketch returned early there).
+- [x] Marks threshold with the cl. 3.4 and cl. 3.5 relaxations, read from `relaxation_rules`. They are alternatives,
+      not added together. An unknown category matters only when the marks fall between the two floors.
+- [x] Adjusted experience under the two-part cl. 3.11 rule, for UGC-governed posts. Leave taken: the overlap with
+      the research degree is deducted. No leave: nothing is deducted. Not known: both, as bounds.
+- [x] **AICTE posts get no cl. 3.11 deduction.** The AICTE gazette was searched (same file as recorded, hash
+      checked) and has no such provision. Its cl. 2.25 (p. 31) sets conditions for counting past service that
+      only documents can show; the experience row cites it and leaves those conditions to the document check.
+      Put to the mentor as open point AICTE_NO_RESEARCH_DEGREE_EXCLUSION. (The first build applied and cited
+      UGC cl. 3.11 on AICTE posts; the user's first live assessment showed it, and it was corrected before commit.)
+- [x] AICTE First Class under cl. 7.3: from the stated class, or 60%, or a CGPA of 6.75 on a ten-point scale.
+- [x] AICTE cl. 5.2: experience in teaching, research or industry; two years after the Ph.D.; for Professor, three
+      years at Associate Professor level and the two publication routes.
+- [x] Research Score (Table 2) and short-listing score (Table 3A), every figure read from `score_rules`, both as
+      bounds, labelled as claimed. The home-made ranking is no longer used by the web application.
+- [x] Decision: applied rank first, then down the ranks; the outcome records the failing clause, page and rule version.
+- [x] `evaluation_results.details` (migration 0005) holds the whole working. The audit trail cites the clause only.
+- [x] "Assess read applications" on the opening page, and the working shown on the application page.
+- [x] The 13 cases of Section 12 as automated tests, each named for its provision.
+
+Verified: 68 new tests; 793 in total on SQLite and the 311 backend tests on PostgreSQL 16. Migration 0005 applied,
+checked, downgraded and re-applied on PostgreSQL. A dry run over the 12 live applications (nothing stored): all
+applied for Professor under AICTE engineering; 11 came out as meeting Assistant Professor, 1 as needing a person
+(no class or marks stated for either degree). One was then assessed for real by the user on the live screen.
+
+Audit before commit (2026-10-06). After the user's first live assessment showed a UGC clause cited on an AICTE
+post, every clause the engine relies on was read again in the two gazette files (both hashes match the recorded
+ones) and compared with the code. cl. 3.3, 3.4, 3.5, 3.6, 4.1 I to IV, the Table 2 notes, Tables 3A notes, and
+AICTE cl. 5.1, 5.2(c), 5.2(d) and 7.3 agree with what is loaded. Five things were wrong or missing and were fixed:
+
+- UGC cl. 3.11 was applied to, and cited on, AICTE posts. AICTE has no such provision (see above).
+- **Years as a research scholar were counted as experience.** cl. 3.11 says the time taken to acquire the degree
+  "shall not be considered as teaching/research experience"; only teaching alongside it without leave is saved.
+  Research posts that fall inside the research-degree period are now left out.
+- **"The research score shall be from the minimum of three categories out of six" (p. 107) was loaded but not
+  enforced.** It is now its own check. Category 3 is not read from resumes, so two sure categories is an open
+  point, not a failure.
+- **UGC cl. 4.1 would have been applied to drama, music, the arts, yoga and therapy posts**, which have their own
+  clauses (4.2 to 4.6) with different requirements. Those are now separate choices on the opening form, suggested
+  for the Drama, Fine Arts and Sangeet schools. Their rules are not loaded, so such a post goes to a person and
+  the page names the clause that governs. An application with no opening is likewise not assessed under a guess.
+- Table 3A counted any research post as post-doctoral experience. It now counts teaching for certain and
+  research posts in the upper bound only.
+
+Also found: AICTE lists Senior Professor as filled by promotion (Table 1, p. 26), so the engine says that instead
+of "no rule loaded". And three Phase 3 queue tests carried a fixed clock of 12:00 UTC on 2026-10-06 and began to
+fail when that moment passed; the clock is now a date far ahead.
+
+Not changed, but noted: Gate 1 still asks for the Ph.D. Regulations year and the SET State on AICTE openings,
+where neither affects the outcome. Harmless, but extra work for HR; to be trimmed in Phase 6.
+
+Readings the engine takes until the mentor rules on them (each is one place in the code):
+
+- **Technical posts are assessed under AICTE, not UGC**, because that is what HR chose on the opening (open point
+  ENGINEERING_NOT_IN_UGC_CL4). The outcome says so on the page.
+- **A CGPA of 6.75 or more on a ten-point scale is First Class.** The cl. 7.3 table gives 6.75 = 60%; a higher grade
+  point is taken as not lower. A grade point of 4 or less is treated as another scale and left to a person.
+- **A CGPA is never set against the UGC 55%.** It is an open point every time (cl. 3.6), so a UGC candidate whose
+  Master's result is a CGPA goes to MANUAL_REVIEW.
+- **Table 2, impact factor:** both readings are taken (replaces the base points, or adds to them), so the score is a range.
+- **Table 3A, M.Tech/M.E.:** scored under S.No. 2 and under S.No. 3, as a range.
+
+Limits to know about:
+
+- The Research Score counts only what the Reader extracts. Category 3 (pedagogy, MOOCs, e-content), consultancy
+  and policy documents are not read, so a candidate who relies on them can be under-scored. Every outcome is
+  still approved by HR at Gate 2.
+- The Research Score range is usually wide (authors per paper are rarely listed), so most UGC Associate Professor
+  and Professor applications will go to a person until those details are filled in.
+- "Equivalent to Assistant Professor" and "relevant branch" are not judged; the page says they are for the committee.
+- AICTE disciplines other than engineering have requirements a resume cannot show (professional experience
+  after the Master's, a 4-star hotel post). Those go to a person unless something plainly fails.
+- Senior Professor is never cleared by the engine: the 10% cap and the three expert reviews are not on a resume.
+- An assessed application cannot yet be re-assessed after a correction. That is Gate 2 (Phase 6).
+- NET-exempt disciplines and the foreign top-500 Ph.D. route are not read; such a candidate is an open point, not a failure.
+
+Done when: all Section 12 cases pass and every outcome can be traced to a clause and page. Both hold.
 
 ## Phase 6 — HR dashboard and Gate 2
 
@@ -390,6 +468,9 @@ Development uses made-up resumes only.
 | 2026-10-06 | No OCR for now: a scanned resume is reported under Needs attention and a readable copy is asked for. |
 | 2026-10-06 | The extraction prompt was changed once, with the user's agreement, for all Phase 4 fields together. |
 | 2026-10-06 | An HR upload always stops at Gate 1 for the form answers; they are never taken from the resume. |
+| 2026-10-06 | The engine answers met, not met or cannot be told. Anything it cannot tell goes to a person; it is never rounded. |
+| 2026-10-06 | Until the mentor rules, the open readings are taken as listed under Phase 5, and scores are given as ranges. |
+| 2026-10-06 | Disciplines with their own UGC clause (4.2 to 4.6) are chosen as such on the opening and assessed by a person until their rules are loaded. |
 | Earlier | Rank and score across uploaded resumes kept in the Phase 0 workbook at the user's request; to be superseded in Phase 5. |
 | Earlier | CGPA shown as a percentage using (CGPA − 0.75) × 10, marked as converted. |
 
@@ -410,7 +491,9 @@ Development uses made-up resumes only.
 | Table 2: do impact-factor points add to or replace the 8/10 per paper? | Phase 5 (Research Score) |
 | Table 3A: does an M.Tech/M.E. score as Post-Graduation, under S.No. 3, or both? | Phase 5 (short-listing score) |
 | How is a CGPA placed in the percentage bands of Table 3A? | Phase 5 |
-| Who checks and signs the rules transcription sheet | Before Phase 5 results are relied on |
+| Load UGC cl. 4.2 to 4.6 (music, arts, drama, yoga, therapy)? Needed only if those schools recruit through the system | Phase 6 or later |
+| Who checks and signs the rules transcription sheet (one question was added on 2026-10-06, so the mentor's copy is one behind) | Before Phase 5 results are relied on |
+| Does the university apply the UGC cl. 3.11 exclusion to AICTE-governed posts? AICTE's Regulation has none | Before Phase 5 results are relied on |
 | HR's institutions list with tiers and other spellings (four workbook rows are loaded) | Phase 6 (highlights) |
 | Was an international talk given abroad or in India? Not on most resumes; ask on the form, or at document check? | Phase 5 (Research Score) |
 | How accurate are the new fields on real resumes? Read live once; not yet compared with the resumes | Before Phase 5 relies on them |
@@ -440,3 +523,5 @@ Development uses made-up resumes only.
 | 2026-10-06 | AICTE (Degree) Regulation, 2019 loaded after the user supplied the HR portal's files. `rubric_rules` gained `discipline_group` and `criteria`. Mentor review document added. Differences between the State G.R. and the UGC gazette recorded. Phase 5 must now choose between two rule sets by school, and the home-made ranking's replacement (Table 3A) applies to UGC-governed posts only. |
 | 2026-10-06 | Phase 3 built. The rule set is chosen by HR per opening. Reading is queued and started by a person, not automatic. HTMX deferred to Phase 4. Gate 1 (Phase 4) gains: entering form answers for HR uploads, resolving possible duplicates, re-queuing failed jobs. Reading moved off the request into the background after the first version made the page wait for every resume. |
 | 2026-10-06 | Phase 4 built. Extraction prompt changed (every resume must be re-read). OCR decided: no. Gate 1 screen, `review_edits` audit table, duplicate resolution, withdraw and job retry added. NET/SET "none" is now checked against the resume text. HR uploads always stop at Gate 1 for the form answers. Institutions seeded from the workbook (four rows) and disciplines mapped to its list. Open: measuring the new fields against the resumes; HR's institutions list; whether a talk was abroad. |
+| 2026-10-06 | Phase 5 built: `backend/engine/`, `assessor_service`, `evaluation_results.details`, the Assess button and the working on the application page. Requirements have three answers; unknowns go to MANUAL_REVIEW. Scores are ranges. Five readings are taken provisionally and listed for the mentor. Re-assessment after a correction moves to Phase 6. |
+| 2026-10-06 | Phase 5 audited against the gazette files before commit. Fixed: cl. 3.11 on AICTE posts; research-scholar years counted as experience; the three-categories rule not enforced; cl. 4.1 applied to disciplines with their own clause; Table 3A post-doctoral experience. Five new opening choices for UGC cl. 4.2 to 4.6. A time-dependent Phase 3 test fixed. |

@@ -312,6 +312,14 @@ The Regulation contains no relaxation for reserved categories and no short-listi
 
 **Decision:** ______________________
 
+### AICTE_NO_RESEARCH_DEGREE_EXCLUSION
+
+*Where:* UGC cl. 3.11 (p. 59); AICTE (Degree) Regulation, 2019, cl. 2.25 (p. 31)
+
+UGC cl. 3.11 excludes the time taken to acquire an M.Phil. or Ph.D. from experience unless it was pursued in service without leave. The AICTE Regulation was searched (2026-10-06) and has no such provision; its cl. 2.25 sets conditions for counting past service instead (regular appointment, equivalent grade, proper selection procedure). The system therefore deducts nothing for a research degree on AICTE-governed posts and leaves the cl. 2.25 conditions to the document check. Does the university apply the UGC exclusion to them anyway?
+
+**Decision:** ______________________
+
 ### AICTE_LATER_CLARIFICATIONS
 
 *Where:* AICTE website: clarifications on qualifications, pay scales and service conditions

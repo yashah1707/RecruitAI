@@ -69,7 +69,7 @@
       <td class="nowrap"><a href="/hr/openings/{{ o.opening_id }}">{{ o.reference }}</a></td>
       <td>{{ DESIGNATIONS[o.designation] }}{% if o.title %}<br><span class="hint">{{ o.title }}</span>{% endif %}</td>
       <td>{{ o.school.name }}{% if o.department %}<br><span class="hint">{{ o.department.name }}</span>{% endif %}</td>
-      <td>{{ "UGC" if o.discipline_group == "GENERAL" else "AICTE" }}</td>
+      <td>{{ "UGC" if o.discipline_group == "GENERAL" or o.discipline_group.startswith("UGC_") else "AICTE" }}</td>
       <td class="nowrap">{{ o.closing_date|ddmmyyyy or "Open-ended" }}</td>
       <td>{{ "Accepting" if accepting[o.opening_id] else "Closed" }}</td>
       <td class="num">{{ c.get("total", 0) }}</td>

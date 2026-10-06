@@ -59,3 +59,4 @@ form.review { display: grid; gap: 14px; }
 .quote { margin: 0; font-size: 0.9rem; overflow-wrap: anywhere; }
 .quote q { background: #eef1f5; padding: 1px 4px; border-radius: 4px; }
 form.review > button { justify-self: start; }
+h3 { font-size: 1rem; margin: 16px 0 6px; }

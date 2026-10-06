@@ -50,6 +50,13 @@
   <span class="hint">{{ due }} waiting across all openings. Each is one request to the language model.</span>
 </form>
 {% endif %}
+{% set to_assess = rows|selectattr("a.status", "equalto", "EXTRACTED")|list|length %}
+{% if to_assess %}
+<form method="post" action="/hr/openings/{{ o.opening_id }}/assess" class="inline">
+  <button type="submit">Assess {{ to_assess }} read application(s)</button>
+  <span class="hint">Checks each against the rules chosen for this opening. No language model is used.</span>
+</form>
+{% endif %}
 {% if rows %}
 <table>
   <thead><tr><th>Reference</th><th>Name</th><th>Received</th><th>Source</th><th>Category</th><th>Status</th></tr></thead>

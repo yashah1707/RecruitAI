@@ -11,6 +11,50 @@
   <dt>Resume</dt><dd><a href="/hr/applications/{{ a.application_id }}/resume" target="_blank" rel="noopener">Open the resume in a new tab</a></dd>
 </dl>
 
+{% if evaluation %}
+{% set v = evaluation.details or {} %}
+<section class="panel{% if evaluation.outcome == "MANUAL_REVIEW" %} warn{% endif %}">
+  <h2>Assessment</h2>
+  <p><strong>
+    {% if evaluation.outcome == "SHORTLISTED" %}Meets the minimum qualifications for {{ DESIGNATIONS[evaluation.eligible_designation] }}.
+    {% elif evaluation.outcome == "RE_CATEGORISED" %}Does not meet {{ DESIGNATIONS.get(a.applied_designation) }}; meets {{ DESIGNATIONS[evaluation.eligible_designation] }}.
+    {% elif evaluation.outcome == "NOT_ELIGIBLE" %}Does not meet the minimum qualifications for any post.
+    {% else %}The rules could not settle this; a person has to decide.{% endif %}
+  </strong></p>
+  {% if evaluation.failing_clause and evaluation.outcome != "MANUAL_REVIEW" %}
+  <p>Reason: {{ evaluation.failing_clause }} ({{ evaluation.failing_clause_page }}).</p>
+  {% endif %}
+  {% if v.open_points %}
+  <p>To be settled by a person:</p>
+  <ul>{% for point in v.open_points %}<li>{{ point }}</li>{% endfor %}</ul>
+  {% endif %}
+  {% for rank in v.ranks or [] %}
+  <h3>{{ DESIGNATIONS.get(rank.designation, rank.designation) }}: {{ {"PASS": "met", "FAIL": "not met", "UNKNOWN": "cannot be settled from the record"}[rank.result] }}</h3>
+  <table>
+    <thead><tr><th>Requirement</th><th>Result</th><th>What was compared</th><th>Clause</th><th>Page</th></tr></thead>
+    <tbody>
+      {% for c in rank.checks %}
+      <tr>
+        <td>{{ c.label }}</td>
+        <td class="nowrap">{{ {"PASS": "Met", "FAIL": "Not met", "UNKNOWN": "Open"}[c.result] }}</td>
+        <td>{{ c.detail }}</td><td>{{ c.clause }}</td><td>{{ c.page }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% endfor %}
+  {% macro span(b, unit="") %}{% if b.high is none %}at least {{ "%g"|format(b.low) }}{% elif b.low == b.high %}{{ "%g"|format(b.low) }}{% else %}between {{ "%g"|format(b.low) }} and {{ "%g"|format(b.high) }}{% endif %}{{ unit }}{% endmacro %}
+  <dl class="facts">
+    {% if v.experience_years %}<dt>Experience counted</dt><dd>{{ span(v.experience_years, " years") }}</dd>{% endif %}
+    {% if v.research_score %}<dt>Research Score claimed (Table 2)</dt><dd>{{ span(v.research_score) }}</dd>{% endif %}
+    {% if v.shortlist_score %}<dt>Short-listing score (Table 3A)</dt><dd>{{ span(v.shortlist_score) }} out of 100. An aid for calling candidates to interview; selection is on the interview alone.</dd>{% endif %}
+    <dt>Rules applied</dt><dd>{{ v.rule_version or "None" }}, as on {{ v.as_of }}</dd>
+  </dl>
+  {% for note in v.notes or [] %}<p class="hint">{{ note }}</p>{% endfor %}
+  <p class="hint">This is the engine's finding, not a decision. HR approves or overrides every outcome.</p>
+</section>
+{% endif %}
+
 {% if failed_note %}
 <section class="panel warn">
   <h2>The resume could not be read</h2>
