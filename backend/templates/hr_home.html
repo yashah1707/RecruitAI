@@ -38,13 +38,19 @@
   <ul>
     {% for a in attention %}
     <li>
-      <a href="/hr/openings/{{ a.opening_id }}">{{ a.reference }}</a>:
+      <a href="/hr/applications/{{ a.application_id }}">{{ a.reference }}</a>:
       {% if a.status == "FAILED" %}the resume could not be read. {{ (a.transitions[-1].note if a.transitions else "")|why_unreadable }}.
       {% else %}the email on this resume already belongs to another candidate; check whether it is the same person.{% endif %}
     </li>
     {% endfor %}
     {% for j in stuck %}
-    <li>Application {{ "APP-%06d"|format(j.application_id) }} could not be read after {{ j.attempts }} attempts ({{ j.note }}).</li>
+    <li>
+      <form method="post" action="/hr/jobs/{{ j.job_id }}/requeue" class="inline">
+        <span>Application <a href="/hr/applications/{{ j.application_id }}">{{ "APP-%06d"|format(j.application_id) }}</a>
+          could not be read after {{ j.attempts }} attempts ({{ j.note }}).</span>
+        <button type="submit" class="quiet">Try again</button>
+      </form>
+    </li>
     {% endfor %}
   </ul>
 </section>

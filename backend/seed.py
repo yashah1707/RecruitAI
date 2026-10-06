@@ -9,9 +9,10 @@ Idempotent: running it again updates existing rows and adds missing ones.
 
 from __future__ import annotations
 
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from backend.models import Regulator, School
+from backend.models import InstitutionMaster, Regulator, School
 
 # (id, name, norms document, is_implemented)
 REGULATORS: tuple[tuple[str, str, str | None, bool], ...] = (
@@ -52,8 +53,20 @@ SCHOOLS: tuple[tuple[str, str, str, str, str | None, str | None], ...] = (
 )
 
 
+# The four rows of the data-model workbook's Institutions_Master sheet, as
+# given there. A starting point only: the list is HR's to extend, with
+# `python -m backend.institutions <file.csv>`. No institution is added here
+# from general knowledge, and none of these has an alias.
+INSTITUTIONS: tuple[tuple[str, str, str], ...] = (
+    ("Indian Institute of Technology Bombay", "PREMIER", "IIT"),
+    ("National Institute of Technology Trichy", "PREMIER", "NIT"),
+    ("Indian Institute of Science", "PREMIER", "IISc"),
+    ("Savitribai Phule Pune University", "STATE", "State University"),
+)
+
+
 def seed_reference_data(session: Session) -> dict[str, int]:
-    """Insert or update regulators and schools; returns how many of each exist."""
+    """Insert or update regulators, schools and institutions; returns how many of each exist."""
     for regulator_id, name, ref, implemented in REGULATORS:
         row = session.get(Regulator, regulator_id) or Regulator(regulator_id=regulator_id)
         row.name, row.norms_document_ref, row.is_implemented = name, ref, implemented
@@ -71,7 +84,14 @@ def seed_reference_data(session: Session) -> dict[str, int]:
             row.login_required = True
         session.add(row)
     session.flush()
-    return {"regulators": len(REGULATORS), "schools": len(SCHOOLS)}
+
+    # Added if missing, and otherwise left alone: HR may have changed a tier.
+    known = set(session.scalars(select(InstitutionMaster.institution_name)))
+    for name, tier, category in INSTITUTIONS:
+        if name not in known:
+            session.add(InstitutionMaster(institution_name=name, tier=tier, category=category))
+    session.flush()
+    return {"regulators": len(REGULATORS), "schools": len(SCHOOLS), "institutions": len(INSTITUTIONS)}
 
 
 if __name__ == "__main__":  # python -m backend.seed

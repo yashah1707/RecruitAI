@@ -127,6 +127,26 @@ python -m backend.worker --loop    keep processing
 Each application read is one request to the language model. Set
 `LLM_PROVIDER=fake` to try the pages without using any.
 
+An application the reader could not settle shows "Check fields" on its
+opening's page. That screen lists only the fields in question, each with the
+reason and the line quoted from the resume; saving it records every change and
+moves the application on. A resume HR uploaded always stops there once, for the
+category, State and study-leave answers an application form would have given.
+
+Institutions and their tiers are HR's list. Load or update it from a CSV with
+the columns `institution_name, tier, category, aliases` (aliases separated by `;`):
+
+```
+python -m backend.institutions path/to/institutions.csv
+```
+
+After pulling a newer version, bring the database up to date:
+
+```
+alembic upgrade head
+python -m backend.seed
+```
+
 Interactive API documentation is at http://127.0.0.1:8000/docs.
 `STORAGE_DIR` sets where uploaded resumes are kept (default `storage/resumes`,
 gitignored).

@@ -19,6 +19,8 @@ from sqlalchemy.orm import Session
 from app.result_cache import ResultCache, cache_key
 from app.resume_text import UnreadableResumeError, extract_text
 from backend import states
+from backend.institutions import match_institution
+from backend.lists import canonical_state, listed_discipline
 from backend.models import (
     Application,
     Candidate,
@@ -31,6 +33,7 @@ from backend.models import (
     CandidateProfile,
     CandidatePublication,
     CandidateQualification,
+    CandidateResearchProfile,
     CandidateSkill,
     CandidateSubjectTaught,
     ExtractedData,
@@ -98,19 +101,52 @@ def read_application(
         if key and not result.lighter_model_fallback:
             cache.put(key, result)
 
-    outcome = evaluate(result)
-    store_extraction(session, application, result, outcome.needs_review, outcome.reasons)
+    reasons = list(evaluate(result).reasons)
+    if application.applicant_name:
+        # The applicant typed their own name; how well it was read off the resume no longer matters.
+        reasons = [r for r in reasons if not r.startswith("candidate_name:")]
+    store_extraction(session, application, result, bool(reasons), reasons)
+    # Known only once the record is stored: what the form would have supplied,
+    # and whether this looks like someone already held.
+    reasons += application_reasons(session, application)
+    extracted = session.get(ExtractedData, application.application_id)
+    extracted.review_reasons, extracted.needs_review = list(reasons), bool(reasons)
     states.transition(
         session,
         application,
-        states.PENDING_REVIEW if outcome.needs_review else states.EXTRACTED,
+        states.PENDING_REVIEW if reasons else states.EXTRACTED,
         ACTOR,
-        note=_cut("; ".join(outcome.reasons), 500),  # field and rule names only, no values
+        note=_cut("; ".join(reasons), 500),  # field and rule names only, no values
     )
-    logger.info(
-        "application_read id=%s state=%s reasons=%d", application.application_id, application.status, len(outcome.reasons)
-    )
+    logger.info("application_read id=%s state=%s reasons=%d", application.application_id, application.status, len(reasons))
     return application.status
+
+
+FORM_ANSWER_MISSING = "form_answer_missing"
+POSSIBLE_DUPLICATE = "candidate:possible_duplicate"
+
+
+def application_reasons(session: Session, application: Application) -> list[str]:
+    """Reasons for review that come from the application, not from the reading.
+
+    A resume HR uploaded came with no form, so the answers only the applicant
+    can give are missing. They are asked for at Gate 1 and never read off the
+    resume. An applicant who used the form has already answered them.
+    """
+    reasons: list[str] = []
+    if application.resume_source != "WEB_FORM":
+        personal = session.get(CandidatePersonalDetails, application.candidate_id)
+        if application.category is None:
+            reasons.append(f"category:{FORM_ANSWER_MISSING}")
+        if application.differently_abled is None:
+            reasons.append(f"differently_abled:{FORM_ANSWER_MISSING}")
+        if application.study_leave_taken is None:
+            reasons.append(f"study_leave_taken:{FORM_ANSWER_MISSING}")
+        if personal is None or personal.state is None:
+            reasons.append(f"state:{FORM_ANSWER_MISSING}")
+    if application.possible_duplicate_candidate_id is not None:
+        reasons.append(POSSIBLE_DUPLICATE)
+    return reasons
 
 
 def store_extraction(
@@ -169,7 +205,9 @@ def store_extraction(
     personal.full_name = _cut(application.applicant_name or format_person_name(result.candidate_name.value), 200)
     personal.contact_email = _cut(application.applicant_email or extracted_email, 254)
     personal.contact_phone = _cut(application.applicant_phone or result.phone, 40)
-    personal.state = application.applicant_state or personal.state
+    # The State on the resume's own address is used only where the form gave
+    # none, and only when it is one of the listed States.
+    personal.state = application.applicant_state or canonical_state(result.state) or personal.state
     # Category and disability status are form inputs; copy them, never infer them.
     personal.category = application.category
     personal.differently_abled_flag = application.differently_abled
@@ -195,6 +233,8 @@ def store_extraction(
         q = CandidateQualification(
             candidate_id=cand_id, application_id=app_id, found_in_resume=e.found_in_resume,
             degree_level=e.level, degree=_cut(e.degree, 200), discipline=_cut(e.course, 200),
+            institution_id=match_institution(session, e.college, e.university),
+            discipline_listed=listed_discipline(e.course) or listed_discipline(e.degree),
             college_name=_cut(e.college, 250), university_name=_cut(e.university, 250),
             year_of_completion=_year(e.completion), completion_stated=_cut(e.completion, 10),
             marks_pct=e.marks_pct, cgpa=e.cgpa, division=_cut(e.division, 80),
@@ -215,36 +255,52 @@ def store_extraction(
             employer_name=_cut(x.institution, 250), designation_held=_cut(x.designation, 200),
             start_stated=_cut(x.start, 10), end_stated=None if current else _cut(x.end, 10),
             is_current=current, duration_stated=_cut(x.duration, 80), experience_type=x.kind,
+            concurrent_with_study=x.concurrent_with_study,
         ))
     for p in result.publications:
         session.add(CandidatePublication(
             candidate_id=cand_id, application_id=app_id, found_in_resume=p.found_in_resume,
             title=_cut(p.title, 600) or "", publication_type=p.kind, status=p.status,
             indexing=_cut(p.indexing, 80), venue_name=_cut(p.venue, 400), year=_year(p.year),
+            impact_factor=p.impact_factor, is_first_author=p.is_first_author, author_count=p.author_count,
         ))
     for v in result.events:
         session.add(CandidateEvent(
             candidate_id=cand_id, application_id=app_id, found_in_resume=v.found_in_resume,
             kind=v.kind, title=_cut(v.title, 500) or "", role=v.role,
             organiser=_cut(v.organiser, 300), duration_stated=_cut(v.duration, 80), year=_year(v.year),
+            level=v.level,
         ))
     for a in result.achievements:
         session.add(CandidateAchievement(
             candidate_id=cand_id, application_id=app_id, found_in_resume=a.found_in_resume,
             kind=a.kind, title=_cut(a.title, 500) or "", details=_cut(a.details, 500),
             year=_year(a.year), status=_cut(a.status, 60),
+            level=a.level, amount_stated=_cut(a.amount, 80), amount_inr=a.amount_inr,
         ))
     for g in result.guidance:
         session.add(CandidateGuidance(
             candidate_id=cand_id, application_id=app_id, found_in_resume=g.found_in_resume,
             level=g.level, description=_cut(g.description, 500) or "", student_count=g.count,
         ))
+    levels = {s.name: s.level for s in result.subjects}
     for s in result.subjects_taught:
-        session.add(CandidateSubjectTaught(candidate_id=cand_id, application_id=app_id, subject_name=_cut(s, 250) or ""))
+        session.add(CandidateSubjectTaught(
+            candidate_id=cand_id, application_id=app_id, subject_name=_cut(s, 250) or "", course_level=levels.get(s),
+        ))
     for s in result.skills:
         session.add(CandidateSkill(candidate_id=cand_id, application_id=app_id, skill_name=_cut(s, 200) or ""))
     for m in result.memberships:
         session.add(CandidateMembership(candidate_id=cand_id, application_id=app_id, membership=_cut(m, 300) or ""))
+
+    # What the candidate states about their own research record. Kept per
+    # candidate; a later resume replaces only what it states.
+    stated = {k: v for k, v in result.research_profile.model_dump().items() if v is not None}
+    if stated:
+        research = session.get(CandidateResearchProfile, cand_id) or CandidateResearchProfile(candidate_id=cand_id)
+        for name, value in stated.items():
+            setattr(research, name, _cut(value, 80 if name == "google_scholar_id" else 40) if isinstance(value, str) else value)
+        session.add(research)
 
     session.flush()
     profile = profile or CandidateProfile(

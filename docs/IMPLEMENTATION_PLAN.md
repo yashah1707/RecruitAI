@@ -9,7 +9,7 @@ decision changes, this file is edited in the same commit and the change is
 noted in the [Change log](#change-log).
 
 - Last updated: 2026-10-06
-- Current phase: **Phase 4 — Reader aligned to the data model, and Gate 1** (not started)
+- Current phase: **Phase 4 — Reader aligned to the data model, and Gate 1** (built and merged; accuracy of the new fields still to be measured)
 
 ## Status at a glance
 
@@ -19,7 +19,7 @@ noted in the [Change log](#change-log).
 | 1 | Foundation: FastAPI app, PostgreSQL schema, application states, audit trail | Done |
 | 2 | Statutory rules as data: UGC thresholds and score tables with clause and page | Built, UGC and AICTE; awaiting a human check of the transcription |
 | 3 | Intake: job openings, in-app application form, HR manual upload | Done |
-| 4 | Reader aligned to the data model; extraction review (Gate 1) | Not started |
+| 4 | Reader aligned to the data model; extraction review (Gate 1) | Built; new fields' accuracy not yet measured |
 | 5 | Assessor and Decision: the deterministic rule engine | Not started |
 | 6 | HR dashboard: outcomes with reasons, approve or override (Gate 2) | Not started |
 | 7 | Reporting: digest, plain-language reasons, drafted emails (Gate 3) | Not started |
@@ -248,21 +248,78 @@ Not done, and where it belongs:
   possible duplicate, or re-queue a failed job from the screen (Phase 4, Gate 1).
 - An applicant cannot look up the status of an application.
 
-## Phase 4 — Reader aligned to the data model, and Gate 1
+## Phase 4 — Reader aligned to the data model, and Gate 1 (built; the new fields' accuracy not yet measured)
 
-- [ ] Extend extraction for the fields the data model has and we lack: state, first-author
-      flag, author count, impact factor, research profile IDs and metrics, subject level
-      (UG/PG), per-post concurrency with study, project funding amounts, level of awards and talks.
-- [ ] Map institutions to `institutions_master` (tier), disciplines to the discipline list.
-- [ ] Gate 1 screen: PENDING_REVIEW applications show only the flagged fields for a
-      person to complete or correct; edits are audited.
-- [ ] Stop flagging NET/SET "low confidence" when the resume has no NET/SET mention.
-- [ ] HR can enter category, state and study leave for an uploaded resume; resolve a possible
-      duplicate (same person or not); re-queue a job that stopped retrying.
-- [ ] Decide on OCR for scanned resumes.
+Goal: the Reader fills the data model's fields, and a person can settle what it could not.
+
+- [x] Extraction extended (`llm/interface.py`, `llm/prompts/extraction.md`, the Gemini schema): the State in the
+      candidate's address; per paper, the author list, first-author flag and impact factor; research profile IDs
+      (Scopus, ORCID, Google Scholar) and stated metrics (citations, h-index, i10-index); the programme level each
+      subject was taught at; whether the resume says a post was held while studying; a funded project's amount;
+      the level (international, national, State, university) of awards and events.
+- [x] The model copies; Python counts and converts. The author count is the length of the copied author list.
+      A funding amount is copied as written and turned into rupees in code (`parse_amount_inr`), and only when it
+      is plainly one rupee amount. Each new value is kept only if the resume states it: an author list with a name
+      not in the resume is dropped whole, an impact factor or metric must appear as a number in the text, a level
+      needs its word in the resume, and "held while studying" is only ever yes or unknown, never no.
+- [x] Institutions: `institutions_master` is seeded with the four rows of the workbook's Institutions_Master sheet
+      and matched by exact name or alias, never by a near match. HR extends the list from a CSV
+      (`python -m backend.institutions <file.csv>`).
+- [x] Disciplines: each qualification's course is placed on the workbook's Discipline list (25 entries) when its
+      wording names one; otherwise it is left unplaced, not filed under "Other".
+- [x] Gate 1 screen (`/hr/applications/{id}`, `backend/gate1.py`): a PENDING_REVIEW application shows only the
+      flagged fields, each with why it was flagged and the line the Reader quoted. A person enters or confirms a
+      value, or ticks "not stated; leave empty". The check is saved whole or not at all; every field is recorded in
+      `review_edits` (confirmed, corrected, entered or left empty, with the value before and after); the application
+      then moves to EXTRACTED. The audit trail in `state_transitions` names the fields, never the values.
+- [x] NET/SET "low confidence" no longer raised when the resume has no NET/SET wording at all: a text search
+      confirms the absence, so the confidence is only capped. If the wording is present and the Reader still
+      recorded none, the row is flagged with its own reason (`net_set_status:mentioned_in_resume`).
+- [x] An HR upload has no form answers, so it now always stops at Gate 1 for category, State, differently-abled
+      and study leave. They are entered by a person, never read off the resume. "Not known" is an allowed answer.
+- [x] A possible duplicate is a reason for review. A person answers "same person" (the application and everything
+      read from its resume move to the candidate already held) or "different person". One person cannot end up
+      with two live applications for one opening; one of them is withdrawn instead.
+- [x] A job that stopped retrying has a "Try again" button on the HR home page.
+- [x] The stored resume opens from the review page, served under the application reference.
+- [x] OCR for scanned resumes: **no, for now** (decided 2026-10-06). A scanned file goes to "Needs attention".
+- [x] The new prompt run on a live model: the user read 12 resumes on 2026-10-06 and all 12 were read and stored.
+- [ ] **Compare the new fields with the resumes.** In that run the author count was filled for 26 of 131
+      publications, an event level for 19 of 109, a subject level for 10 of 68, and impact factor, funding amount
+      and "held while studying" for none. A value is kept only when the resume states it, so low is not wrong
+      by itself, but nobody has yet checked how many were missed. The author list is the first to look at: it
+      is dropped whole if one name does not match the resume text.
+
+Verified: 72 new tests; 725 in total on SQLite, and the 243 backend tests on PostgreSQL 16. Migration 0004 applied,
+checked for drift, downgraded and re-applied on PostgreSQL. The review page was run on a temporary server with the
+fake provider and made-up files: three uploads read, one checked and saved through to EXTRACTED, and the page
+checked by screenshot. The user then read 12 resumes on the live model and completed a check on the real screen.
+In that run all 12 came back with no NET/SET and 2 were flagged for it; 6 of the 12 needed only the form answers.
+A first attempt the same afternoon failed on HTTP 503 from one model (overloaded), not on the new response format.
+
+Different from the plan as first written:
+
+- **Still no HTMX.** The check is one form saved in one step, which needs no partial updates.
+- **Whether a talk was abroad is not extracted.** Table 2 scores an international talk abroad and one in India
+  differently; the Reader records "international" only. Left for Phase 5 to ask or for a person to supply.
+- **"Held while studying" is recorded only when the resume says so in words.** Working it out from the dates of
+  the post and the degree is arithmetic, so it belongs to the Phase 5 engine.
+- New columns beyond the workbook: `author_count` on publications; `level` on events; `level`, `amount_stated`
+  and `amount_inr` on achievements; `discipline_listed` on qualifications; `aliases` on institutions; and the
+  `review_edits` table.
+- The fixed lists (categories, States, disciplines) moved to `backend/lists.py`.
+
+Not done, and where it belongs:
+
+- Every resume read before this phase has to be read again to get the new fields: the prompt changed, so the
+  result cache no longer matches.
+- HR cannot replace an unreadable file from the screen (the applicant re-applies, or HR uploads the new file).
+- A field that was not flagged cannot be edited at Gate 1. That is the design (Section 9.6); Gate 2 (Phase 6)
+  is where an outcome is overridden.
+- The institutions list holds four rows until HR supplies the real one.
 
 Done when: an application moves RECEIVED to EXTRACTED, or to PENDING_REVIEW and back
-after a human fills the gaps.
+after a human fills the gaps. Both paths are covered by tests.
 
 ## Phase 5 — Assessor and Decision (the rule engine)
 
@@ -330,6 +387,9 @@ Development uses made-up resumes only.
 | 2026-10-04 | Primary intake is an in-app form; Google Forms and email are additional channels. |
 | 2026-10-04 | Email is read over IMAP so the mailbox can change without code changes. |
 | 2026-10-04 | No live Gemini calls without the user's go-ahead (free-tier quota). |
+| 2026-10-06 | No OCR for now: a scanned resume is reported under Needs attention and a readable copy is asked for. |
+| 2026-10-06 | The extraction prompt was changed once, with the user's agreement, for all Phase 4 fields together. |
+| 2026-10-06 | An HR upload always stops at Gate 1 for the form answers; they are never taken from the resume. |
 | Earlier | Rank and score across uploaded resumes kept in the Phase 0 workbook at the user's request; to be superseded in Phase 5. |
 | Earlier | CGPA shown as a percentage using (CGPA − 0.75) × 10, marked as converted. |
 
@@ -342,7 +402,6 @@ Development uses made-up resumes only.
 | Are category and contact details hidden from the interview panel? (§17.5) | Phase 9 |
 | Which college mailbox, and who grants access | Phase 8 |
 | Where the system will be hosted | Phase 10 |
-| OCR for scanned resumes: yes or no | Phase 4 |
 | Does the university assess technical-school posts under AICTE cl. 5.1/5.2 and not UGC cl. 4.1? (mentor sheet, Section 11) | Phase 5 |
 | Which later AICTE clarifications apply; they have not been read | Phase 5 |
 | Does any relaxation or short-listing score apply to AICTE-governed posts? The Regulation has neither | Phase 5 |
@@ -352,6 +411,9 @@ Development uses made-up resumes only.
 | Table 3A: does an M.Tech/M.E. score as Post-Graduation, under S.No. 3, or both? | Phase 5 (short-listing score) |
 | How is a CGPA placed in the percentage bands of Table 3A? | Phase 5 |
 | Who checks and signs the rules transcription sheet | Before Phase 5 results are relied on |
+| HR's institutions list with tiers and other spellings (four workbook rows are loaded) | Phase 6 (highlights) |
+| Was an international talk given abroad or in India? Not on most resumes; ask on the form, or at document check? | Phase 5 (Research Score) |
+| How accurate are the new fields on real resumes? Read live once; not yet compared with the resumes | Before Phase 5 relies on them |
 
 ## Risks
 
@@ -364,6 +426,7 @@ Development uses made-up resumes only.
 | The public form has no login, CSRF protection or rate limit | Phase 9; until then the server stays on 127.0.0.1 |
 | Research Score needs evidence resumes lack | Labelled as claimed; verified at document check |
 | Older commits on GitHub still contain tests naming real candidates (removed from current code in Phase 1) | Rewrite history only if the user asks |
+| The new extracted fields have not been measured against the resumes | Each is kept only if the resume states it; a live run on real resumes before Phase 5 uses them |
 | SQLite and PostgreSQL behave differently in places | Run the backend tests with `TEST_DATABASE_URL` set before each commit that touches the schema |
 
 ## Change log
@@ -376,3 +439,4 @@ Development uses made-up resumes only.
 | 2026-10-05 | Phase 2 built from the gazette PDFs. Added `relaxation_rules` and `score_rules` tables. Finding: UGC cl. 4 has no engineering section, so AICTE norms govern the technical schools and must be transcribed before Phase 5 can assess them. Five open questions added. |
 | 2026-10-06 | AICTE (Degree) Regulation, 2019 loaded after the user supplied the HR portal's files. `rubric_rules` gained `discipline_group` and `criteria`. Mentor review document added. Differences between the State G.R. and the UGC gazette recorded. Phase 5 must now choose between two rule sets by school, and the home-made ranking's replacement (Table 3A) applies to UGC-governed posts only. |
 | 2026-10-06 | Phase 3 built. The rule set is chosen by HR per opening. Reading is queued and started by a person, not automatic. HTMX deferred to Phase 4. Gate 1 (Phase 4) gains: entering form answers for HR uploads, resolving possible duplicates, re-queuing failed jobs. Reading moved off the request into the background after the first version made the page wait for every resume. |
+| 2026-10-06 | Phase 4 built. Extraction prompt changed (every resume must be re-read). OCR decided: no. Gate 1 screen, `review_edits` audit table, duplicate resolution, withdraw and job retry added. NET/SET "none" is now checked against the resume text. HR uploads always stop at Gate 1 for the form answers. Institutions seeded from the workbook (four rows) and disciplines mapped to its list. Open: measuring the new fields against the resumes; HR's institutions list; whether a talk was abroad. |

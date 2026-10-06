@@ -103,7 +103,22 @@ class PublicationEntry(BaseModel):
     year: str | None = None
     status: PublicationStatus = "PUBLISHED"
     indexing: str | None = None  # "Scopus", "SCI", "UGC CARE", as the resume says
+    # The author names as the resume lists them for this paper, in order. The
+    # model copies; counting them is done in Python (llm.postprocess), which
+    # fills author_count. Empty when the resume gives no author list.
+    authors: list[str] = Field(default_factory=list)
+    author_count: int | None = None
+    # True/False only when the author list is given; otherwise null.
+    is_first_author: bool | None = None
+    impact_factor: float | None = None  # only if the resume states one for this paper
     found_in_resume: bool = True
+
+
+# How wide an award, talk or event was, when the resume says so in words
+# ("International Conference on ...", "State Level Best Teacher Award").
+# Table 2 of the UGC Regulations scores these levels differently.
+ScopeLevel = Literal["INTERNATIONAL", "NATIONAL", "STATE", "UNIVERSITY"]
+CourseLevel = Literal["UG", "PG", "PhD", "Diploma"]
 
 
 class EventEntry(BaseModel):
@@ -113,6 +128,7 @@ class EventEntry(BaseModel):
     organiser: str | None = None
     duration: str | None = None  # "5 days", "One week", as stated
     year: str | None = None
+    level: ScopeLevel | None = None
     found_in_resume: bool = True
 
 
@@ -128,6 +144,10 @@ class ExperienceEntry(BaseModel):
     start: str | None = None  # "YYYY", "YYYY-MM" or "YYYY-MM-DD"
     end: str | None = None  # same shape, or "PRESENT"
     duration: str | None = None  # as the resume states it: "3 years 2 months"
+    # True only when the resume itself says this post was held while a degree
+    # was being pursued ("Ph.D. (part-time) while working as ..."). Never
+    # worked out from dates here: comparing date ranges is the engine's job.
+    concurrent_with_study: bool | None = None
     found_in_resume: bool = True
 
 
@@ -137,6 +157,11 @@ class AchievementEntry(BaseModel):
     details: str | None = None  # funding agency, amount, patent number, awarding body
     year: str | None = None
     status: str | None = None  # "Granted", "Published", "Ongoing", "Completed", as stated
+    level: ScopeLevel | None = None
+    # A funded project's amount exactly as written ("Rs. 12.5 Lakhs"). Turned
+    # into rupees by llm.postprocess.parse_amount_inr, never by the model.
+    amount: str | None = None
+    amount_inr: float | None = None
     found_in_resume: bool = True
 
 
@@ -147,9 +172,28 @@ class GuidanceEntry(BaseModel):
     found_in_resume: bool = True
 
 
+class SubjectEntry(BaseModel):
+    name: str
+    level: CourseLevel | None = None  # only if the resume says which programme it was taught to
+
+
+class ResearchProfile(BaseModel):
+    """Identifiers and metrics the candidate states about their own research."""
+
+    scopus_author_id: str | None = None
+    orcid_id: str | None = None
+    google_scholar_id: str | None = None
+    total_citations: int | None = None
+    h_index: int | None = None
+    i10_index: int | None = None
+
+
+# What the model is asked to return besides the scored fields. `subjects_taught`
+# is no longer asked for: it is the names from `subjects`, filled in by code.
 DETAIL_FIELDS: tuple[str, ...] = (
-    "education", "publications", "events", "subjects_taught", "skills",
+    "education", "publications", "events", "subjects", "skills",
     "experience", "achievements", "guidance", "memberships", "email", "phone",
+    "research_profile", "state",
 )
 
 
@@ -242,6 +286,16 @@ class ExtractionResult(BaseModel):
     # user asked for it, never written to logs.
     email: str | None = None
     phone: str | None = None
+    # Added in Phase 4. `subjects` carries the level each subject was taught
+    # at; `subjects_taught` stays as the plain names for the workbook.
+    subjects: list[SubjectEntry] = Field(default_factory=list)
+    research_profile: ResearchProfile = Field(default_factory=ResearchProfile)
+    # The State in the candidate's own address, only when the resume writes
+    # it. An application-form answer always outranks it.
+    state: str | None = None
+    # Whether the resume text contains a NET/SET/SLET mention at all. Found by
+    # a text search in llm.postprocess, not reported by the model.
+    net_set_mentioned_in_text: bool | None = None
 
 
 # Ordered once here so the workbook, the confidence routing and the UI all

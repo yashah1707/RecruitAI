@@ -188,7 +188,7 @@ touching provider code.
 
 ## Detail lists
 
-Besides the fields above, return five plain lists. These have no confidence
+Besides the fields above, return the plain lists below. These have no confidence
 or evidence; instead every text value must be COPIED from the resume, because
 each item is checked against the resume text afterwards and an item that
 cannot be found there is marked as unverified. Do not tidy, expand, translate
@@ -226,6 +226,16 @@ list `[]` when the resume has nothing of that kind.
     `IN_PREPARATION`. Use `PUBLISHED` unless the resume says otherwise.
   - `indexing`: "Scopus", "SCI", "Web of Science", "UGC CARE" etc., only if
     the resume states it for that paper.
+  - `authors`: the author names the resume lists for THAT paper, one name per
+    item, in the order written and spelled exactly as written ("S. K.
+    Exampleton", "Exampleton S."). Include the candidate. `[]` when the
+    resume gives the paper without an author list. Do not count them.
+  - `is_first_author`: `true` if the candidate's own name is the first name
+    in that author list, `false` if it is there but not first. `null`
+    whenever `authors` is `[]`. Never assume the candidate is first.
+  - `impact_factor`: the impact factor only if the resume states one for
+    that paper or its journal ("IF: 3.2", "Impact Factor 5.01"). Copy the
+    number. `null` otherwise; never supply one you happen to know.
 - `events` — one entry per FDP, STTP, workshop, seminar, webinar, conference,
   training programme or certification course (NPTEL, Coursera and similar).
   - `kind`: `FDP`, `STTP`, `WORKSHOP`, `SEMINAR`, `WEBINAR`, `CONFERENCE`,
@@ -235,8 +245,18 @@ list `[]` when the resume has nothing of that kind.
     (delivered the session), `PRESENTED` (presented a paper), or `OTHER`.
   - `organiser`: the institution or body that ran it. `duration`: as stated
     ("5 days", "One Week", "12 weeks"). `year`: `YYYY`.
-- `subjects_taught` — the subjects/courses the candidate has taught, one per
-  item, as named in the resume. Not their research areas.
+  - `level`: `INTERNATIONAL`, `NATIONAL`, `STATE` or `UNIVERSITY`, only when
+    the resume uses that word for the event ("International Conference
+    on ...", "National Level Workshop", "State Level Seminar") or lists it
+    under a heading that does. `null` otherwise. A foreign-sounding name or
+    a well-known organiser is not a stated level.
+- `subjects` — the subjects/courses the candidate has taught, one entry
+  each. Not their research areas.
+  - `name`: the subject as named in the resume.
+  - `level`: `UG`, `PG`, `PhD` or `Diploma`, only when the resume says which
+    programme the subject was taught to ("Subjects taught (M.Tech): ...",
+    "UG: Data Structures"). `null` when it does not say. Do not guess the
+    level from how advanced the subject sounds.
 - `skills` — technical skills: programming languages, tools, software,
   platforms, one per item. Not soft skills ("hardworking", "team player").
 - `experience` — one entry per job/post held, most recent first. A promotion
@@ -250,6 +270,12 @@ list `[]` when the resume has nothing of that kind.
     "working") set `end` to `PRESENT`. `null` when not stated.
   - `duration`: only if the resume itself states one for that post
     ("3 years 2 months"); copy it. Never calculate it.
+  - `concurrent_with_study`: `true` ONLY when the resume says in words that
+    this post was held while the candidate was studying for a degree
+    ("pursued Ph.D. part-time while working as Assistant Professor",
+    "in-service Ph.D."). `null` in every other case. Never work it out by
+    comparing the dates of the post with the dates of a degree, and never
+    return `false`.
 - `achievements` — patents, awards/honours, funded research projects and
   grants, one entry each.
   - `kind`: `PATENT`, `AWARD`, `FUNDED_PROJECT`, `GRANT`, or `OTHER`.
@@ -257,6 +283,13 @@ list `[]` when the resume has nothing of that kind.
   - `details`: funding agency and amount, patent/application number, or the
     awarding body, as stated. `year`: `YYYY`. `status`: as stated ("Granted",
     "Published", "Filed", "Ongoing", "Completed").
+  - `amount`: for a funded project or grant, the amount of money exactly as
+    the resume writes it, with its currency and unit ("Rs. 12.5 Lakhs",
+    "INR 5,00,000"). Copy it; do not convert it or change the unit. `null`
+    when no amount is stated or the entry is not a project or grant.
+  - `level`: `INTERNATIONAL`, `NATIONAL`, `STATE` or `UNIVERSITY`, under the
+    same rule as for `events`: only when the resume uses the word for this
+    award, patent or project. `null` otherwise.
 - `guidance` — research/project supervision the candidate has done, one entry
   per statement ("Guided 12 M.E. dissertations", "2 Ph.D. scholars pursuing").
   - `level`: `PHD`, `PG`, `UG`, or `OTHER`. `description`: the statement as
@@ -265,6 +298,19 @@ list `[]` when the resume has nothing of that kind.
   ("Life Member, ISTE", "IEEE Member").
 - `email` and `phone` — the candidate's own email address and phone number,
   copied exactly. `null` if not given. If several are listed, the first.
+- `state` — the Indian State or Union Territory in the candidate's own
+  postal address, only when the address itself names it ("Pune,
+  Maharashtra"). Copy the name as written. `null` when the address gives a
+  city or PIN code without a State, or there is no address: do not work the
+  State out from the city, the PIN code, the college or a SET certificate.
+- `research_profile` — what the candidate states about their own research
+  record. Every part is `null` unless the resume states it.
+  - `scopus_author_id`, `orcid_id`, `google_scholar_id`: the identifier
+    itself, copied exactly ("0000-0002-1825-0097"); for Google Scholar, the
+    user id or the profile link as written.
+  - `total_citations`, `h_index`, `i10_index`: the numbers the resume
+    states ("Citations: 214", "h-index: 8"). Copy them; never count
+    citations or work out an index yourself.
 
 ## Few-shot example 1 of 2 — FORMAT ONLY, fictional candidate, DO NOT COPY
 

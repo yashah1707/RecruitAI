@@ -115,6 +115,9 @@ def session(engine):
 
 
 def _application(session, tmp_path, data=None, filename="cv.docx", **fields) -> Application:
+    # As if it came through the application form, so the form answers are not
+    # what sends it to review. HR uploads are covered in test_backend_gate1.
+    fields.setdefault("resume_source", "WEB_FORM")
     digest, path = save_resume(filename, data or _docx(), tmp_path)
     a = Application(
         candidate=Candidate(), school_id="SCH-008", applied_designation="ASSISTANT_PROFESSOR",
@@ -250,7 +253,9 @@ def test_a_second_applicant_with_the_same_email_does_not_break_the_run(session, 
     second = _application(session, tmp_path)
     read_application(session, second, FakeProvider(script=[_clean_result()]))
     session.flush()
-    assert second.status == states.EXTRACTED and second.candidate.email is None  # left for a person to merge
+    # Left for a person to settle at Gate 1; nothing is merged by the Reader.
+    assert second.status == states.PENDING_REVIEW and second.candidate.email is None
+    assert session.get(ExtractedData, second.application_id).review_reasons == ["candidate:possible_duplicate"]
 
 
 def test_a_result_needing_review_ends_pending_review_with_reasons_and_no_values(session, tmp_path):
@@ -349,7 +354,8 @@ def client(engine, tmp_path, monkeypatch):
 
 
 def _post(client, **overrides):
-    data = {"school_id": "SCH-008", "applied_designation": "ASSISTANT_PROFESSOR", "category": "General"}
+    data = {"school_id": "SCH-008", "applied_designation": "ASSISTANT_PROFESSOR", "category": "General",
+            "resume_source": "WEB_FORM"}
     data.update(overrides)
     data = {k: v for k, v in data.items() if v is not None}
     return client.post(

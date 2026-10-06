@@ -20,6 +20,7 @@ from sqlalchemy.orm import Session
 
 from backend import states
 from backend.jobs import enqueue_read
+from backend.lists import CATEGORIES, STATES  # noqa: F401  (also used through this module)
 from backend.models import Application, Candidate, Department, JobOpening, RecruitmentDrive, School
 from backend.storage import RejectedUpload, save_resume
 
@@ -29,9 +30,6 @@ DESIGNATIONS: dict[str, str] = {
     "PROFESSOR": "Professor",
     "SENIOR_PROFESSOR": "Senior Professor",
 }
-
-# Lists!Category in the data-model workbook.
-CATEGORIES: tuple[str, ...] = ("General", "SC", "ST", "OBC-NCL", "EWS", "PwD")
 
 # "GENERAL" is UGC cl. 4.1. The rest are the AICTE (Degree) Regulation, 2019
 # groups a rule exists for (backend/rules_data.py).
@@ -48,16 +46,6 @@ DISCIPLINE_GROUPS: dict[str, str] = {
     "FINE_ARTS": "AICTE: Fine Arts",
     "SCIENCE_HUMANITIES": "AICTE institution, science and humanities faculty (assessed under UGC)",
 }
-
-# Lists!IndianStates in the data-model workbook.
-STATES: tuple[str, ...] = (
-    "Andhra Pradesh", "Arunachal Pradesh", "Assam", "Bihar", "Chhattisgarh", "Goa", "Gujarat", "Haryana",
-    "Himachal Pradesh", "Jharkhand", "Karnataka", "Kerala", "Madhya Pradesh", "Maharashtra", "Manipur",
-    "Meghalaya", "Mizoram", "Nagaland", "Odisha", "Punjab", "Rajasthan", "Sikkim", "Tamil Nadu", "Telangana",
-    "Tripura", "Uttar Pradesh", "Uttarakhand", "West Bengal", "Andaman and Nicobar Islands", "Chandigarh",
-    "Dadra and Nagar Haveli and Daman and Diu", "Delhi", "Jammu and Kashmir", "Ladakh", "Lakshadweep",
-    "Puducherry", "Outside India",
-)
 
 _EMAIL_RE = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
 _PHONE_DIGITS_RE = re.compile(r"\d")

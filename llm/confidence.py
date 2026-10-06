@@ -300,6 +300,11 @@ def evaluate(
         reasons.append("phd_regulation:manual_entry_required")
 
     status = result.net_set_status.value
+    # The resume uses NET/SET wording somewhere, yet the model reported none.
+    # It may be right ("appeared for NET"), but this is the reading error that
+    # costs a candidate most, so a person looks.
+    if status == "NONE" and result.net_set_mentioned_in_text:
+        reasons.append("net_set_status:mentioned_in_resume")
     if status in ("SET", "SLET") and _set_state_is_unusable(result.set_state, threshold):
         reason = "set_state:required_for_" + str(status).lower()
         if reason not in reasons:

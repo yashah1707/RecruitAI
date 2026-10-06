@@ -85,6 +85,8 @@ class InstitutionMaster(Base):
     institution_name: Mapped[str] = mapped_column(String(250), unique=True)
     tier: Mapped[str] = mapped_column(String(20))  # PREMIER / NATIONAL / STATE / OTHER
     category: Mapped[str] = mapped_column(String(40))
+    # Other ways resumes write the same name ("IIT Bombay", "I.I.T. Mumbai").
+    aliases: Mapped[list | None] = mapped_column(JSON)
 
 
 # --- openings ----------------------------------------------------------------
@@ -237,6 +239,27 @@ class StateTransition(Base):
     application: Mapped[Application] = relationship(back_populates="transitions")
 
 
+class ReviewEdit(Base):
+    """What a person did to one field at Gate 1: the audit trail of extraction review.
+
+    Holds the value before and after, so it is candidate data and lives here,
+    never in a log line or in `state_transitions.note`.
+    """
+
+    __tablename__ = "review_edits"
+
+    edit_id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    application_id: Mapped[int] = mapped_column(ForeignKey("applications.application_id"), index=True)
+    field: Mapped[str] = mapped_column(String(60))
+    # CONFIRMED (kept as read) / CORRECTED / ENTERED (was empty) / LEFT_EMPTY
+    # (not available from the resume) / SAME_PERSON / DIFFERENT_PERSON
+    action: Mapped[str] = mapped_column(String(20))
+    old_value: Mapped[str | None] = mapped_column(String(300))
+    new_value: Mapped[str | None] = mapped_column(String(300))
+    actor: Mapped[str] = mapped_column(String(80))
+    edited_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
+
+
 class ExtractedData(Base):
     """The Reader's output for one application, retained for audit (Section 10.2)."""
 
@@ -320,6 +343,9 @@ class CandidateQualification(_CandidateItem, Base):
     degree_level: Mapped[str] = mapped_column(String(10))  # UG / PG / PhD / Post-Doc
     degree: Mapped[str | None] = mapped_column(String(200))  # as written on the resume
     discipline: Mapped[str | None] = mapped_column(String(200))  # course / specialisation, as written
+    # The same course placed on the workbook's Discipline list, when its
+    # wording names one plainly (backend.lists.listed_discipline). Else empty.
+    discipline_listed: Mapped[str | None] = mapped_column(String(60))
     institution_id: Mapped[int | None] = mapped_column(ForeignKey("institutions_master.institution_id"))
     college_name: Mapped[str | None] = mapped_column(String(250))
     university_name: Mapped[str | None] = mapped_column(String(250))
@@ -349,8 +375,9 @@ class CandidateExperience(_CandidateItem, Base):
     is_current: Mapped[bool] = mapped_column(Boolean, default=False)
     duration_stated: Mapped[str | None] = mapped_column(String(80))
     experience_type: Mapped[str] = mapped_column(String(20))
-    # The cl. 3.11 flags (Section 9.5). Not inferred: left empty until the
-    # form or a reviewer supplies them.
+    # The cl. 3.11 flags (Section 9.5). Not inferred. `concurrent_with_study`
+    # is set only when the resume says so in words; otherwise both stay empty
+    # until the form, a reviewer or the engine supplies them.
     concurrent_with_study: Mapped[bool | None] = mapped_column(Boolean)
     study_leave_taken: Mapped[bool | None] = mapped_column(Boolean)
 
@@ -381,6 +408,7 @@ class CandidatePublication(_CandidateItem, Base):
     citation_count: Mapped[int | None] = mapped_column(Integer)
     year: Mapped[int | None] = mapped_column(Integer)
     is_first_author: Mapped[bool | None] = mapped_column(Boolean)
+    author_count: Mapped[int | None] = mapped_column(Integer)
 
 
 class CandidateSubjectTaught(_CandidateItem, Base):
@@ -431,6 +459,7 @@ class CandidateEvent(_CandidateItem, Base):
     organiser: Mapped[str | None] = mapped_column(String(300))
     duration_stated: Mapped[str | None] = mapped_column(String(80))
     year: Mapped[int | None] = mapped_column(Integer)
+    level: Mapped[str | None] = mapped_column(String(20))  # INTERNATIONAL / NATIONAL / STATE / UNIVERSITY
 
 
 class CandidateAchievement(_CandidateItem, Base):
@@ -442,6 +471,9 @@ class CandidateAchievement(_CandidateItem, Base):
     details: Mapped[str | None] = mapped_column(String(500))
     year: Mapped[int | None] = mapped_column(Integer)
     status: Mapped[str | None] = mapped_column(String(60))
+    level: Mapped[str | None] = mapped_column(String(20))
+    amount_stated: Mapped[str | None] = mapped_column(String(80))  # "Rs. 12.5 Lakhs", as written
+    amount_inr: Mapped[float | None] = mapped_column(Float)  # the same in rupees, when it is unambiguous
 
 
 class CandidateGuidance(_CandidateItem, Base):

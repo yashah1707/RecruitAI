@@ -51,3 +51,11 @@ code { background: #eef1f5; padding: 1px 5px; border-radius: 4px; }
   table { display: block; overflow-x: auto; }
   dl.facts { grid-template-columns: 1fr; }
 }
+form.review { display: grid; gap: 14px; }
+.check { display: grid; gap: 6px; padding: 12px 14px; border: 1px solid var(--line); border-left: 4px solid var(--warn-line); border-radius: 6px; max-width: 720px; }
+.check.bad { border-left-color: var(--error); }
+.check > label:first-child { font-weight: 600; }
+.check ul.why { margin: 0; padding-left: 18px; color: var(--muted); font-size: 0.9rem; }
+.quote { margin: 0; font-size: 0.9rem; overflow-wrap: anywhere; }
+.quote q { background: #eef1f5; padding: 1px 4px; border-radius: 4px; }
+form.review > button { justify-self: start; }

@@ -15,16 +15,24 @@ from pathlib import Path
 from urllib.parse import quote
 
 from fastapi import APIRouter, BackgroundTasks, Depends, File, Form, HTTPException, Request, UploadFile
-from fastapi.responses import HTMLResponse, RedirectResponse
+from fastapi.responses import FileResponse, HTMLResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.result_cache import ResultCache
-from backend import intake, jobs, states
+from backend import gate1, intake, jobs, states
 from backend.db import get_session, get_session_factory
 from backend.deps import get_cache, get_provider
-from backend.models import Application, CandidatePersonalDetails, Job, JobOpening, School
+from backend.models import (
+    Application,
+    CandidateExperience,
+    CandidatePersonalDetails,
+    CandidateQualification,
+    Job,
+    JobOpening,
+    School,
+)
 from llm.interface import LLMProvider
 
 logger = logging.getLogger("recruitai.web")
@@ -263,6 +271,120 @@ def queue_run(
         text = (f"Reading {min(waiting, limit)} application(s) now. This can take up to a minute each; "
                 "this page refreshes while it runs.")
     return RedirectResponse(f"{target}{'&' if '?' in target else '?'}msg=" + quote(text), status_code=303)
+
+
+@router.post("/hr/jobs/{job_id}/requeue")
+def job_requeue(job_id: int, session: Session = Depends(get_session)):
+    job = session.get(Job, job_id)
+    if job is None:
+        raise HTTPException(status_code=404, detail="job not found")
+    text = ("Put back in the reading queue. Press Process queue to read it." if jobs.requeue(session, job)
+            else "That application is no longer waiting to be read.")
+    return RedirectResponse("/?msg=" + quote(text), status_code=303)
+
+
+# --- Gate 1: extraction review ----------------------------------------------
+
+_RESUME_TYPES = {".pdf": "application/pdf",
+                 ".docx": "application/vnd.openxmlformats-officedocument.wordprocessingml.document"}
+_FIELD_LABELS = {name: spec.label for name, spec in gate1.FIELDS.items()} | {"candidate": "Possible duplicate"}
+templates.env.globals["ACTION_LABELS"] = {
+    "CONFIRMED": "Confirmed as read", "CORRECTED": "Corrected", "ENTERED": "Entered", "LEFT_EMPTY": "Left empty",
+    "SAME_PERSON": "Same person: records joined", "DIFFERENT_PERSON": "Different person: kept apart",
+}
+
+
+def _application_or_404(session: Session, application_id: int, lock: bool = False) -> Application:
+    application = session.get(Application, application_id, with_for_update=lock)
+    if application is None:
+        raise HTTPException(status_code=404, detail="application not found")
+    return application
+
+
+def _review_page(request: Request, session: Session, a: Application, *, msg: str = "", errors: dict | None = None,
+                 answers: dict | None = None, left_empty: set | None = None, status_code: int = 200):
+    flags = gate1.flagged_fields(session, a) if a.status == states.PENDING_REVIEW else []
+    if answers is not None:  # what the person typed survives a refused save
+        for f in flags:
+            f.value = answers.get(f.name, "")
+
+    def rows(table, key):
+        return session.scalars(select(table).where(table.application_id == a.application_id).order_by(key)).all()
+
+    return templates.TemplateResponse(request, "review.html", {
+        "a": a, "o": a.opening, "e": a.extracted, "msg": msg,
+        "personal": session.get(CandidatePersonalDetails, a.candidate_id),
+        "flags": flags, "errors": errors or {}, "left_empty": left_empty or set(),
+        "duplicate": gate1.duplicate_of(session, a), "edits": gate1.history(session, a),
+        "qualifications": rows(CandidateQualification, CandidateQualification.qualification_id),
+        "experience": rows(CandidateExperience, CandidateExperience.experience_id),
+        "failed_note": a.transitions[-1].note if a.status == states.FAILED and a.transitions else None,
+        "can_withdraw": states.WITHDRAWN in states.ALLOWED[a.status], "field_labels": _FIELD_LABELS,
+    }, status_code=status_code)
+
+
+@router.get("/hr/applications/{application_id}", response_class=HTMLResponse)
+def review_form(request: Request, application_id: int, msg: str = "", session: Session = Depends(get_session)):
+    return _review_page(request, session, _application_or_404(session, application_id), msg=msg)
+
+
+@router.post("/hr/applications/{application_id}/review", response_class=HTMLResponse)
+async def review_save(request: Request, application_id: int, session: Session = Depends(get_session)):
+    a = _application_or_404(session, application_id, lock=True)
+    form = await request.form()
+    answers = {k[len("f_"):]: str(v) for k, v in form.items() if k.startswith("f_")}
+    left_empty = {str(v) for v in form.getlist("empty")}
+    try:
+        settled = gate1.save_review(session, a, answers, left_empty)
+    except gate1.ReviewError as exc:
+        session.rollback()
+        a = _application_or_404(session, application_id)
+        return _review_page(request, session, a, errors=exc.errors, answers=answers, left_empty=left_empty,
+                            msg=exc.errors.get("", ""), status_code=422)
+    text = f"Saved {len(settled)} field(s). " + (
+        "The application is ready for assessment." if a.status == states.EXTRACTED
+        else "The possible duplicate still needs a decision."
+    )
+    return RedirectResponse(f"/hr/applications/{application_id}?msg=" + quote(text), status_code=303)
+
+
+def _review_action(session: Session, application_id: int, action, done: str):
+    """Run one Gate 1 action and go back to the review page with what happened."""
+    a = _application_or_404(session, application_id, lock=True)
+    try:
+        action(a)
+        text = done
+    except gate1.ReviewError as exc:
+        session.rollback()
+        text = exc.errors.get("", "That could not be saved.")
+    return RedirectResponse(f"/hr/applications/{application_id}?msg=" + quote(text), status_code=303)
+
+
+@router.post("/hr/applications/{application_id}/duplicate")
+def review_duplicate(application_id: int, same: str = Form(""), session: Session = Depends(get_session)):
+    if same not in ("yes", "no"):
+        raise HTTPException(status_code=422, detail="answer yes or no")
+    return _review_action(
+        session, application_id, lambda a: gate1.resolve_duplicate(session, a, same_person=same == "yes"),
+        "Recorded as the same person; the records are joined." if same == "yes" else "Recorded as a different person.",
+    )
+
+
+@router.post("/hr/applications/{application_id}/withdraw")
+def review_withdraw(application_id: int, session: Session = Depends(get_session)):
+    return _review_action(session, application_id, lambda a: gate1.withdraw(session, a), "Application withdrawn.")
+
+
+@router.get("/hr/applications/{application_id}/resume")
+def review_resume(application_id: int, session: Session = Depends(get_session)):
+    """The stored resume, so the person checking can read the original beside the form."""
+    a = _application_or_404(session, application_id)
+    path = Path(a.resume_path)
+    if not path.is_file() or path.suffix.lower() not in _RESUME_TYPES:
+        raise HTTPException(status_code=404, detail="the resume file is not available")
+    # Named by its reference, not by the candidate or the original filename.
+    return FileResponse(path, media_type=_RESUME_TYPES[path.suffix.lower()],
+                        filename=f"{a.reference}{path.suffix.lower()}", content_disposition_type="inline")
 
 
 # --- applicants --------------------------------------------------------------

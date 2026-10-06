@@ -172,13 +172,36 @@ def search_coverage(result: ExtractionResult) -> float:
     return grounded / len(_SEARCH_COVERAGE_FIELDS)
 
 
-def _temper_negative_net_set(data: dict, result: ExtractionResult) -> bool:
-    """Scale a NONE's confidence by how much of the resume was searchable."""
+# Any wording that could be a NET/SET/SLET claim. The bare letters count only
+# in capitals ("net" and "set" are ordinary words), and never straight after
+# a dot or a letter, so ".NET", "ASP.NET" and "INTERNET" do not match.
+_DOT_NET_RE = re.compile(r"dot\s*net", re.IGNORECASE)
+_NET_SET_MENTION_RE = re.compile(
+    r"(?<![.\w])NET(?!\w)|(?<![.\w])SL?ET(?!\w)|(?<!\w)JRF(?!\w)"
+    r"|(?i:eligibility\s+test|ugc\s*-?\s*net|csir)"
+)
+
+
+def mentions_net_set(resume_text: str) -> bool:
+    """Whether the resume text names NET, SET, SLET or an eligibility test anywhere."""
+    return bool(_NET_SET_MENTION_RE.search(_DOT_NET_RE.sub(" ", resume_text)))
+
+
+def _temper_negative_net_set(data: dict, result: ExtractionResult, mentioned: bool) -> bool:
+    """Settle how far a `NONE` is trusted.
+
+    A text search finds no NET/SET wording anywhere: the absence is checked,
+    not merely asserted, so the confidence is only capped. (Scaling it by
+    coverage here flagged nearly every candidate who simply had no NET/SET.)
+    The wording is there, or nothing else on the resume was read: scale by
+    how much of the resume was searchable, as before.
+    """
     field = data["net_set_status"]
     if field["value"] != "NONE":
         return False
     coverage = search_coverage(result)
-    tempered = round(min(field["confidence"], MAX_NEGATIVE_FINDING_CONFIDENCE) * coverage, 3)
+    capped = min(field["confidence"], MAX_NEGATIVE_FINDING_CONFIDENCE)
+    tempered = round(capped * coverage if mentioned or coverage == 0 else capped, 3)
     if tempered == field["confidence"]:
         return False
     field["confidence"] = tempered
@@ -376,6 +399,51 @@ def format_phd_evidence(status: str | None, evidence: str | None) -> str | None:
     return format_degree(evidence, extra_noise=_PHD_STATUS_WORDS, force_degree="Ph.D.")
 
 
+# A level is kept only when the resume uses the word for it somewhere. A
+# college or university is named on every resume, so that level needs no check.
+_LEVEL_WORDING: dict[str, re.Pattern] = {
+    "INTERNATIONAL": re.compile(r"international|global|world"),
+    "NATIONAL": re.compile(r"(?<!inter)national|all[\s-]india"),
+    "STATE": re.compile(r"state"),
+    "UNIVERSITY": re.compile(r""),
+}
+
+_CONCURRENT_WORDING = re.compile(r"part[\s-]*time|while\s+(?:working|teaching|serving)|in[\s-]service|alongside|concurrent")
+
+_AMOUNT_RE = re.compile(r"(\d[\d,]*(?:\.\d+)?)\s*(lakhs?|lacs?|crores?|cr\b|thousand|million|k\b|l\b)?", re.IGNORECASE)
+_RUPEE_RE = re.compile(r"rs\.?|inr|₹|rupees?|/-", re.IGNORECASE)
+_FOREIGN_CURRENCY_RE = re.compile(r"\$|usd|eur|€|gbp|£|dollars?|euros?|pounds?", re.IGNORECASE)
+_AMOUNT_UNITS = {"lakh": 1e5, "lac": 1e5, "l": 1e5, "crore": 1e7, "cr": 1e7, "thousand": 1e3, "k": 1e3, "million": 1e6}
+
+
+def parse_amount_inr(text: str | None) -> float | None:
+    """A funding amount as written, in rupees: "Rs. 12.5 Lakhs" -> 1250000.0.
+
+    A change of unit, done here so the model never does it. Returns None for
+    anything not plainly one rupee amount: another currency, two figures, or
+    a bare number with nothing to say it is money.
+    """
+    if not text or _FOREIGN_CURRENCY_RE.search(text):
+        return None
+    matches = [m for m in _AMOUNT_RE.finditer(text) if m.group(2) or _RUPEE_RE.search(text)]
+    if len(matches) != 1:
+        return None
+    number, unit = matches[0].group(1), (matches[0].group(2) or "").lower().rstrip("s")
+    try:
+        value = float(number.replace(",", ""))
+    except ValueError:
+        return None
+    return value * _AMOUNT_UNITS[unit] if unit else value
+
+
+def _number_is_stated(value, resume_text: str) -> bool:
+    """Whether a number the model returned is written in the resume."""
+    if value is None:
+        return False
+    text = f"{value:g}" if isinstance(value, float) else str(value)
+    return re.search(rf"(?<![\d.]){re.escape(text)}(?![\d])", resume_text) is not None
+
+
 def _check_details(data: dict, resume_text: str) -> int:
     """Ground the detail lists against the resume; returns how many failed.
 
@@ -407,10 +475,69 @@ def _check_details(data: dict, resume_text: str) -> int:
             unique.append(entry)
     data["publications"] = unique
 
+    lowered = resume_text.lower()
+
+    def level_is_worded(level: str | None) -> bool:
+        return level is not None and bool(_LEVEL_WORDING[level].search(lowered))
+
+    for entry in data["publications"]:
+        # The author list is only usable whole: one name that is not in the
+        # resume means the list was not copied, so its length proves nothing.
+        authors = [a.strip() for a in entry.get("authors") or [] if isinstance(a, str) and a.strip()]
+        if authors and all(found(a) for a in authors):
+            entry["authors"], entry["author_count"] = authors, len(authors)
+        else:
+            entry["authors"], entry["author_count"], entry["is_first_author"] = [], None, None
+        if not _number_is_stated(entry.get("impact_factor"), resume_text):
+            entry["impact_factor"] = None
+
+    for entry in data.get("events") or []:
+        if not level_is_worded(entry.get("level")):
+            entry["level"] = None
+
+    says_concurrent = bool(_CONCURRENT_WORDING.search(lowered))
     for entry in data.get("experience") or []:
         entry["found_in_resume"] = found(entry.get("institution")) or found(entry.get("designation"))
+        # Only ever "the resume says so" or unknown. "No" cannot be read off a
+        # resume; it is worked out from the dates later, or asked.
+        if entry.get("concurrent_with_study") is not True or not says_concurrent:
+            entry["concurrent_with_study"] = None
     for entry in data.get("achievements") or []:
         entry["found_in_resume"] = found(entry.get("title"))
+        if not level_is_worded(entry.get("level")):
+            entry["level"] = None
+        if not found(entry.get("amount")):
+            entry["amount"] = None
+        entry["amount_inr"] = parse_amount_inr(entry.get("amount"))
+
+    profile = data.get("research_profile") or {}
+    for name in ("scopus_author_id", "orcid_id", "google_scholar_id"):
+        if profile.get(name) and not found(str(profile[name])):
+            profile[name] = None
+            not_found += 1
+    for name in ("total_citations", "h_index", "i10_index"):
+        if not _number_is_stated(profile.get(name), resume_text):
+            profile[name] = None
+    data["research_profile"] = profile
+
+    if data.get("state") and not found(data["state"]):
+        data["state"] = None
+
+    # Subjects with the level they were taught at. The plain list of names is
+    # kept in step with it, for the workbook and anything else that reads it.
+    subjects, seen_subjects = [], set()
+    for entry in data.get("subjects") or []:
+        name = (entry.get("name") or "").strip()
+        if not name or name.lower() in seen_subjects:
+            continue
+        seen_subjects.add(name.lower())
+        if found(name):
+            subjects.append({"name": name, "level": entry.get("level")})
+        else:
+            not_found += 1
+    if data.get("subjects"):
+        data["subjects"] = subjects
+        data["subjects_taught"] = [s["name"] for s in subjects]
     for entry in data.get("guidance") or []:
         entry["found_in_resume"] = found(entry.get("description"))
 
@@ -532,7 +659,8 @@ def sanitize(result: ExtractionResult, resume_text: str) -> tuple[ExtractionResu
             data["has_phd"]["value"] = derived
             stats["has_phd_realigned_to_phd_status"] += 1
 
-    if _temper_negative_net_set(data, result):
+    data["net_set_mentioned_in_text"] = mentions_net_set(resume_text)
+    if _temper_negative_net_set(data, result, data["net_set_mentioned_in_text"]):
         stats["net_set_none_tempered"] += 1
 
     data["candidate_name"]["value"] = format_person_name(data["candidate_name"]["value"])

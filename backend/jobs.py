@@ -158,6 +158,21 @@ def release_stale_jobs(session: Session, now: datetime | None = None) -> int:
     return len(stale)
 
 
+def requeue(session: Session, job: Job, now: datetime | None = None) -> bool:
+    """Give a job that stopped retrying a fresh set of attempts. Returns whether it was requeued.
+
+    Only a person does this, once whatever stopped the model (a spent quota,
+    a wrong key) has been put right.
+    """
+    application = session.get(Application, job.application_id)
+    if job.status != FAILED or application is None or application.status != states.RECEIVED:
+        return False
+    job.status, job.attempts, job.run_after, job.finished_at = PENDING, 0, now or _now(), None
+    job.note = "requeued by HR"
+    session.flush()
+    return True
+
+
 def summarise(ran: list[Job]) -> str:
     """What a run did to the applications, in words for the HR page."""
     if not ran:

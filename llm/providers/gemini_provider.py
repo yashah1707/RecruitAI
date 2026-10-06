@@ -47,6 +47,10 @@ from llm.interface import (
     PublicationEntry,
     PublicationKind,
     PublicationStatus,
+    CourseLevel,
+    ResearchProfile,
+    ScopeLevel,
+    SubjectEntry,
     ExtractionFailure,
     ExtractionResult,
     FieldWithConfidence,
@@ -227,6 +231,9 @@ GEMINI_EXTRACTION_SCHEMA = types.Schema(
                 "venue": _str(), "year": _str(),
                 "status": _str(enum=list(get_args(PublicationStatus)), nullable=False),
                 "indexing": _str(),
+                "authors": {"type": "ARRAY", "items": {"type": "STRING"}},
+                "is_first_author": {"type": "BOOLEAN", "nullable": True},
+                "impact_factor": {"type": "NUMBER", "nullable": True},
             },
             required=["title", "kind", "status"],
         ),
@@ -236,16 +243,21 @@ GEMINI_EXTRACTION_SCHEMA = types.Schema(
                 "title": _str(nullable=False),
                 "role": _str(enum=list(get_args(EventRole)), nullable=False),
                 "organiser": _str(), "duration": _str(), "year": _str(),
+                "level": _str(enum=list(get_args(ScopeLevel))),
             },
             required=["kind", "title", "role"],
         ),
-        "subjects_taught": {"type": "ARRAY", "items": {"type": "STRING"}},
+        "subjects": _list_of(
+            {"name": _str(nullable=False), "level": _str(enum=list(get_args(CourseLevel)))},
+            required=["name"],
+        ),
         "skills": {"type": "ARRAY", "items": {"type": "STRING"}},
         "experience": _list_of(
             {
                 "designation": _str(), "institution": _str(),
                 "kind": _str(enum=list(get_args(ExperienceKind)), nullable=False),
                 "start": _str(), "end": _str(), "duration": _str(),
+                "concurrent_with_study": {"type": "BOOLEAN", "nullable": True},
             },
             required=["kind"],
         ),
@@ -254,6 +266,7 @@ GEMINI_EXTRACTION_SCHEMA = types.Schema(
                 "kind": _str(enum=list(get_args(AchievementKind)), nullable=False),
                 "title": _str(nullable=False),
                 "details": _str(), "year": _str(), "status": _str(),
+                "level": _str(enum=list(get_args(ScopeLevel))), "amount": _str(),
             },
             required=["kind", "title"],
         ),
@@ -268,10 +281,22 @@ GEMINI_EXTRACTION_SCHEMA = types.Schema(
         "memberships": {"type": "ARRAY", "items": {"type": "STRING"}},
         "email": _str(),
         "phone": _str(),
+        "research_profile": {
+            "type": "OBJECT",
+            "properties": {
+                "scopus_author_id": _str(), "orcid_id": _str(), "google_scholar_id": _str(),
+                "total_citations": {"type": "INTEGER", "nullable": True},
+                "h_index": {"type": "INTEGER", "nullable": True},
+                "i10_index": {"type": "INTEGER", "nullable": True},
+            },
+            "required": ["scopus_author_id", "orcid_id", "google_scholar_id", "total_citations", "h_index", "i10_index"],
+        },
+        "state": _str(),
     },
     required=[
-        "education", "publications", "events", "subjects_taught", "skills",
+        "education", "publications", "events", "subjects", "skills",
         "experience", "achievements", "guidance", "memberships", "email", "phone",
+        "research_profile", "state",
         "candidate_name", "highest_degree", "marks_pct", "cgpa", "has_phd", "phd_status", "phd_award_date",
         "phd_regulation", "masters_award_date", "net_set_status", "set_state",
         "study_leave_taken", "teaching_years_raw", "publications_count", "publication_titles",
@@ -310,7 +335,7 @@ def _to_extraction_result(payload: dict[str, Any], raw_text: str) -> ExtractionR
         "education": _coerce_items(payload.get("education"), EducationEntry),
         "publications": _coerce_items(payload.get("publications"), PublicationEntry),
         "events": _coerce_items(payload.get("events"), EventEntry),
-        "subjects_taught": _coerce_strings(payload.get("subjects_taught")),
+        "subjects": _coerce_items(payload.get("subjects"), SubjectEntry),
         "skills": _coerce_strings(payload.get("skills")),
         "experience": _coerce_items(payload.get("experience"), ExperienceEntry),
         "achievements": _coerce_items(payload.get("achievements"), AchievementEntry),
@@ -318,8 +343,22 @@ def _to_extraction_result(payload: dict[str, Any], raw_text: str) -> ExtractionR
         "memberships": _coerce_strings(payload.get("memberships")),
         "email": _coerce_text(payload.get("email")),
         "phone": _coerce_text(payload.get("phone")),
+        "research_profile": _coerce_profile(payload.get("research_profile")),
+        "state": _coerce_text(payload.get("state")),
     }
+    # The plain list of names, for everything that read it before levels existed.
+    details["subjects_taught"] = [s.name.strip() for s in details["subjects"] if s.name.strip()] or _coerce_strings(
+        payload.get("subjects_taught")
+    )
     return ExtractionResult(**fields, **details, raw_llm_output=raw_text)
+
+
+def _coerce_profile(raw: Any) -> ResearchProfile:
+    try:
+        return ResearchProfile(**raw) if isinstance(raw, dict) else ResearchProfile()
+    except Exception:  # a malformed profile is dropped, never allowed to fail the resume
+        logger.warning("detail_item_dropped type=ResearchProfile")
+        return ResearchProfile()
 
 
 def _coerce_items(raw: Any, model: type) -> list:

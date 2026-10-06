@@ -56,13 +56,14 @@
   <tbody>
     {% for r in rows %}
     <tr>
-      <td class="nowrap">{{ r.a.reference }}</td>
+      <td class="nowrap"><a href="/hr/applications/{{ r.a.application_id }}">{{ r.a.reference }}</a></td>
       <td>{{ r.name or "Not yet known" }}</td>
       <td class="nowrap">{{ r.a.created_at|ddmmyyyy }}</td>
       <td>{{ {"WEB_FORM": "Application form", "MANUAL_UPLOAD": "HR upload", "EMAIL": "Email", "GOOGLE_FORM": "Google Form"}.get(r.a.resume_source, r.a.resume_source) }}</td>
       <td>{{ r.a.category or "Not given" }}</td>
       <td>
         {{ STATE_LABELS.get(r.a.status, r.a.status) }}
+        {% if r.a.status == "PENDING_REVIEW" %}<br><a href="/hr/applications/{{ r.a.application_id }}">Check fields</a>{% endif %}
         {% if r.failed_note %}<br><span class="error">{{ r.failed_note|why_unreadable }}</span>{% endif %}
         {% if r.a.possible_duplicate_candidate_id %}<br><span class="error">Possible duplicate of an existing candidate</span>{% endif %}
       </td>

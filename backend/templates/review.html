@@ -1,0 +1,143 @@
+{% extends "base.html" %}
+{% block title %}{{ a.reference }} · RecruitAI{% endblock %}
+{% block area %}HR{% endblock %}
+{% block nav %}<a href="/">Openings</a>{% if o %} <a href="/hr/openings/{{ o.opening_id }}">{{ o.reference }}</a>{% endif %}{% endblock %}
+{% block content %}
+<h1>{{ a.reference }}: {{ a.applicant_name or (personal.full_name if personal else None) or "Name not yet known" }}</h1>
+<dl class="facts">
+  <dt>Applied for</dt><dd>{{ DESIGNATIONS.get(a.applied_designation, a.applied_designation) }}, {{ a.school.name }}{% if o %} ({{ o.reference }}){% endif %}</dd>
+  <dt>Received</dt><dd>{{ a.created_at|ddmmyyyy }}, {{ {"WEB_FORM": "application form", "MANUAL_UPLOAD": "HR upload", "EMAIL": "email", "GOOGLE_FORM": "Google Form"}.get(a.resume_source, a.resume_source) }}</dd>
+  <dt>Status</dt><dd>{{ STATE_LABELS.get(a.status, a.status) }}</dd>
+  <dt>Resume</dt><dd><a href="/hr/applications/{{ a.application_id }}/resume" target="_blank" rel="noopener">Open the resume in a new tab</a></dd>
+</dl>
+
+{% if failed_note %}
+<section class="panel warn">
+  <h2>The resume could not be read</h2>
+  <p>{{ failed_note|why_unreadable }}. Ask the applicant for a PDF or DOCX with selectable text.</p>
+</section>
+{% endif %}
+
+{% if duplicate %}
+<section class="panel warn">
+  <h2>Is this the same person?</h2>
+  <p>The email address on this resume already belongs to
+    <strong>{{ duplicate.name or "a candidate whose name is not yet known" }}</strong> ({{ duplicate.email }}), who has
+    {% for d in duplicate.applications %}<a href="/hr/applications/{{ d.application_id }}">{{ d.reference }}</a>{{ ", " if not loop.last }}{% endfor %}.
+    Nothing has been joined.</p>
+  <form method="post" action="/hr/applications/{{ a.application_id }}/duplicate" class="inline">
+    <button type="submit" name="same" value="yes">Same person: join the records</button>
+    <button type="submit" name="same" value="no" class="quiet">Different person: keep apart</button>
+  </form>
+</section>
+{% endif %}
+
+{% if flags %}
+<section class="panel">
+  <h2>Fields to check ({{ flags|length }})</h2>
+  <p class="hint">Only the fields the reader could not settle are shown. Check each against the resume, then save.
+    A value you leave as it is counts as confirmed. Every change is recorded below.</p>
+  <form method="post" action="/hr/applications/{{ a.application_id }}/review" class="review" novalidate>
+    {% for f in flags %}
+    <div class="check{% if errors.get(f.name) %} bad{% endif %}">
+      <label for="f_{{ f.name }}">{{ f.spec.label }}</label>
+      <ul class="why">{% for r in f.reasons %}<li>{{ r }}</li>{% endfor %}</ul>
+      {% if f.evidence %}<p class="quote">From the resume: <q>{{ f.evidence }}</q></p>{% endif %}
+      {% if f.spec.kind == "choice" %}
+      <select id="f_{{ f.name }}" name="f_{{ f.name }}">
+        <option value="">Choose…</option>
+        {% for value, label in f.spec.choices %}<option value="{{ value }}"{% if f.value == value %} selected{% endif %}>{{ label }}</option>{% endfor %}
+      </select>
+      {% elif f.spec.kind == "date" %}
+      <input id="f_{{ f.name }}" name="f_{{ f.name }}" type="date" value="{{ f.value }}">
+      {% elif f.spec.kind in ("number", "integer") %}
+      <input id="f_{{ f.name }}" name="f_{{ f.name }}" type="number" inputmode="decimal" step="{{ "1" if f.spec.kind == "integer" else "any" }}"
+             min="{{ "%g"|format(f.spec.low) }}" max="{{ "%g"|format(f.spec.high) }}" value="{{ f.value }}">
+      {% else %}
+      <input id="f_{{ f.name }}" name="f_{{ f.name }}" type="text" value="{{ f.value }}" maxlength="200">
+      {% endif %}
+      {% if f.spec.may_be_empty %}
+      <label class="choice"><input type="checkbox" name="empty" value="{{ f.name }}"{% if f.name in left_empty %} checked{% endif %}> {{ f.spec.empty_label }}</label>
+      {% endif %}
+      {% if f.spec.hint %}<span class="hint">{{ f.spec.hint }}</span>{% endif %}
+      {% if errors.get(f.name) %}<span class="error" role="alert">{{ errors[f.name] }}</span>{% endif %}
+    </div>
+    {% endfor %}
+    <button type="submit">Save and finish the check</button>
+  </form>
+</section>
+{% elif a.status == "PENDING_REVIEW" and not duplicate %}
+<p class="notice">Nothing is left to check on this application.</p>
+{% endif %}
+
+{% if e %}
+<h2>What the reader found</h2>
+<dl class="facts">
+  <dt>Highest qualification</dt><dd>{{ e.highest_degree or "Not stated" }}</dd>
+  <dt>Master's marks</dt><dd>{% if e.marks_pct is not none %}{{ "%g"|format(e.marks_pct) }}%{% elif e.cgpa is not none %}CGPA {{ "%g"|format(e.cgpa) }}{% else %}Not stated{% endif %}</dd>
+  <dt>Ph.D.</dt><dd>{{ {"NOT_APPLICABLE": "No doctoral study", "REGISTERED": "Registered", "PURSUING": "Pursuing", "THESIS_SUBMITTED": "Thesis submitted", "COMPLETED": "Completed"}.get(e.phd_status, "Not stated") }}{% if e.phd_regulation %} ({{ e.phd_regulation }} Regulations){% endif %}</dd>
+  <dt>NET / SET</dt><dd>{{ "None" if e.net_set_status == "NONE" else (e.net_set_status or "Not stated") }}{% if e.set_state %} ({{ e.set_state }}){% endif %}</dd>
+  <dt>Teaching experience stated</dt><dd>{% if e.teaching_years is not none %}{{ "%g"|format(e.teaching_years) }} years{% else %}No total stated{% endif %}</dd>
+  <dt>Publications</dt><dd>{{ e.publications_count if e.publications_count is not none else "Not stated" }}{% if e.publications_in_progress_count %}, and {{ e.publications_in_progress_count }} under review{% endif %}</dd>
+  <dt>Category</dt><dd>{{ a.category or "Not given" }}</dd>
+  <dt>State</dt><dd>{{ (personal.state if personal else None) or "Not given" }}</dd>
+</dl>
+
+{% if qualifications %}
+<h2>Qualifications</h2>
+<table>
+  <thead><tr><th>Level</th><th>Degree</th><th>Course</th><th>College or university</th><th>Completed</th><th>Marks</th></tr></thead>
+  <tbody>
+    {% for q in qualifications %}
+    <tr>
+      <td>{{ q.degree_level }}</td><td>{{ q.degree or "" }}</td>
+      <td>{{ q.discipline or "" }}{% if q.discipline_listed %}<br><span class="hint">{{ q.discipline_listed }}</span>{% endif %}</td>
+      <td>{{ q.college_name or q.university_name or "" }}{% if q.college_name and q.university_name %}<br><span class="hint">{{ q.university_name }}</span>{% endif %}</td>
+      <td class="nowrap">{{ q.completion_stated or "" }}</td>
+      <td class="nowrap">{% if q.marks_pct is not none %}{{ "%g"|format(q.marks_pct) }}%{% elif q.cgpa is not none %}CGPA {{ "%g"|format(q.cgpa) }}{% endif %} {{ q.division or "" }}</td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+{% endif %}
+
+{% if experience %}
+<h2>Posts held</h2>
+<table>
+  <thead><tr><th>Post</th><th>Employer</th><th>Type</th><th>From</th><th>To</th><th>Duration stated</th></tr></thead>
+  <tbody>
+    {% for x in experience %}
+    <tr>
+      <td>{{ x.designation_held or "" }}</td><td>{{ x.employer_name or "" }}</td>
+      <td>{{ x.experience_type|capitalize }}</td><td class="nowrap">{{ x.start_stated or "" }}</td>
+      <td class="nowrap">{{ "Present" if x.is_current else (x.end_stated or "") }}</td><td>{{ x.duration_stated or "" }}</td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+{% endif %}
+{% endif %}
+
+{% if edits %}
+<h2>Changes made at this check</h2>
+<table>
+  <thead><tr><th>When</th><th>Field</th><th>What was done</th><th>Before</th><th>After</th><th>By</th></tr></thead>
+  <tbody>
+    {% for d in edits %}
+    <tr>
+      <td class="nowrap">{{ d.edited_at|ddmmyyyy }}</td><td>{{ field_labels.get(d.field, d.field) }}</td>
+      <td>{{ ACTION_LABELS.get(d.action, d.action) }}</td><td>{{ {"yes": "Yes", "no": "No"}.get(d.old_value, d.old_value) or "Empty" }}</td><td>{{ {"yes": "Yes", "no": "No"}.get(d.new_value, d.new_value) or "Empty" }}</td>
+      <td>{{ "HR" if d.actor == "user:hr" else d.actor }}</td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+{% endif %}
+
+{% if can_withdraw %}
+<form method="post" action="/hr/applications/{{ a.application_id }}/withdraw" class="inline">
+  <button type="submit" class="quiet">Withdraw this application</button>
+  <span class="hint">For a second copy of an application, or at the applicant's request. This cannot be undone here.</span>
+</form>
+{% endif %}
+{% endblock %}
