@@ -11,7 +11,10 @@
   <dt>Resume</dt><dd><a href="/hr/applications/{{ a.application_id }}/resume" target="_blank" rel="noopener">Open the resume in a new tab</a></dd>
 </dl>
 
-{% if evaluation %}
+{% if evaluation and not (awaiting_hr or decided) %}
+<p class="notice">An earlier assessment was sent back. This application will be assessed again from its opening's page.</p>
+{% endif %}
+{% if evaluation and (awaiting_hr or decided) %}
 {% set v = evaluation.details or {} %}
 <section class="panel{% if evaluation.outcome == "MANUAL_REVIEW" %} warn{% endif %}">
   <h2>Assessment</h2>
@@ -45,13 +48,80 @@
   {% endfor %}
   {% macro span(b, unit="") %}{% if b.high is none %}at least {{ "%g"|format(b.low) }}{% elif b.low == b.high %}{{ "%g"|format(b.low) }}{% else %}between {{ "%g"|format(b.low) }} and {{ "%g"|format(b.high) }}{% endif %}{{ unit }}{% endmacro %}
   <dl class="facts">
-    {% if v.experience_years %}<dt>Experience counted</dt><dd>{{ span(v.experience_years, " years") }}</dd>{% endif %}
+    {% if v.experience_years %}<dt>Experience counted</dt><dd>{{ span(v.experience_years, " years") }}{% if v.experience_kinds %} ({{ v.experience_kinds|map("lower")|join(", ") }}){% endif %}</dd>{% endif %}
     {% if v.research_score %}<dt>Research Score claimed (Table 2)</dt><dd>{{ span(v.research_score) }}</dd>{% endif %}
     {% if v.shortlist_score %}<dt>Short-listing score (Table 3A)</dt><dd>{{ span(v.shortlist_score) }} out of 100. An aid for calling candidates to interview; selection is on the interview alone.</dd>{% endif %}
     <dt>Rules applied</dt><dd>{{ v.rule_version or "None" }}, as on {{ v.as_of }}</dd>
   </dl>
   {% for note in v.notes or [] %}<p class="hint">{{ note }}</p>{% endfor %}
   <p class="hint">This is the engine's finding, not a decision. HR approves or overrides every outcome.</p>
+</section>
+
+{% if decided %}
+<section class="panel">
+  <h2>HR decision</h2>
+  <p><strong>{{ {"APPROVED": "Approved as assessed", "OVERRIDDEN": "Overridden by HR", "DECIDED": "Decided by HR"}[decided.action] }}:</strong>
+    {% if decided.final_outcome == "SHORTLISTED" %}short-listed for interview as {{ DESIGNATIONS.get(decided.final_designation, "the post found") }}.
+    {% else %}does not meet the minimum qualifications.{% endif %}
+    Recorded {{ decided.decided_at|ddmmyyyy }}.</p>
+  {% if decided.justification %}<p>Justification: {{ decided.justification }}</p>{% endif %}
+  <p class="hint">Short-listing is for interview only. Selection is made by the Selection Committee.</p>
+</section>
+{% elif awaiting_hr %}
+<section class="panel">
+  <h2>Your decision</h2>
+  {% if evaluation.outcome != "MANUAL_REVIEW" %}
+  <form method="post" action="/hr/applications/{{ a.application_id }}/approve" class="inline">
+    <button type="submit">Approve as assessed</button>
+    <span class="hint">Accepts the finding above as it stands.</span>
+  </form>
+  {% endif %}
+  <form method="post" action="/hr/applications/{{ a.application_id }}/override" class="stack">
+    <strong>{{ "Decide it yourself" if evaluation.outcome == "MANUAL_REVIEW" else "Or override it" }}</strong>
+    <label>Decision
+      <select name="outcome">
+        <option value="">Choose…</option>
+        <option value="SHORTLISTED">Short-list for interview</option>
+        <option value="NOT_ELIGIBLE">Does not meet the minimum qualifications</option>
+      </select>
+    </label>
+    <label>Post, if short-listed
+      <select name="designation">
+        <option value="">Choose…</option>
+        {% for code, label in DESIGNATIONS.items() %}<option value="{{ code }}"{% if code == a.applied_designation %} selected{% endif %}>{{ label }}</option>{% endfor %}
+      </select>
+    </label>
+    <label>Justification
+      <textarea name="justification" rows="3" maxlength="1000" required></textarea>
+      <span class="hint">Kept with the decision. Say what you relied on, for example a certificate you have seen.</span>
+    </label>
+    <button type="submit" class="quiet">Record my decision</button>
+  </form>
+  <form method="post" action="/hr/applications/{{ a.application_id }}/return" class="stack">
+    <strong>Or send it back</strong>
+    <label class="choice"><input type="radio" name="how" value="correct" checked> Correct the record first. Tick what needs correcting:</label>
+    <div class="ticks">
+      {% for name, spec in returnable.items() %}
+      <label class="choice"><input type="checkbox" name="fields" value="{{ name }}"> {{ spec.label }}</label>
+      {% endfor %}
+    </div>
+    <label class="choice"><input type="radio" name="how" value="reassess"> Assess it again as it stands</label>
+    <button type="submit" class="quiet">Send back</button>
+  </form>
+</section>
+{% endif %}
+{% endif %}
+
+{% if missing_answers %}
+<section class="panel">
+  <h2>Form answers not yet entered</h2>
+  <p>This resume came without an application form, so these are not on record:
+    {% for name in missing_answers %}<strong>{{ field_labels[name] }}</strong>{{ ", " if not loop.last }}{% endfor %}.
+    The application can be assessed without them. If one would change the outcome, the assessment will say so.</p>
+  <form method="post" action="/hr/applications/{{ a.application_id }}/reopen" class="inline">
+    {% for name in missing_answers %}<input type="hidden" name="fields" value="{{ name }}">{% endfor %}
+    <button type="submit" class="quiet">Enter them now</button>
+  </form>
 </section>
 {% endif %}
 
@@ -160,6 +230,93 @@
   </tbody>
 </table>
 {% endif %}
+
+{% if publications %}
+<h2>Publications ({{ publications|length }})</h2>
+<table>
+  <thead><tr><th>Title</th><th>Type</th><th>Where</th><th>Year</th><th>Status</th><th>Authors</th><th>Indexing</th></tr></thead>
+  <tbody>
+    {% for p in publications %}
+    <tr>
+      <td>{{ p.title }}{% if not p.found_in_resume %}<br><span class="error">Not found in the resume text</span>{% endif %}</td>
+      <td>{{ p.publication_type|replace("_", " ")|capitalize }}</td><td>{{ p.venue_name or "" }}</td><td>{{ p.year or "" }}</td>
+      <td>{{ p.status|replace("_", " ")|capitalize }}</td>
+      <td>{% if p.author_count %}{{ p.author_count }}{% if p.is_first_author %}, first{% endif %}{% endif %}</td>
+      <td>{{ p.indexing or "" }}{% if p.impact_factor is not none %} IF {{ "%g"|format(p.impact_factor) }}{% endif %}</td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+{% endif %}
+
+{% if research %}
+<h2>Research profile, as stated</h2>
+<dl class="facts">
+  {% if research.orcid_id %}<dt>ORCID</dt><dd>{{ research.orcid_id }}</dd>{% endif %}
+  {% if research.scopus_author_id %}<dt>Scopus author ID</dt><dd>{{ research.scopus_author_id }}</dd>{% endif %}
+  {% if research.google_scholar_id %}<dt>Google Scholar</dt><dd>{{ research.google_scholar_id }}</dd>{% endif %}
+  {% if research.total_citations is not none %}<dt>Citations</dt><dd>{{ research.total_citations }}</dd>{% endif %}
+  {% if research.h_index is not none %}<dt>h-index</dt><dd>{{ research.h_index }}</dd>{% endif %}
+  {% if research.i10_index is not none %}<dt>i10-index</dt><dd>{{ research.i10_index }}</dd>{% endif %}
+</dl>
+{% endif %}
+
+{% if achievements or guidance %}
+<h2>Patents, awards, projects and guidance</h2>
+<table>
+  <thead><tr><th>Kind</th><th>What</th><th>Details</th><th>Year</th><th>Status</th></tr></thead>
+  <tbody>
+    {% for x in achievements %}
+    <tr><td>{{ x.kind|replace("_", " ")|capitalize }}</td><td>{{ x.title }}</td>
+      <td>{{ x.details or "" }}{% if x.amount_stated %} {{ x.amount_stated }}{% endif %}{% if x.level %} ({{ x.level|capitalize }}){% endif %}</td>
+      <td>{{ x.year or "" }}</td><td>{{ x.status or "" }}</td></tr>
+    {% endfor %}
+    {% for g in guidance %}
+    <tr><td>Guidance ({{ {"PHD": "Ph.D.", "PG": "Master's", "UG": "Bachelor's"}.get(g.level, "other") }})</td><td>{{ g.description }}</td>
+      <td>{% if g.student_count is not none %}{{ g.student_count }} student(s){% endif %}</td><td></td><td></td></tr>
+    {% endfor %}
+  </tbody>
+</table>
+{% endif %}
+
+{% if events %}
+<h2>Seminars, workshops and courses ({{ events|length }})</h2>
+<table>
+  <thead><tr><th>Kind</th><th>Title</th><th>Role</th><th>Organiser</th><th>Duration</th><th>Year</th></tr></thead>
+  <tbody>
+    {% for v in events %}
+    <tr><td>{{ v.kind|capitalize }}{% if v.level %}<br><span class="hint">{{ v.level|capitalize }}</span>{% endif %}</td><td>{{ v.title }}</td>
+      <td>{{ v.role|replace("_", " ")|capitalize }}</td><td>{{ v.organiser or "" }}</td><td>{{ v.duration_stated or "" }}</td><td>{{ v.year or "" }}</td></tr>
+    {% endfor %}
+  </tbody>
+</table>
+{% endif %}
+
+{% if subjects or skills or memberships %}
+<h2>Teaching and skills</h2>
+<dl class="facts">
+  {% if subjects %}<dt>Subjects taught</dt><dd>{% for s in subjects %}{{ s.subject_name }}{% if s.course_level %} ({{ s.course_level }}){% endif %}{{ ", " if not loop.last }}{% endfor %}</dd>{% endif %}
+  {% if skills %}<dt>Skills</dt><dd>{% for s in skills %}{{ s.skill_name }}{{ ", " if not loop.last }}{% endfor %}</dd>{% endif %}
+  {% if memberships %}<dt>Memberships</dt><dd>{% for m in memberships %}{{ m.membership }}{{ ", " if not loop.last }}{% endfor %}</dd>{% endif %}
+</dl>
+{% endif %}
+{% endif %}
+
+{% if decisions %}
+<h2>Decisions at this gate</h2>
+<table>
+  <thead><tr><th>When</th><th>What was done</th><th>Decision</th><th>Justification</th><th>By</th></tr></thead>
+  <tbody>
+    {% for d in decisions %}
+    <tr>
+      <td class="nowrap">{{ d.decided_at|ddmmyyyy }}</td>
+      <td>{{ {"APPROVED": "Approved as assessed", "OVERRIDDEN": "Overridden", "DECIDED": "Decided by HR", "RETURNED": "Sent back"}[d.action] }}</td>
+      <td>{% if d.final_outcome == "SHORTLISTED" %}Short-listed, {{ DESIGNATIONS.get(d.final_designation, "") }}{% elif d.final_outcome %}Does not meet the minimum qualifications{% endif %}</td>
+      <td>{{ d.justification or "" }}</td><td>{{ "HR" if d.actor == "user:hr" else d.actor }}</td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
 {% endif %}
 
 {% if edits %}
@@ -176,6 +333,18 @@
     {% endfor %}
   </tbody>
 </table>
+{% endif %}
+
+{% if other_openings %}
+<form method="post" action="/hr/applications/{{ a.application_id }}/move" class="inline">
+  <label>Filed under the wrong post? Move to
+    <select name="opening_id">
+      {% for x in other_openings %}<option value="{{ x.opening_id }}">{{ x.reference }}: {{ DESIGNATIONS[x.designation] }}, {{ x.school.name }}</option>{% endfor %}
+    </select>
+  </label>
+  <button type="submit" class="quiet">Move</button>
+  <span class="hint">Nothing is read again. An assessment already made is set aside and done again under that opening's rules.</span>
+</form>
 {% endif %}
 
 {% if can_withdraw %}

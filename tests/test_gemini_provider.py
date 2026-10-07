@@ -249,3 +249,14 @@ def test_backoff_is_capped_so_a_batch_never_appears_hung():
     from llm.providers.gemini_provider import _MAX_BACKOFF_SECONDS
 
     assert _MAX_BACKOFF_SECONDS <= 60
+
+
+def test_a_bare_year_or_month_from_the_model_is_read_as_a_date_not_dropped():
+    """Seen on a live run: four of twelve Master's award dates came back as "2015" and were lost."""
+    from datetime import date
+
+    from llm.providers.gemini_provider import _parse_date
+
+    assert _parse_date("2015") == date(2015, 1, 1) and _parse_date("2021-05") == date(2021, 5, 1)
+    assert _parse_date("2019-11-12") == date(2019, 11, 12) and _parse_date(" 2017 ") == date(2017, 1, 1)
+    assert _parse_date("soon") is None and _parse_date("2015-13") is None and _parse_date(None) is None

@@ -43,6 +43,7 @@ def _details(d: Decision) -> dict:
         "open_points": d.open_points,
         "notes": d.notes,
         "experience_years": bounds(d.experience_years),
+        "experience_kinds": d.experience_kinds,
         "research_score": bounds(d.research_score),
         "shortlist_score": d.shortlist_score,
         "ranks": [{"designation": r.designation, "result": r.result, "rule_version": r.rule_version,

@@ -8,8 +8,8 @@ and its data-model workbook. Section numbers below (§) refer to that document.
 decision changes, this file is edited in the same commit and the change is
 noted in the [Change log](#change-log).
 
-- Last updated: 2026-10-06
-- Current phase: **Phase 5 — Assessor and Decision** (built; awaiting the user's check)
+- Last updated: 2026-10-07
+- Current phase: **Phase 6 — HR dashboard and Gate 2** (done and merged). Next: Phase 7, reporting and Gate 3
 
 ## Status at a glance
 
@@ -21,7 +21,7 @@ noted in the [Change log](#change-log).
 | 3 | Intake: job openings, in-app application form, HR manual upload | Done |
 | 4 | Reader aligned to the data model; extraction review (Gate 1) | Built; new fields' accuracy not yet measured |
 | 5 | Assessor and Decision: the deterministic rule engine | Built; several readings await the mentor |
-| 6 | HR dashboard: outcomes with reasons, approve or override (Gate 2) | Not started |
+| 6 | HR dashboard: outcomes with reasons, approve or override (Gate 2) | Done |
 | 7 | Reporting: digest, plain-language reasons, drafted emails (Gate 3) | Not started |
 | 8 | More intake channels: email inbox, Google Forms | Not started |
 | 9 | Logins, school-scoped access, views, highlights, policy layer, drives dashboard | Not started |
@@ -385,7 +385,7 @@ of "no rule loaded". And three Phase 3 queue tests carried a fixed clock of 12:0
 fail when that moment passed; the clock is now a date far ahead.
 
 Not changed, but noted: Gate 1 still asks for the Ph.D. Regulations year and the SET State on AICTE openings,
-where neither affects the outcome. Harmless, but extra work for HR; to be trimmed in Phase 6.
+where neither affects the outcome. Harmless, but extra work for HR. Trimmed in Phase 6.
 
 Readings the engine takes until the mentor rules on them (each is one place in the code):
 
@@ -409,18 +409,72 @@ Limits to know about:
 - AICTE disciplines other than engineering have requirements a resume cannot show (professional experience
   after the Master's, a 4-star hotel post). Those go to a person unless something plainly fails.
 - Senior Professor is never cleared by the engine: the 10% cap and the three expert reviews are not on a resume.
-- An assessed application cannot yet be re-assessed after a correction. That is Gate 2 (Phase 6).
 - NET-exempt disciplines and the foreign top-500 Ph.D. route are not read; such a candidate is an open point, not a failure.
 
 Done when: all Section 12 cases pass and every outcome can be traced to a clause and page. Both hold.
 
-## Phase 6 — HR dashboard and Gate 2
+## Phase 6 — HR dashboard and Gate 2 (done)
 
-- [ ] Per-opening list: outcome, reason in plain words, clause and page.
-- [ ] Candidate page with the full record (the nine detail sections).
-- [ ] Approve, or override with a recorded justification; return for re-assessment.
-- [ ] Shortlist shown as a shortlisting aid, with the interview named as the deciding step.
-- [ ] Excel export kept as a download.
+Goal: a person sees every outcome with its reason, and decides.
+
+- [x] Per-opening list: each application's status, the reason with its clause and page (or the first open point),
+      and the HR decision. Listed in order of receipt and labelled as a short-listing aid; nothing is sorted by score.
+- [x] Application page with the full record: qualifications, posts, publications, research profile, patents,
+      awards, projects, guidance, events, subjects, skills and memberships, beside the assessment's working.
+- [x] Gate 2 (`backend/gate2.py`, table `hr_decisions`, migration 0006). For every assessed application HR can:
+      **approve** the finding as it stands; **override** it with their own decision, the post, and a justification
+      of at least 15 characters; or **send it back**, either to correct named fields at Gate 1 first or to be
+      assessed again as it stands. Where the engine could not settle the matter there is nothing to approve: HR
+      decides, with a justification.
+- [x] An override never erases what it overrode: the engine's finding stays in `evaluation_results`, HR's decision
+      beside it in `hr_decisions`, and each re-assessment adds a new evaluation instead of rewriting the old one.
+      The justification is kept with the decision and never written to the state audit trail.
+- [x] Re-assessment (carried over from Phase 5). Sending back reopens the chosen fields with the reason "returned
+      by HR"; once saved, the application is assessed again from the opening's page.
+- [x] The Bachelor's marks and CGPA can now be entered at Gate 1, since AICTE First Class most often turns on them.
+      A degree row is added only when a value is saved, and is marked as not from the resume.
+- [x] On an AICTE opening the Reader no longer sends an application to Gate 1 for the Ph.D. Regulations year or a
+      SET's State, since neither affects an AICTE outcome (noted in the Phase 5 audit).
+- [x] Excel download per opening (`/hr/openings/{id}/export.xlsx`, `backend/export.py`), laid out like the Reader
+      stage's workbook at the user's request: `candidates`, then `education`, `publications`, `seminars_workshops`,
+      `teaching_skills`, `experience`, `patents_awards_projects`, `guidance_memberships` and `contact_details`, with
+      the same grey headers, frozen key columns, filters, `check` column and shading. Differences: rows are keyed
+      by application reference in order of receipt, with **no rank and no home-made score** (the user confirmed this
+      on 2026-10-07); `candidates` leads with the finding, clause, page and HR decision; `assessment_checks` lists
+      every requirement checked; the Phase 4 fields are included. A CGPA is still shown as a percentage marked
+      "converted from CGPA", for reading only. Built in memory; text is guarded against being run as a formula.
+- [x] The HR home page counts, per opening: to check, to assess, to decide, decided.
+- [x] **An HR upload is no longer held at Gate 1 for the form answers** (category, State, differently-abled, study
+      leave). They affect only the cl. 3.4 relaxation and cl. 3.11, and the engine already names a missing answer
+      when it would change the outcome. Holding every upload for them stopped all twelve of the user's resumes for
+      answers that changed nothing. The application page lists what is not on record and offers "Enter them now",
+      which reopens those fields (new move EXTRACTED to PENDING_REVIEW). This reverses a Phase 4 decision.
+- [x] **Move to another opening**, one application or a whole opening, for resumes filed under the wrong post. The
+      post, school and rule set come from the new opening; nothing is read again. An assessment already made is
+      set aside (kept as history) and done again under the new rules. Not allowed once HR has decided, onto a
+      closed opening, or where the candidate or the same file is already there.
+
+Verified: 24 new tests; 818 in total on SQLite and the 335 backend tests on PostgreSQL 16. The download from the
+live data has the same number of rows as the old workbook for candidates, education, publications, experience and
+patents/awards/projects (12, 36, 131, 44, 30). Migration 0006 applied,
+checked, downgraded and re-applied on PostgreSQL. The outcome list, the decision forms and the download were run on
+a temporary server with the fake provider and made-up files, and checked by screenshot.
+
+Different from the plan as first written:
+
+- **Two ways to send back, not one.** "Return for re-assessment" alone would re-run the same facts and give the
+  same answer; what HR usually needs is to correct a field first. Both are offered.
+- **The old Streamlit workbook is not reused.** It is built from raw model output and carries the home-made
+  ranking. The new download is built from the database and has no rank column.
+- The state machine gains the moves outcome to PENDING_REVIEW and outcome to EXTRACTED for the two kinds of return.
+
+Not done, and where it belongs:
+
+- No login, so every decision is recorded as "HR" (Phase 9).
+- A decision, once recorded, cannot be reopened from the screen. If one is wrong it has to be corrected in the
+  database until Phase 9 gives an administrator role that can.
+- No filter or search on the list; an opening with hundreds of applications will want one.
+- The plain-language explanation of each outcome and the candidate emails are Phase 7.
 
 ## Phase 7 — Reporting and Gate 3
 
@@ -468,6 +522,7 @@ Development uses made-up resumes only.
 | 2026-10-06 | No OCR for now: a scanned resume is reported under Needs attention and a readable copy is asked for. |
 | 2026-10-06 | The extraction prompt was changed once, with the user's agreement, for all Phase 4 fields together. |
 | 2026-10-06 | An HR upload always stops at Gate 1 for the form answers; they are never taken from the resume. |
+| 2026-10-07 | Reversed in part: an HR upload is not held for the form answers. They are still never taken from the resume; a person enters them, and the engine asks for one only when it would change the outcome. |
 | 2026-10-06 | The engine answers met, not met or cannot be told. Anything it cannot tell goes to a person; it is never rounded. |
 | 2026-10-06 | Until the mentor rules, the open readings are taken as listed under Phase 5, and scores are given as ranges. |
 | 2026-10-06 | Disciplines with their own UGC clause (4.2 to 4.6) are chosen as such on the opening and assessed by a person until their rules are loaded. |
@@ -525,3 +580,7 @@ Development uses made-up resumes only.
 | 2026-10-06 | Phase 4 built. Extraction prompt changed (every resume must be re-read). OCR decided: no. Gate 1 screen, `review_edits` audit table, duplicate resolution, withdraw and job retry added. NET/SET "none" is now checked against the resume text. HR uploads always stop at Gate 1 for the form answers. Institutions seeded from the workbook (four rows) and disciplines mapped to its list. Open: measuring the new fields against the resumes; HR's institutions list; whether a talk was abroad. |
 | 2026-10-06 | Phase 5 built: `backend/engine/`, `assessor_service`, `evaluation_results.details`, the Assess button and the working on the application page. Requirements have three answers; unknowns go to MANUAL_REVIEW. Scores are ranges. Five readings are taken provisionally and listed for the mentor. Re-assessment after a correction moves to Phase 6. |
 | 2026-10-06 | Phase 5 audited against the gazette files before commit. Fixed: cl. 3.11 on AICTE posts; research-scholar years counted as experience; the three-categories rule not enforced; cl. 4.1 applied to disciplines with their own clause; Table 3A post-doctoral experience. Five new opening choices for UGC cl. 4.2 to 4.6. A time-dependent Phase 3 test fixed. |
+| 2026-10-06 | Phase 6 built: Gate 2 (approve, override with justification, send back for correction or re-assessment), `hr_decisions`, the outcome list, the full record on the application page, the Excel download. Gate 1 gains the Bachelor's marks; AICTE openings are no longer asked for NET/SET-only fields. The user chose to go on while the mentor's answers are pending. |
+| 2026-10-07 | The new download was compared with the Reader-stage workbook and the 12 resumes. The scored fields agree. Fixed: an award date the model returned as a bare year ("2015") was dropped by the parser (4 of 12 Master's dates; restored from the stored model output); the Ph.D. course name now comes from the education row. Confirmed from the resume text that impact factor, funding amounts, research IDs and "held while studying" are blank because the resumes do not state them, and that authors are listed on only 2 of the 12 resumes (26 papers, all kept). All 12 were filed under a Professor opening, which is why 11 read "meets a lower post". |
+| 2026-10-07 | HR uploads no longer stop at Gate 1 for form answers; fields can be reopened before assessment. Applications can be moved to another opening, singly or all at once. |
+| 2026-10-07 | Phase 6 checked on the live data and closed. The user moved the 12 applications to an Assistant Professor opening: 11 meet the post, 1 needs a person (no class or marks stated). The experience shown beside an AICTE outcome now counts industry posts. Known and left: a post with no dates gives "at least 0" years; entering post dates at Gate 1 is not built. |

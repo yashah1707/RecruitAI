@@ -307,11 +307,24 @@ GEMINI_EXTRACTION_SCHEMA = types.Schema(
 _DATE_FIELDS = frozenset({"phd_award_date", "masters_award_date"})
 
 
+_PARTIAL_DATE_RE = re.compile(r"^(\d{4})(?:-(\d{1,2}))?$")
+
+
 def _parse_date(raw: str | None) -> date | None:
+    """A date the model returned, as a date. The prompt asks for YYYY-MM-DD, with the first day of
+    the period when only a year or a month is known, but the model sometimes returns the bare
+    "2015" or "2015-06" instead. Those are read the same way, not thrown away: how much of the
+    date the resume really stated is recorded separately, from the evidence quote."""
     if not raw:
         return None
+    raw = raw.strip()
     try:
         return date.fromisoformat(raw[:10])
+    except ValueError:
+        pass
+    m = _PARTIAL_DATE_RE.match(raw)
+    try:
+        return date(int(m.group(1)), int(m.group(2) or 1), 1) if m else None
     except ValueError:
         return None
 

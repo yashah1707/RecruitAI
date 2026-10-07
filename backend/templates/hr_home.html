@@ -60,7 +60,7 @@
 <table>
   <thead>
     <tr><th>Reference</th><th>Post</th><th>School</th><th>Rules</th><th>Closes</th><th>Status</th>
-        <th class="num">Applications</th><th class="num">Read</th><th class="num">To check</th><th class="num">Unreadable</th></tr>
+        <th class="num">Applications</th><th class="num">To check</th><th class="num">To assess</th><th class="num">To decide</th><th class="num">Decided</th><th class="num">Unreadable</th></tr>
   </thead>
   <tbody>
     {% for o in openings %}
@@ -73,8 +73,10 @@
       <td class="nowrap">{{ o.closing_date|ddmmyyyy or "Open-ended" }}</td>
       <td>{{ "Accepting" if accepting[o.opening_id] else "Closed" }}</td>
       <td class="num">{{ c.get("total", 0) }}</td>
-      <td class="num">{{ c.get("EXTRACTED", 0) }}</td>
       <td class="num">{{ c.get("PENDING_REVIEW", 0) }}</td>
+      <td class="num">{{ c.get("EXTRACTED", 0) }}</td>
+      <td class="num">{{ c.get("SHORTLISTED", 0) + c.get("RE_CATEGORISED", 0) + c.get("NOT_ELIGIBLE", 0) + c.get("MANUAL_REVIEW", 0) }}</td>
+      <td class="num">{{ c.get("HR_APPROVED", 0) }}</td>
       <td class="num">{{ c.get("FAILED", 0) }}</td>
     </tr>
     {% endfor %}

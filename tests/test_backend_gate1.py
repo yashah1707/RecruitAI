@@ -250,14 +250,18 @@ def test_the_form_answer_outranks_the_state_on_the_resume(session, tmp_path):
     assert session.get(CandidatePersonalDetails, a.candidate_id).state == "Goa"
 
 
-def test_an_hr_upload_waits_for_the_answers_only_a_form_can_give(session, tmp_path):
+def test_an_hr_upload_is_not_held_back_for_the_form_answers_it_came_without(session, tmp_path):
+    """They matter only to the cl. 3.4 relaxation and to cl. 3.11; where one would change an
+    outcome the engine names it. Holding every upload for them made twelve of twelve stop."""
+    from backend.reader_service import missing_form_answers
+
     a = _application(session, tmp_path, resume_source="MANUAL_UPLOAD")
     read_application(session, a, FakeProvider(script=[_clean_result()]))
-    assert a.status == states.PENDING_REVIEW
-    assert a.extracted.review_reasons == [
-        "category:form_answer_missing", "differently_abled:form_answer_missing",
-        "study_leave_taken:form_answer_missing", "state:form_answer_missing",
-    ]
+    assert a.status == states.EXTRACTED and a.extracted.review_reasons == []
+    assert missing_form_answers(session, a) == ["category", "state", "differently_abled", "study_leave_taken"]
+    answered = _application(session, tmp_path, resume_source="WEB_FORM", category="SC", differently_abled=False, applicant_state="Goa")
+    read_application(session, answered, FakeProvider(script=[_none_result(email="other.exampleton@example.org")]))
+    assert missing_form_answers(session, answered) == []  # "not applicable" for study leave is an answer on the form
 
 
 def test_an_application_from_the_form_with_a_clean_reading_needs_no_review(session, tmp_path):
@@ -391,7 +395,14 @@ def test_values_that_cannot_be_right_are_refused(session, tmp_path, field, value
 
 
 def test_hr_enters_the_form_answers_for_an_uploaded_resume(session, tmp_path):
-    a = _pending(session, tmp_path, _clean_result(), resume_source="MANUAL_UPLOAD")
+    a = _application(session, tmp_path, resume_source="MANUAL_UPLOAD")
+    read_application(session, a, FakeProvider(script=[_clean_result()]))
+    with pytest.raises(gate1.ReviewError):
+        gate1.reopen_fields(session, a, ["not_a_field"])
+    opened = gate1.reopen_fields(session, a, ["category", "state", "differently_abled", "study_leave_taken"])
+    assert len(opened) == 4 and a.status == states.PENDING_REVIEW
+    assert a.transitions[-1].note == "gate1: reopened for category, state, differently_abled, study_leave_taken"
+    assert gate1.flagged_fields(session, a)[0].reasons == ["An answer the application form asks for; this resume came without one."]
     gate1.save_review(session, a, {"category": "SC", "state": "Maharashtra", "differently_abled": "no"}, {"study_leave_taken"})
     assert (a.category, a.applicant_state, a.differently_abled, a.study_leave_taken) == ("SC", "Maharashtra", False, None)
     personal = session.get(CandidatePersonalDetails, a.candidate_id)
@@ -490,7 +501,7 @@ def test_hr_can_give_a_stopped_job_a_fresh_start(session):
     assert jobs.requeue(session, job) is False  # only a stopped job
 
     ran = jobs.run_due_jobs(session, FakeProvider(script=[_clean_result()]))
-    assert len(ran) == 1 and a.status == states.PENDING_REVIEW
+    assert len(ran) == 1 and a.status == states.EXTRACTED
 
 
 # --- the pages ---------------------------------------------------------------
@@ -510,7 +521,9 @@ def _uploaded(client, engine, result=None) -> int:
 
 def test_the_review_page_shows_the_flagged_fields_and_nothing_to_edit_elsewhere(client, engine):
     app_id = _uploaded(client, engine)
-    page = client.get(f"/hr/applications/{app_id}")
+    before = client.get(f"/hr/applications/{app_id}").text
+    assert "Form answers not yet entered" in before and "can be assessed without them" in before and "Fields to check" not in before
+    page = client.post(f"/hr/applications/{app_id}/reopen", data={"fields": ["category", "state", "differently_abled", "study_leave_taken"]})
     assert page.status_code == 200
     assert "Fields to check (4)" in page.text and 'name="f_category"' in page.text
     assert 'name="f_marks_pct"' not in page.text and 'name="f_net_set_status"' not in page.text
@@ -520,6 +533,7 @@ def test_the_review_page_shows_the_flagged_fields_and_nothing_to_edit_elsewhere(
 
 def test_saving_from_the_page_finishes_the_check_and_shows_the_changes(client, engine):
     app_id = _uploaded(client, engine)
+    client.post(f"/hr/applications/{app_id}/reopen", data={"fields": ["category", "state", "differently_abled", "study_leave_taken"]})
     bad = client.post(f"/hr/applications/{app_id}/review", data={"f_category": "SC", "f_state": "Goa"})
     assert bad.status_code == 422 and "Enter a value, or tick the box" in bad.text
     assert '<option value="SC" selected>' in bad.text  # what was typed is kept

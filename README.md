@@ -140,6 +140,12 @@ the outcome, every requirement with the figures compared and its clause and
 gazette page, and anything a person still has to settle. The outcome is the
 engine's finding, not a decision: HR approves or overrides it.
 
+On that page HR then approves the finding, overrides it with a recorded
+justification, or sends it back, either to correct fields first or to be
+assessed again. "Download as Excel" on the opening's page gives the whole list
+with findings, clauses and decisions. It is listed in order of receipt and is
+not a ranking.
+
 Institutions and their tiers are HR's list. Load or update it from a CSV with
 the columns `institution_name, tier, category, aliases` (aliases separated by `;`):
 

@@ -60,3 +60,6 @@ form.review { display: grid; gap: 14px; }
 .quote q { background: #eef1f5; padding: 1px 4px; border-radius: 4px; }
 form.review > button { justify-self: start; }
 h3 { font-size: 1rem; margin: 16px 0 6px; }
+textarea { font: inherit; padding: 8px 10px; border: 1px solid #aab2bd; border-radius: 5px; width: 100%; }
+.ticks { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 4px 16px; padding-left: 24px; }
+section.panel form.stack { border: 0; padding: 12px 0 0; max-width: 760px; }

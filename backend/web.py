@@ -15,18 +15,27 @@ from pathlib import Path
 from urllib.parse import quote
 
 from fastapi import APIRouter, BackgroundTasks, Depends, File, Form, HTTPException, Request, UploadFile
-from fastapi.responses import FileResponse, HTMLResponse, RedirectResponse
+from fastapi.responses import FileResponse, HTMLResponse, RedirectResponse, Response
 from fastapi.templating import Jinja2Templates
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.result_cache import ResultCache
-from backend import assessor_service, gate1, intake, jobs, states
+from backend import assessor_service, gate1, gate2, intake, jobs, states
 from backend.db import get_session, get_session_factory
 from backend.deps import get_cache, get_provider
+from backend.reader_service import missing_form_answers
 from backend.models import (
     Application,
+    CandidateAchievement,
+    CandidateEvent,
     CandidateExperience,
+    CandidateGuidance,
+    CandidateMembership,
+    CandidatePublication,
+    CandidateResearchProfile,
+    CandidateSkill,
+    CandidateSubjectTaught,
     CandidatePersonalDetails,
     CandidateQualification,
     Job,
@@ -85,6 +94,8 @@ STATE_LABELS = {
     states.RE_CATEGORISED: "Assessed: meets the minimum qualifications for a lower post",
     states.NOT_ELIGIBLE: "Assessed: does not meet the minimum qualifications",
     states.MANUAL_REVIEW: "Assessed: needs a person to decide",
+    states.ASSESSED: "Being assessed",
+    states.HR_APPROVED: "Decided by HR",
 }
 templates.env.globals["STATE_LABELS"] = STATE_LABELS
 
@@ -115,10 +126,13 @@ def _applications(session: Session, opening_id: int) -> list[dict]:
     for a in rows:
         personal = session.get(CandidatePersonalDetails, a.candidate_id)
         failed_note = a.transitions[-1].note if a.status == states.FAILED and a.transitions else None
+        evaluation = assessor_service.latest_evaluation(session, a.application_id)
         out.append({
             "a": a,
             "name": a.applicant_name or (personal.full_name if personal else None),
             "failed_note": failed_note,
+            "v": evaluation if a.status in gate2.AWAITING_HR or a.status == states.HR_APPROVED else None,
+            "decided": gate2.final_decision(session, a),
         })
     return out
 
@@ -203,6 +217,8 @@ def opening_detail(request: Request, opening_id: int, msg: str = "", session: Se
         "o": opening, "rows": _applications(session, opening_id), "msg": msg, "outcomes": None,
         "accepting": intake.is_accepting(opening), "due": jobs.due_count(session),
         "reading": _run_lock.locked(),
+        "other_openings": [o for o in session.scalars(select(JobOpening).order_by(JobOpening.opening_id.desc()))
+                           if o.status == "OPEN" and o.opening_id != opening_id],
     })
 
 
@@ -306,10 +322,11 @@ def job_requeue(job_id: int, session: Session = Depends(get_session)):
 
 _RESUME_TYPES = {".pdf": "application/pdf",
                  ".docx": "application/vnd.openxmlformats-officedocument.wordprocessingml.document"}
-_FIELD_LABELS = {name: spec.label for name, spec in gate1.FIELDS.items()} | {"candidate": "Possible duplicate"}
+_FIELD_LABELS = {name: spec.label for name, spec in gate1.FIELDS.items()} | {"candidate": "Possible duplicate", "opening": "Opening"}
 templates.env.globals["ACTION_LABELS"] = {
     "CONFIRMED": "Confirmed as read", "CORRECTED": "Corrected", "ENTERED": "Entered", "LEFT_EMPTY": "Left empty",
     "SAME_PERSON": "Same person: records joined", "DIFFERENT_PERSON": "Different person: kept apart",
+    "MOVED": "Moved to another opening",
 }
 
 
@@ -340,6 +357,16 @@ def _review_page(request: Request, session: Session, a: Application, *, msg: str
         "failed_note": a.transitions[-1].note if a.status == states.FAILED and a.transitions else None,
         "can_withdraw": states.WITHDRAWN in states.ALLOWED[a.status], "field_labels": _FIELD_LABELS,
         "evaluation": assessor_service.latest_evaluation(session, a.application_id),
+        "missing_answers": missing_form_answers(session, a) if a.status == states.EXTRACTED else [],
+        "other_openings": [o for o in session.scalars(select(JobOpening).order_by(JobOpening.opening_id.desc()))
+                           if o.status == "OPEN" and o.opening_id != a.opening_id] if a.status in intake.MOVABLE else [],
+        "awaiting_hr": a.status in gate2.AWAITING_HR, "decisions": gate2.decisions(session, a.application_id),
+        "decided": gate2.final_decision(session, a), "returnable": gate1.FIELDS,
+        "publications": rows(CandidatePublication, CandidatePublication.publication_id),
+        "events": rows(CandidateEvent, CandidateEvent.id), "achievements": rows(CandidateAchievement, CandidateAchievement.id),
+        "guidance": rows(CandidateGuidance, CandidateGuidance.id), "subjects": rows(CandidateSubjectTaught, CandidateSubjectTaught.id),
+        "skills": rows(CandidateSkill, CandidateSkill.id), "memberships": rows(CandidateMembership, CandidateMembership.id),
+        "research": session.get(CandidateResearchProfile, a.candidate_id),
     }, status_code=status_code)
 
 
@@ -405,6 +432,88 @@ def review_resume(application_id: int, session: Session = Depends(get_session)):
     # Named by its reference, not by the candidate or the original filename.
     return FileResponse(path, media_type=_RESUME_TYPES[path.suffix.lower()],
                         filename=f"{a.reference}{path.suffix.lower()}", content_disposition_type="inline")
+
+
+@router.post("/hr/applications/{application_id}/reopen")
+async def review_reopen(request: Request, application_id: int, session: Session = Depends(get_session)):
+    form = await request.form()
+    fields = [str(v) for v in form.getlist("fields")]
+    return _review_action(session, application_id, lambda a: gate1.reopen_fields(session, a, fields),
+                          "Opened for entry. Fill in the fields below and save.")
+
+
+@router.post("/hr/applications/{application_id}/move")
+def application_move(application_id: int, opening_id: int = Form(0), session: Session = Depends(get_session)):
+    a = _application_or_404(session, application_id, lock=True)
+    target = session.get(JobOpening, opening_id)
+    try:
+        if target is None:
+            raise intake.IntakeError({"opening": "Choose an opening to move it to."})
+        intake.move_application(session, a, target)
+        text = f"Moved to {target.reference}. It will be assessed under that opening's rules."
+    except intake.IntakeError as exc:
+        session.rollback()
+        text = exc.errors.get("opening", "That could not be done.")
+    return RedirectResponse(f"/hr/applications/{application_id}?msg=" + quote(text), status_code=303)
+
+
+@router.post("/hr/openings/{opening_id}/move-all")
+def opening_move_all(opening_id: int, target_id: int = Form(0), session: Session = Depends(get_session)):
+    source, target = _opening_or_404(session, opening_id), session.get(JobOpening, target_id)
+    if target is None or target.opening_id == source.opening_id:
+        text = "Choose another opening to move the applications to."
+    else:
+        moved, stayed = intake.move_all(session, source, target)
+        text = f"Moved {moved} application(s) to {target.reference}." + (" Not moved: " + "; ".join(stayed) if stayed else "")
+    return RedirectResponse(f"/hr/openings/{opening_id}?msg=" + quote(text), status_code=303)
+
+
+# --- Gate 2: the HR decision -------------------------------------------------
+
+
+def _decision_action(session: Session, application_id: int, action, done: str):
+    a = _application_or_404(session, application_id, lock=True)
+    try:
+        action(a)
+        text = done
+    except gate2.DecisionError as exc:
+        session.rollback()
+        text = " ".join(exc.errors.values())
+    return RedirectResponse(f"/hr/applications/{application_id}?msg=" + quote(text), status_code=303)
+
+
+@router.post("/hr/applications/{application_id}/approve")
+def decision_approve(application_id: int, session: Session = Depends(get_session)):
+    return _decision_action(session, application_id, lambda a: gate2.approve(session, a), "Approved as assessed.")
+
+
+@router.post("/hr/applications/{application_id}/override")
+def decision_override(application_id: int, outcome: str = Form(""), designation: str = Form(""),
+                      justification: str = Form(""), session: Session = Depends(get_session)):
+    return _decision_action(
+        session, application_id, lambda a: gate2.override(session, a, outcome, designation or None, justification),
+        "Your decision is recorded with its justification.")
+
+
+@router.post("/hr/applications/{application_id}/return")
+async def decision_return(request: Request, application_id: int, session: Session = Depends(get_session)):
+    form = await request.form()
+    fields = [str(v) for v in form.getlist("fields")]
+    if form.get("how") == "reassess":
+        return _decision_action(session, application_id, lambda a: gate2.return_for_reassessment(session, a),
+                                "Returned. Press Assess on the opening's page to assess it again.")
+    return _decision_action(session, application_id, lambda a: gate2.return_for_correction(session, a, fields),
+                            "Returned for correction. Check the fields below, then assess it again.")
+
+
+@router.get("/hr/openings/{opening_id}/export.xlsx")
+def opening_export(opening_id: int, session: Session = Depends(get_session)):
+    from backend.export import opening_workbook
+
+    opening = _opening_or_404(session, opening_id)
+    data = opening_workbook(session, opening, STATE_LABELS)
+    return Response(data, media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                    headers={"Content-Disposition": f'attachment; filename="{opening.reference}.xlsx"'})
 
 
 # --- applicants --------------------------------------------------------------

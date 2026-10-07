@@ -102,6 +102,10 @@ def read_application(
             cache.put(key, result)
 
     reasons = list(evaluate(result).reasons)
+    if not _net_set_matters(application):
+        # Under an AICTE discipline rule there is no NET/SET requirement, so neither the State of a
+        # SET nor the Regulations a Ph.D. was awarded under changes anything. Not asked for.
+        reasons = [r for r in reasons if r not in _NET_SET_ONLY_REASONS]
     if application.applicant_name:
         # The applicant typed their own name; how well it was read off the resume no longer matters.
         reasons = [r for r in reasons if not r.startswith("candidate_name:")]
@@ -122,31 +126,47 @@ def read_application(
     return application.status
 
 
+_NET_SET_ONLY_REASONS = frozenset({
+    "phd_regulation:manual_entry_required", "set_state:required_for_set", "set_state:required_for_slet",
+})
+# Rule sets that follow the UGC Regulations, where NET/SET is a requirement.
+_UGC_RULED = ("GENERAL", "SCIENCE_HUMANITIES")
+
+
+def _net_set_matters(application: Application) -> bool:
+    opening = application.opening
+    group = opening.discipline_group if opening is not None else "GENERAL"
+    return group in _UGC_RULED or group.startswith("UGC_")
+
+
 FORM_ANSWER_MISSING = "form_answer_missing"
 POSSIBLE_DUPLICATE = "candidate:possible_duplicate"
 
 
 def application_reasons(session: Session, application: Application) -> list[str]:
-    """Reasons for review that come from the application, not from the reading.
+    """Reasons for review that come from the application, not from the reading."""
+    return [POSSIBLE_DUPLICATE] if application.possible_duplicate_candidate_id is not None else []
 
-    A resume HR uploaded came with no form, so the answers only the applicant
-    can give are missing. They are asked for at Gate 1 and never read off the
-    resume. An applicant who used the form has already answered them.
+
+def missing_form_answers(session: Session, application: Application) -> list[str]:
+    """The form answers this application does not have (an HR upload came with no form).
+
+    Not a reason to hold it back. Category and disability status matter only
+    to the cl. 3.4 relaxation, and study leave only to cl. 3.11; where one of
+    them would change an outcome the engine says so and names it. They are
+    still worth entering for the record, and are never read off the resume.
     """
-    reasons: list[str] = []
-    if application.resume_source != "WEB_FORM":
-        personal = session.get(CandidatePersonalDetails, application.candidate_id)
-        if application.category is None:
-            reasons.append(f"category:{FORM_ANSWER_MISSING}")
-        if application.differently_abled is None:
-            reasons.append(f"differently_abled:{FORM_ANSWER_MISSING}")
-        if application.study_leave_taken is None:
-            reasons.append(f"study_leave_taken:{FORM_ANSWER_MISSING}")
-        if personal is None or personal.state is None:
-            reasons.append(f"state:{FORM_ANSWER_MISSING}")
-    if application.possible_duplicate_candidate_id is not None:
-        reasons.append(POSSIBLE_DUPLICATE)
-    return reasons
+    personal = session.get(CandidatePersonalDetails, application.candidate_id)
+    missing = []
+    if application.category is None:
+        missing.append("category")
+    if personal is None or personal.state is None:
+        missing.append("state")
+    if application.differently_abled is None:
+        missing.append("differently_abled")
+    if application.study_leave_taken is None and application.resume_source != "WEB_FORM":
+        missing.append("study_leave_taken")  # on the form, "not applicable" is stored as empty
+    return missing
 
 
 def store_extraction(

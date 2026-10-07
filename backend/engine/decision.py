@@ -66,6 +66,7 @@ class Decision:
     rule_version_id: int | None = None
     rule_version: str | None = None
     experience_years: Bounds | None = None
+    experience_kinds: list[str] = field(default_factory=list)  # which posts that figure counts
     research_score: Bounds | None = None
     shortlist_score: dict | None = None
     as_of: date | None = None
@@ -486,7 +487,12 @@ def decide(facts: Facts, rules: RuleSet) -> Decision:
                        "Whether each degree is in the relevant branch is for the selection committee (AICTE cl. 7.4).")
     elif rules.discipline_group != "GENERAL":
         d.notes.append("AICTE cl. 5.1(j) refers science and humanities faculty to the UGC Regulations, 2018.")
-    d.experience_years = _experience(facts, rule, tuple((rule.criteria or {}).get("experience_types") or ("TEACHING", "RESEARCH")))[0]
+    # The figure shown beside the outcome. Where the rank applied for has no experience requirement of
+    # its own, it is counted as the regulation counts it for the ranks that do: AICTE cl. 5.2 counts
+    # teaching, research and industry; UGC cl. 4.1 counts teaching and research.
+    kinds = tuple((rule.criteria or {}).get("experience_types")
+                  or (("TEACHING", "RESEARCH", "INDUSTRY") if rule.is_aicte else ("TEACHING", "RESEARCH")))
+    d.experience_years, d.experience_kinds = _experience(facts, rule, kinds)[0], list(kinds)
     if not rule.is_aicte:
         # The UGC scores. AICTE prescribes neither a Research Score nor a short-listing score.
         d.research_score = facts.research_score or scores.research_score(facts, rules).total

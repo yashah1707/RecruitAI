@@ -83,6 +83,9 @@ FIELDS: dict[str, FieldSpec] = {
     "marks_pct": FieldSpec("Master's marks (percentage)", "number", "extracted", "marks_pct", low=0, high=100,
                            hint="Only if the resume gives a percentage. Do not convert a CGPA."),
     "cgpa": FieldSpec("Master's CGPA (out of 10)", "number", "extracted", "cgpa", low=0, high=10),
+    "ug_marks_pct": FieldSpec("Bachelor's marks (percentage)", "number", "degree:UG", "marks_pct", low=0, high=100,
+                              hint="From the marksheet. Do not convert a CGPA."),
+    "ug_cgpa": FieldSpec("Bachelor's CGPA (out of 10)", "number", "degree:UG", "cgpa", low=0, high=10),
     "phd_status": FieldSpec(
         "Ph.D. status", "choice", "extracted", "phd_status", may_be_empty=False,
         choices=(("NOT_APPLICABLE", "No doctoral study"), ("REGISTERED", "Registered"), ("PURSUING", "Pursuing"),
@@ -135,7 +138,7 @@ _ALIASES = {
 # Changing the first can make the second necessary, so they are shown together.
 _COMPANIONS = {"net_set_status": "set_state", "phd_status": "phd_regulation"}
 
-_EXTRACTED_FIELDS = tuple(n for n, s in FIELDS.items() if s.where != "application")
+_EXTRACTED_FIELDS = tuple(n for n, s in FIELDS.items() if s.where in ("extracted", "personal"))
 
 REASON_TEXT: dict[str, str] = {
     "missing_required": "The resume does not state this.",
@@ -147,9 +150,10 @@ REASON_TEXT: dict[str, str] = {
     "required_for_set": "A SET was found without its State.",
     "required_for_slet": "A SLET was found without its State.",
     "mentioned_in_resume": "The resume mentions NET or SET, but the reader recorded none.",
-    "form_answer_missing": "Uploaded by HR, so there is no application-form answer.",
+    "form_answer_missing": "An answer the application form asks for; this resume came without one.",
     "lighter_model_fallback": "Read by the back-up model, which is less accurate. Check every field.",
     "shown_with": "Shown because it depends on the field above.",
+    "returned_by_hr": "Returned by HR for correction after the assessment.",
 }
 
 
@@ -170,11 +174,26 @@ class Flag:
     evidence: str | None = None
 
 
-def _target(session: Session, application: Application, spec: FieldSpec):
+def _target(session: Session, application: Application, spec: FieldSpec, create: bool = False):
     if spec.where == "extracted":
         return application.extracted
     if spec.where == "personal":
         return session.get(CandidatePersonalDetails, application.candidate_id)
+    if spec.where.startswith("degree:"):
+        # The candidate's degree at that level, as read from this application's resume.
+        # If the Reader found none, one is added so the person has somewhere to put the marks.
+        level = spec.where.split(":")[1]
+        row = session.scalars(
+            select(CandidateQualification)
+            .where(CandidateQualification.application_id == application.application_id,
+                   CandidateQualification.degree_level == level)
+            .order_by(CandidateQualification.qualification_id)
+        ).first()
+        if row is None and create:
+            row = CandidateQualification(candidate_id=application.candidate_id, application_id=application.application_id,
+                                         degree_level=level, found_in_resume=False)
+            session.add(row)
+        return row
     return application
 
 
@@ -220,7 +239,7 @@ def flagged_fields(session: Session, application: Application) -> list[Flag]:
             continue
         target = _target(session, application, spec)
         value = _as_text(getattr(target, spec.column, None)) if target is not None else ""
-        evidence = (extracted.evidence or {}).get(name) if spec.where != "application" else None
+        evidence = (extracted.evidence or {}).get(name) if spec.where in ("extracted", "personal") else None
         flags.append(Flag(name, spec, by_field[name], value, evidence))
     return flags
 
@@ -296,7 +315,7 @@ def save_review(
 
     for f in flags:
         value = new[f.name]
-        target = _target(session, application, f.spec)
+        target = _target(session, application, f.spec, create=True)
         old = getattr(target, f.spec.column)
         setattr(target, f.spec.column, value)
         if value is None:
@@ -334,6 +353,21 @@ def _finish(session: Session, application: Application, remaining: list[str], ac
         # Field names only: the values are in review_edits, not in the audit trail.
         states.transition(session, application, states.EXTRACTED, actor, note=note[:500])
     session.flush()
+
+
+def reopen_fields(session: Session, application: Application, fields: list[str], actor: str = ACTOR) -> list[str]:
+    """Before assessment, open named fields for a person to enter or correct. Returns the fields opened."""
+    if application.status != states.EXTRACTED or application.extracted is None:
+        raise ReviewError({"": f"Fields can be reopened here only before assessment (this application is {application.status})."})
+    wanted = [f for f in fields if f in FIELDS]
+    if not wanted:
+        raise ReviewError({"": "Choose at least one field."})
+    code = lambda name: "form_answer_missing" if FIELDS[name].where == "application" else "returned_by_hr"  # noqa: E731
+    application.extracted.review_reasons = [f"{name}:{code(name)}" for name in wanted]
+    application.extracted.needs_review = True
+    states.transition(session, application, states.PENDING_REVIEW, actor, note="gate1: reopened for " + ", ".join(wanted))
+    session.flush()
+    return wanted
 
 
 # --- possible duplicates -----------------------------------------------------

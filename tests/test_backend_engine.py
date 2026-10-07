@@ -243,6 +243,12 @@ def test_aicte_5_1_a_an_engineer_needs_first_class_in_one_degree_and_no_net(sess
     assert "AICTE cl. 5.1(a)" in first.clause and "p. 39" in first.page and "9.13 against 6.75" in first.detail
     assert not [c for c in d.ranks[0].checks if c.key in ("net_set", "marks")]
     assert d.research_score is None and d.shortlist_score is None  # AICTE prescribes neither
+    # The experience shown beside an AICTE outcome counts industry posts, as cl. 5.2 does.
+    worked = _engineer(posts=[Post(kind="INDUSTRY", start=P("2020-01-01"), end=P("2024-01-01")),
+                              Post(kind="TEACHING", start=P("2024-01-01"), end=P("2026-01-01"))])
+    shown = _aicte(session, worked)
+    assert shown.experience_years.exact == pytest.approx(6.0, abs=0.01) and shown.experience_kinds == ["TEACHING", "RESEARCH", "INDUSTRY"]
+    assert _ugc(session, _facts(masters_marks_pct=60, net_set_status="NET", posts=worked.posts)).experience_years.exact == pytest.approx(2.0, abs=0.01)
     assert "relevant branch" in d.notes[0]
 
 

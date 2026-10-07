@@ -596,6 +596,28 @@ class ScoreRule(Base):
     sort_order: Mapped[int] = mapped_column(Integer, default=0)
 
 
+class HrDecision(Base):
+    """What HR decided at Gate 2 about one assessment (Section 9.7).
+
+    APPROVED    the engine's finding accepted as it stands
+    OVERRIDDEN  HR's own decision in place of it, with the justification
+    DECIDED     HR's decision where the engine could not settle the matter
+    RETURNED    sent back for correction or re-assessment; no final decision
+    """
+
+    __tablename__ = "hr_decisions"
+
+    decision_id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    application_id: Mapped[int] = mapped_column(ForeignKey("applications.application_id"), index=True)
+    evaluation_id: Mapped[int | None] = mapped_column(ForeignKey("evaluation_results.evaluation_id"))
+    action: Mapped[str] = mapped_column(String(12))
+    final_outcome: Mapped[str | None] = mapped_column(String(30))  # SHORTLISTED / NOT_ELIGIBLE
+    final_designation: Mapped[str | None] = mapped_column(String(40))
+    justification: Mapped[str | None] = mapped_column(String(1000))
+    actor: Mapped[str] = mapped_column(String(80))
+    decided_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
+
+
 class EvaluationResult(Base):
     """The deterministic engine's output, traceable to a clause and gazette page."""
 

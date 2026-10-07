@@ -267,6 +267,66 @@ def submit_application(session: Session, opening: JobOpening, form: ApplicantFor
     raise IntakeError(errors)
 
 
+# An application may be moved until HR has decided it.
+MOVABLE: frozenset[str] = frozenset({
+    states.RECEIVED, states.PENDING_REVIEW, states.EXTRACTED, states.FAILED,
+    states.SHORTLISTED, states.RE_CATEGORISED, states.NOT_ELIGIBLE, states.MANUAL_REVIEW,
+})
+_ASSESSED: frozenset[str] = frozenset({states.SHORTLISTED, states.RE_CATEGORISED, states.NOT_ELIGIBLE, states.MANUAL_REVIEW})
+
+
+def move_application(session: Session, application: Application, target: JobOpening, actor: str = "user:hr") -> None:
+    """Put an application under another opening (it was filed against the wrong post).
+
+    The post, school, department and rule set all come from the opening, so
+    they change with it and nothing is read again. An assessment made under
+    the old opening no longer applies: the application goes back to be
+    assessed under the new one, and the old finding is kept as history.
+    """
+    from backend.models import HrDecision, ReviewEdit
+
+    if application.status not in MOVABLE:
+        raise IntakeError({"opening": f"An application that is {application.status} cannot be moved."})
+    if target.opening_id == application.opening_id:
+        raise IntakeError({"opening": "The application is already under that opening."})
+    if target.status != "OPEN":
+        raise IntakeError({"opening": f"{target.reference} is closed."})
+    clash = session.scalar(
+        select(Application).where(
+            Application.opening_id == target.opening_id, Application.status != states.WITHDRAWN,
+            (Application.candidate_id == application.candidate_id) | (Application.resume_sha256 == application.resume_sha256),
+        )
+    )
+    if clash is not None:
+        raise IntakeError({"opening": f"{target.reference} already has this candidate or this resume ({clash.reference})."})
+
+    old = application.opening
+    session.add(ReviewEdit(application_id=application.application_id, field="opening", action="MOVED",
+                           old_value=old.reference if old else None, new_value=target.reference, actor=actor))
+    application.opening = target
+    application.school_id, application.department_id = target.school_id, target.department_id
+    application.applied_designation = target.designation
+    if application.status in _ASSESSED:
+        session.add(HrDecision(application_id=application.application_id, action="RETURNED", actor=actor))
+        states.transition(session, application, states.EXTRACTED, actor, note=f"moved to {target.reference}; to be assessed again")
+    session.flush()
+
+
+def move_all(session: Session, source: JobOpening, target: JobOpening, actor: str = "user:hr") -> tuple[int, list[str]]:
+    """Move every application of `source` that can be moved. Returns (how many moved, why the rest stayed)."""
+    moved, stayed = 0, []
+    rows = session.scalars(
+        select(Application).where(Application.opening_id == source.opening_id).order_by(Application.application_id)
+    ).all()
+    for application in rows:
+        try:
+            move_application(session, application, target, actor)
+            moved += 1
+        except IntakeError as exc:
+            stayed.append(f"{application.reference}: {exc.errors['opening']}")
+    return moved, stayed
+
+
 @dataclass
 class UploadOutcome:
     filename: str

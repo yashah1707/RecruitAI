@@ -33,18 +33,24 @@ INTERVIEW_SCHEDULED = "INTERVIEW_SCHEDULED"
 #   PARSING -> RECEIVED   the model was unavailable or out of quota; nothing is
 #                         wrong with the file, so it goes back to wait, not to FAILED
 #   FAILED -> RECEIVED    the candidate re-uploads a readable file (Section 9.6)
+# and the two ways HR returns an assessed application at Gate 2 (Section 9.7:
+# "return the application for re-assessment"):
+#   outcome -> PENDING_REVIEW   to correct named fields first
+#   outcome -> EXTRACTED        to be assessed again as it stands
+# and EXTRACTED -> PENDING_REVIEW, when HR reopens fields before assessment (to enter
+# form answers an uploaded resume came without, or to correct something they noticed).
 ALLOWED: dict[str, frozenset[str]] = {
     RECEIVED: frozenset({PARSING, FAILED, WITHDRAWN}),
     NEEDS_JOB_MATCH: frozenset({RECEIVED, WITHDRAWN}),
     PARSING: frozenset({EXTRACTED, PENDING_REVIEW, FAILED, RECEIVED}),
     FAILED: frozenset({RECEIVED, WITHDRAWN}),
     PENDING_REVIEW: frozenset({EXTRACTED, WITHDRAWN}),
-    EXTRACTED: frozenset({ASSESSED, MANUAL_REVIEW}),
+    EXTRACTED: frozenset({ASSESSED, MANUAL_REVIEW, PENDING_REVIEW}),
     ASSESSED: frozenset({SHORTLISTED, RE_CATEGORISED, NOT_ELIGIBLE}),
-    SHORTLISTED: frozenset({HR_APPROVED}),
-    RE_CATEGORISED: frozenset({HR_APPROVED}),
-    NOT_ELIGIBLE: frozenset({HR_APPROVED}),
-    MANUAL_REVIEW: frozenset({HR_APPROVED}),
+    SHORTLISTED: frozenset({HR_APPROVED, PENDING_REVIEW, EXTRACTED}),
+    RE_CATEGORISED: frozenset({HR_APPROVED, PENDING_REVIEW, EXTRACTED}),
+    NOT_ELIGIBLE: frozenset({HR_APPROVED, PENDING_REVIEW, EXTRACTED}),
+    MANUAL_REVIEW: frozenset({HR_APPROVED, PENDING_REVIEW, EXTRACTED}),
     HR_APPROVED: frozenset({CONTACTED}),
     CONTACTED: frozenset({INTERVIEW_SCHEDULED}),
     INTERVIEW_SCHEDULED: frozenset(),

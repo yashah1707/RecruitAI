@@ -27,7 +27,7 @@
     <label>PDF or DOCX files <input type="file" name="resumes" accept=".pdf,.docx" multiple required></label>
     <button type="submit">Upload</button>
   </form>
-  <p class="hint">Uploaded resumes have no form answers: category, state and study leave stay empty until someone enters them.</p>
+  <p class="hint">Uploaded resumes have no form answers. They can be assessed without them; category, state and study leave can be entered on each application's page.</p>
   {% if outcomes %}
   <ul>
     {% for u in outcomes %}
@@ -50,6 +50,8 @@
   <span class="hint">{{ due }} waiting across all openings. Each is one request to the language model.</span>
 </form>
 {% endif %}
+<p class="hint">A short-listing aid. Applications are listed in order of receipt, not ranked; every outcome needs an HR decision.
+  {% if rows %}<a href="/hr/openings/{{ o.opening_id }}/export.xlsx">Download as Excel</a>{% endif %}</p>
 {% set to_assess = rows|selectattr("a.status", "equalto", "EXTRACTED")|list|length %}
 {% if to_assess %}
 <form method="post" action="/hr/openings/{{ o.opening_id }}/assess" class="inline">
@@ -59,7 +61,7 @@
 {% endif %}
 {% if rows %}
 <table>
-  <thead><tr><th>Reference</th><th>Name</th><th>Received</th><th>Source</th><th>Category</th><th>Status</th></tr></thead>
+  <thead><tr><th>Reference</th><th>Name</th><th>Received</th><th>Source</th><th>Category</th><th>Status</th><th>Reason, clause and page</th><th>HR decision</th></tr></thead>
   <tbody>
     {% for r in rows %}
     <tr>
@@ -73,11 +75,36 @@
         {% if r.a.status == "PENDING_REVIEW" %}<br><a href="/hr/applications/{{ r.a.application_id }}">Check fields</a>{% endif %}
         {% if r.failed_note %}<br><span class="error">{{ r.failed_note|why_unreadable }}</span>{% endif %}
         {% if r.a.possible_duplicate_candidate_id %}<br><span class="error">Possible duplicate of an existing candidate</span>{% endif %}
+        {% if r.v and r.v.eligible_designation and r.v.outcome == "RE_CATEGORISED" %}<br><span class="hint">Meets {{ DESIGNATIONS[r.v.eligible_designation] }}</span>{% endif %}
+      </td>
+      <td>
+        {% if r.v %}
+          {% if r.v.outcome == "MANUAL_REVIEW" %}{{ ((r.v.details or {}).open_points or ["To be settled by a person"])[0] }}
+          {% elif r.v.failing_clause %}{{ r.v.failing_clause }} ({{ r.v.failing_clause_page }})
+          {% else %}Every requirement met{% endif %}
+        {% endif %}
+      </td>
+      <td>
+        {% if r.decided %}
+          {{ {"APPROVED": "Approved", "OVERRIDDEN": "Overridden", "DECIDED": "Decided"}[r.decided.action] }}:
+          {% if r.decided.final_outcome == "SHORTLISTED" %}short-listed, {{ DESIGNATIONS.get(r.decided.final_designation, "") }}{% else %}not eligible{% endif %}
+        {% elif r.v %}<a href="/hr/applications/{{ r.a.application_id }}">Decide</a>{% endif %}
       </td>
     </tr>
     {% endfor %}
   </tbody>
 </table>
+{% if other_openings %}
+<form method="post" action="/hr/openings/{{ o.opening_id }}/move-all" class="inline">
+  <label>Move all of these applications to
+    <select name="target_id">
+      {% for x in other_openings %}<option value="{{ x.opening_id }}">{{ x.reference }}: {{ DESIGNATIONS[x.designation] }}, {{ x.school.name }}</option>{% endfor %}
+    </select>
+  </label>
+  <button type="submit" class="quiet">Move all</button>
+  <span class="hint">For applications filed under the wrong post. Those HR has already decided stay here.</span>
+</form>
+{% endif %}
 {% else %}
 <p>No applications yet.</p>
 {% endif %}
