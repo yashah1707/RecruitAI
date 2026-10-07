@@ -9,7 +9,7 @@ decision changes, this file is edited in the same commit and the change is
 noted in the [Change log](#change-log).
 
 - Last updated: 2026-10-07
-- Current phase: **Phase 6 — HR dashboard and Gate 2** (done and merged). Next: Phase 7, reporting and Gate 3
+- Current phase: **Phase 7 — Reporting and Gate 3** (done and merged; the model rewording still to be tried live). Next: Phase 8, more intake channels
 
 ## Status at a glance
 
@@ -22,7 +22,7 @@ noted in the [Change log](#change-log).
 | 4 | Reader aligned to the data model; extraction review (Gate 1) | Built; new fields' accuracy not yet measured |
 | 5 | Assessor and Decision: the deterministic rule engine | Built; several readings await the mentor |
 | 6 | HR dashboard: outcomes with reasons, approve or override (Gate 2) | Done |
-| 7 | Reporting: digest, plain-language reasons, drafted emails (Gate 3) | Not started |
+| 7 | Reporting: digest, plain-language reasons, drafted emails (Gate 3) | Done; live rewording untried |
 | 8 | More intake channels: email inbox, Google Forms | Not started |
 | 9 | Logins, school-scoped access, views, highlights, policy layer, drives dashboard | Not started |
 | 10 | Hardening and delivery: encryption, deployment, manual, final report | Not started |
@@ -476,13 +476,59 @@ Not done, and where it belongs:
 - No filter or search on the list; an opening with hundreds of applications will want one.
 - The plain-language explanation of each outcome and the candidate emails are Phase 7.
 
-## Phase 7 — Reporting and Gate 3
+## Phase 7 — Reporting and Gate 3 (done; the model rewording still to be tried live)
 
-- [ ] Per-opening HR digest.
-- [ ] Plain-language explanation of each outcome (the model writes prose from the
-      engine's result; it does not change the result).
-- [ ] Drafted candidate emails, queued. Each send needs a person's approval.
-- [ ] Sending by SMTP after approval; every send audited.
+Goal: each outcome can be read in a sentence, an opening can be read on a page, and no candidate hears anything
+until a person has approved the words.
+
+- [x] Plain-language finding for every assessment (`backend/reporting.py`): what was met or not met, the figures
+      compared, the clause and the page. Written by code from the stored working, so it cannot say anything the
+      engine did not find. Shown on the application page and in the digest.
+- [x] Per-opening digest (`/hr/openings/{id}/digest`): applications grouped by where they stand (decided, waiting
+      for a decision, for a person, to assess, to check, not read), each with its finding, HR's decision and the
+      state of its email; totals at the top. Printable from the browser. Not ranked.
+- [x] Candidate emails (`backend/emails.py`, table `email_drafts`, migration 0007). A draft is written the moment
+      HR records a decision: short-listed for the post applied for, short-listed for a lower post (with what was
+      not met for the higher one), or not meeting the minimum qualifications (with the reasons, clause and page,
+      and seven days to write back with a document).
+- [x] Where HR overrode the engine or decided a case it could not settle, the engine's reasons are not put in
+      HR's mouth: the draft carries a part marked `[HR: ...]`, and cannot be approved until a person has written
+      it. HR's internal justification is never copied into the email.
+- [x] Gate 3: a person edits, then approves each email. Approval alone sends nothing. An approved email changed
+      afterwards has to be approved again. A sent email can no longer be changed or sent twice.
+- [x] Sending by SMTP (`SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, `SMTP_PASSWORD`, `SMTP_FROM`, `SMTP_STARTTLS`). With
+      no server configured, which is the state of this installation, an approved email waits. A successful send
+      moves the application to CONTACTED and is recorded; the audit trail holds no address. A refused send keeps
+      the email approved and records only the kind of failure.
+- [x] `EMAIL_REDIRECT_TO`: a development safeguard. When set, every email goes to that one address as a **test
+      copy**. The email stays approved, the candidate is not marked as informed, and it can still be sent for
+      real once the redirect is removed. The email panel says which mode is in force before the button is
+      pressed: "Test mode" with the address the copy will go to, or "Live".
+- [x] Rewording by the language model, only when a person presses the button (one request). The model is sent the
+      body with the candidate's name replaced by a token, under `llm/prompts/reword_email.md`. Its answer is kept
+      only if it still has the application reference, every post named, every clause cited and the name token,
+      and contains no figure that was not in the draft; otherwise the draft is left as it was and the person is
+      told why. The model cannot change what was decided.
+
+Verified: 29 new tests; 847 in total on SQLite and the 364 backend tests on PostgreSQL 16. Migration 0007 applied,
+checked, downgraded and re-applied on PostgreSQL. No email was sent and no model was called in building or testing
+this: sending is tested against a stand-in transport, rewording against the fake provider. The email panel and the
+digest were run on a temporary server with made-up data and checked by screenshot.
+
+Different from the plan as first written:
+
+- **The explanation is written by code, not by the model.** The plan said the model writes the prose. Code can
+  state the finding exactly and costs nothing; the model's part is the optional rewording of an email, behind a
+  check that it changed no fact.
+- The digest is a page, not a document sent out. Emailing it to HR on a schedule can follow if wanted.
+
+Not done, or not yet tried:
+
+- The Gemini rewording has never been called live; it needs the user's go-ahead.
+- Sending has been tried only in test mode (see below), never to a candidate.
+- No interview scheduling (out of scope in the design document); CONTACTED is the last state the system reaches.
+- One email per decision. A reminder or a second letter would be written by hand outside the system.
+- Emails are plain text, in English only.
 
 ## Phase 8 — More intake channels
 
@@ -537,6 +583,7 @@ Development uses made-up resumes only.
 | Regulator for School of Education (NCTE?) and Allied Healthcare (§7.4) | Phase 5 |
 | Are category and contact details hidden from the interview panel? (§17.5) | Phase 9 |
 | Which college mailbox, and who grants access | Phase 8 |
+| Which mail server and sender address candidate emails go out from | Before any email is sent |
 | Where the system will be hosted | Phase 10 |
 | Does the university assess technical-school posts under AICTE cl. 5.1/5.2 and not UGC cl. 4.1? (mentor sheet, Section 11) | Phase 5 |
 | Which later AICTE clarifications apply; they have not been read | Phase 5 |
@@ -584,3 +631,5 @@ Development uses made-up resumes only.
 | 2026-10-07 | The new download was compared with the Reader-stage workbook and the 12 resumes. The scored fields agree. Fixed: an award date the model returned as a bare year ("2015") was dropped by the parser (4 of 12 Master's dates; restored from the stored model output); the Ph.D. course name now comes from the education row. Confirmed from the resume text that impact factor, funding amounts, research IDs and "held while studying" are blank because the resumes do not state them, and that authors are listed on only 2 of the 12 resumes (26 papers, all kept). All 12 were filed under a Professor opening, which is why 11 read "meets a lower post". |
 | 2026-10-07 | HR uploads no longer stop at Gate 1 for form answers; fields can be reopened before assessment. Applications can be moved to another opening, singly or all at once. |
 | 2026-10-07 | Phase 6 checked on the live data and closed. The user moved the 12 applications to an Assistant Professor opening: 11 meet the post, 1 needs a person (no class or marks stated). The experience shown beside an AICTE outcome now counts industry posts. Known and left: a post with no dates gives "at least 0" years; entering post dates at Gate 1 is not built. |
+| 2026-10-07 | Phase 7 built: plain-language findings, the per-opening digest, candidate emails drafted on decision, Gate 3 approval, SMTP sending with a redirect safeguard, and optional model rewording behind a fact check. The explanation is written by code and not by the model. No mail server is configured, so nothing can be sent yet. |
+| 2026-10-07 | The user set up a sending account and a catch-all address and sent two test copies through Gmail; both arrived. Two things came out of it: the panel did not say where an email would really go (now it does), and a test copy was recorded as sent for good, which would have stopped the real letter later (now a test copy leaves the email approved). |

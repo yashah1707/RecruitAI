@@ -23,6 +23,7 @@ ACTOR = gate1.ACTOR  # no logins until Phase 9
 AWAITING_HR: frozenset[str] = frozenset(
     {states.SHORTLISTED, states.RE_CATEGORISED, states.NOT_ELIGIBLE, states.MANUAL_REVIEW}
 )
+DECIDED: frozenset[str] = frozenset({states.HR_APPROVED, states.CONTACTED, states.INTERVIEW_SCHEDULED})
 # What HR may decide. A lower post is still a short-listing, for that post.
 FINAL_OUTCOMES: tuple[str, ...] = ("SHORTLISTED", "NOT_ELIGIBLE")
 DESIGNATIONS: tuple[str, ...] = ("ASSISTANT_PROFESSOR", "ASSOCIATE_PROFESSOR", "PROFESSOR", "SENIOR_PROFESSOR")
@@ -56,6 +57,12 @@ def _record(session: Session, application: Application, action: str, outcome: st
     return row
 
 
+def _draft_email(session: Session, application: Application, decision: HrDecision) -> None:
+    from backend import emails  # emails builds on this module
+
+    emails.draft_for_decision(session, application, decision)
+
+
 def approve(session: Session, application: Application, actor: str = ACTOR) -> HrDecision:
     """Accept the engine's finding as it stands."""
     _awaiting(application)
@@ -66,6 +73,7 @@ def approve(session: Session, application: Application, actor: str = ACTOR) -> H
     row = _record(session, application, "APPROVED", outcome, evaluation.eligible_designation, None, actor)
     states.transition(session, application, states.HR_APPROVED, actor, note="gate2: approved as assessed")
     session.flush()
+    _draft_email(session, application, row)
     return row
 
 
@@ -92,6 +100,7 @@ def override(session: Session, application: Application, outcome: str, designati
     states.transition(session, application, states.HR_APPROVED, actor,
                       note="gate2: decided by HR" if action == "DECIDED" else "gate2: overridden with a recorded justification")
     session.flush()
+    _draft_email(session, application, row)
     return row
 
 
@@ -126,6 +135,6 @@ def decisions(session: Session, application_id: int) -> list[HrDecision]:
 
 def final_decision(session: Session, application: Application) -> HrDecision | None:
     """The decision in force for an HR_APPROVED application."""
-    if application.status not in (states.HR_APPROVED, states.CONTACTED, states.INTERVIEW_SCHEDULED):
+    if application.status not in DECIDED:
         return None
     return next((d for d in reversed(decisions(session, application.application_id)) if d.action != "RETURNED"), None)

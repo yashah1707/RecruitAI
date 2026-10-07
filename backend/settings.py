@@ -22,3 +22,16 @@ STORAGE_DIR: Path = Path(os.environ.get("STORAGE_DIR", "") or PROJECT_ROOT / "st
 
 # The State whose SET/SLET is valid for appointment here (cl. 3.3, p. 58).
 INSTITUTION_STATE: str = os.environ.get("INSTITUTION_STATE", "Maharashtra").strip()
+
+# Named in candidate emails.
+INSTITUTION_NAME: str = os.environ.get("INSTITUTION_NAME", "MIT-ADT University, Pune").strip()
+
+# Outgoing mail (Gate 3). With no SMTP_HOST nothing can be sent: an approved email waits.
+SMTP_HOST: str = os.environ.get("SMTP_HOST", "").strip()
+SMTP_PORT: int = int(os.environ.get("SMTP_PORT", "587") or 587)
+SMTP_USER: str = os.environ.get("SMTP_USER", "").strip()
+SMTP_PASSWORD: str = os.environ.get("SMTP_PASSWORD", "")
+SMTP_FROM: str = os.environ.get("SMTP_FROM", "").strip()
+SMTP_STARTTLS: bool = os.environ.get("SMTP_STARTTLS", "true").strip().lower() not in ("0", "false", "no")
+# A development safeguard: when set, every email goes to this address and never to a candidate.
+EMAIL_REDIRECT_TO: str = os.environ.get("EMAIL_REDIRECT_TO", "").strip()

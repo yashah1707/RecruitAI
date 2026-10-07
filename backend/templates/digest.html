@@ -1,0 +1,37 @@
+{% extends "base.html" %}
+{% block title %}Digest · {{ o.reference }} · RecruitAI{% endblock %}
+{% block area %}HR{% endblock %}
+{% block nav %}<a href="/">Openings</a> <a href="/hr/openings/{{ o.opening_id }}">{{ o.reference }}</a>{% endblock %}
+{% block content %}
+<h1>Digest: {{ o.reference }}, {{ DESIGNATIONS[o.designation] }}</h1>
+<dl class="facts">
+  <dt>School</dt><dd>{{ o.school.name }}{% if o.department %}, {{ o.department.name }}{% endif %}</dd>
+  <dt>Rules that apply</dt><dd>{{ DISCIPLINE_GROUPS[o.discipline_group] }}</dd>
+  <dt>As on</dt><dd>{{ today|ddmmyyyy }}</dd>
+  <dt>Applications</dt><dd>{{ d.totals.applications }}</dd>
+  <dt>Decided by HR</dt><dd>{{ d.totals.shortlisted }} short-listed for interview, {{ d.totals.not_eligible }} not meeting the minimum qualifications</dd>
+  <dt>Emails to candidates</dt><dd>{{ d.totals.emails_sent }} sent, {{ d.totals.emails_approved }} approved and waiting to be sent, {{ d.totals.emails_drafted }} drafted and waiting for approval</dd>
+</dl>
+<p class="hint">A short-listing aid. Applications are in order of receipt within each group and are not ranked.
+  Selection is made by the Selection Committee at interview. Use your browser's Print to keep a copy.</p>
+
+{% for section in d.sections %}
+<h2>{{ section.title }} ({{ section.rows|length }})</h2>
+<table>
+  <thead><tr><th>Reference</th><th>Name</th><th>What the rules give, and why</th><th>HR decision</th><th>Email</th></tr></thead>
+  <tbody>
+    {% for r in section.rows %}
+    <tr>
+      <td class="nowrap"><a href="/hr/applications/{{ r.a.application_id }}">{{ r.a.reference }}</a></td>
+      <td>{{ r.name or "Not yet known" }}</td>
+      <td>{{ r.finding or STATE_LABELS.get(r.a.status, r.a.status) }}</td>
+      <td>{{ r.decision or "" }}</td>
+      <td class="nowrap">{{ {"DRAFT": "Drafted", "APPROVED": "Approved", "SENT": "Sent"}.get(r.email, "") }}</td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+{% else %}
+<p>No applications yet.</p>
+{% endfor %}
+{% endblock %}

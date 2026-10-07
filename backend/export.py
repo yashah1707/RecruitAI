@@ -205,7 +205,7 @@ def opening_workbook(session: Session, opening: JobOpening, state_labels: dict[s
         name = a.applicant_name or (personal.full_name if personal else None)
         key = [a.reference, name]
         e, v = a.extracted, latest_evaluation(session, a.application_id)
-        details = (v.details or {}) if v and (a.status in gate2.AWAITING_HR or a.status == states.HR_APPROVED) else {}
+        details = (v.details or {}) if v and (a.status in gate2.AWAITING_HR or a.status in gate2.DECIDED) else {}
         shown = v if details else None  # an assessment that was sent back is not reported as the finding
         decided = gate2.final_decision(session, a)
         clause, _, reason = (shown.failing_clause or "").partition(": ") if shown else ("", "", "")

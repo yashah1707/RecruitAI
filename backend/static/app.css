@@ -63,3 +63,5 @@ h3 { font-size: 1rem; margin: 16px 0 6px; }
 textarea { font: inherit; padding: 8px 10px; border: 1px solid #aab2bd; border-radius: 5px; width: 100%; }
 .ticks { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 4px 16px; padding-left: 24px; }
 section.panel form.stack { border: 0; padding: 12px 0 0; max-width: 760px; }
+pre.letter { white-space: pre-wrap; font: inherit; background: #f6f7f9; border: 1px solid var(--line); border-radius: 6px; padding: 12px 14px; max-width: 760px; }
+@media print { header.top nav, form, button { display: none !important; } body { background: #fff; } }

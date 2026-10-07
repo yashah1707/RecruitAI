@@ -21,7 +21,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.result_cache import ResultCache
-from backend import assessor_service, gate1, gate2, intake, jobs, states
+from backend import assessor_service, emails, gate1, gate2, intake, jobs, reporting, settings, states
 from backend.db import get_session, get_session_factory
 from backend.deps import get_cache, get_provider
 from backend.reader_service import missing_form_answers
@@ -96,6 +96,8 @@ STATE_LABELS = {
     states.MANUAL_REVIEW: "Assessed: needs a person to decide",
     states.ASSESSED: "Being assessed",
     states.HR_APPROVED: "Decided by HR",
+    states.CONTACTED: "Decided by HR; candidate informed",
+    states.INTERVIEW_SCHEDULED: "Interview scheduled",
 }
 templates.env.globals["STATE_LABELS"] = STATE_LABELS
 
@@ -131,7 +133,7 @@ def _applications(session: Session, opening_id: int) -> list[dict]:
             "a": a,
             "name": a.applicant_name or (personal.full_name if personal else None),
             "failed_note": failed_note,
-            "v": evaluation if a.status in gate2.AWAITING_HR or a.status == states.HR_APPROVED else None,
+            "v": evaluation if a.status in gate2.AWAITING_HR or a.status in gate2.DECIDED else None,
             "decided": gate2.final_decision(session, a),
         })
     return out
@@ -357,6 +359,10 @@ def _review_page(request: Request, session: Session, a: Application, *, msg: str
         "failed_note": a.transitions[-1].note if a.status == states.FAILED and a.transitions else None,
         "can_withdraw": states.WITHDRAWN in states.ALLOWED[a.status], "field_labels": _FIELD_LABELS,
         "evaluation": assessor_service.latest_evaluation(session, a.application_id),
+        "plain_finding": reporting.explain(a, assessor_service.latest_evaluation(session, a.application_id)),
+        "email": emails.active_draft(session, a.application_id), "email_history": emails.history(session, a.application_id),
+        "mail_configured": emails.mail_is_configured(), "PLACEHOLDER": emails.PLACEHOLDER,
+        "redirect_to": settings.EMAIL_REDIRECT_TO,
         "missing_answers": missing_form_answers(session, a) if a.status == states.EXTRACTED else [],
         "other_openings": [o for o in session.scalars(select(JobOpening).order_by(JobOpening.opening_id.desc()))
                            if o.status == "OPEN" and o.opening_id != a.opening_id] if a.status in intake.MOVABLE else [],
@@ -514,6 +520,58 @@ def opening_export(opening_id: int, session: Session = Depends(get_session)):
     data = opening_workbook(session, opening, STATE_LABELS)
     return Response(data, media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
                     headers={"Content-Disposition": f'attachment; filename="{opening.reference}.xlsx"'})
+
+
+# --- Gate 3: candidate emails ------------------------------------------------
+
+
+def _email_action(session: Session, application_id: int, action, done: str):
+    a = _application_or_404(session, application_id, lock=True)
+    draft = emails.active_draft(session, a.application_id)
+    try:
+        if draft is None:
+            raise emails.DraftError("There is no email draft for this application.")
+        text = action(draft) or done
+    except emails.DraftError as exc:
+        # What was done before the refusal (a save before an approval that failed) is kept.
+        text = str(exc)
+    return RedirectResponse(f"/hr/applications/{application_id}?msg=" + quote(text) + "#email", status_code=303)
+
+
+@router.post("/hr/applications/{application_id}/email")
+def email_update(
+    application_id: int, do: str = Form("save"), to_address: str = Form(""), subject: str = Form(""), body: str = Form(""),
+    session: Session = Depends(get_session), provider: LLMProvider = Depends(get_provider),
+):
+    """One form, four buttons: save, reword, approve (and send if a mail server is set), discard."""
+    def act(draft):
+        if do == "discard":
+            emails.discard(session, draft)
+            return "Draft discarded. Nothing was sent."
+        if draft.status == "DRAFT" or do in ("save", "reword"):
+            emails.edit(session, draft, to_address, subject, body)
+            session.commit()
+        if do == "reword":
+            emails.reword(session, draft, provider)
+            return "Reworded by the language model. Read it before approving."
+        if do == "approve":
+            if draft.status == "DRAFT":
+                emails.approve(session, draft)
+                session.commit()
+            emails.send(session, draft)
+            return ("Approved. A test copy was sent to the redirect address; the candidate has received nothing."
+                    if draft.redirected else "Approved and sent.")
+        return "Draft saved."
+
+    return _email_action(session, application_id, act, "Draft saved.")
+
+
+@router.get("/hr/openings/{opening_id}/digest", response_class=HTMLResponse)
+def opening_digest(request: Request, opening_id: int, session: Session = Depends(get_session)):
+    opening = _opening_or_404(session, opening_id)
+    return templates.TemplateResponse(request, "digest.html", {
+        "o": opening, "d": reporting.digest(session, opening), "today": date.today(),
+    })
 
 
 # --- applicants --------------------------------------------------------------

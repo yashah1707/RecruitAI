@@ -24,13 +24,7 @@
     {% elif evaluation.outcome == "NOT_ELIGIBLE" %}Does not meet the minimum qualifications for any post.
     {% else %}The rules could not settle this; a person has to decide.{% endif %}
   </strong></p>
-  {% if evaluation.failing_clause and evaluation.outcome != "MANUAL_REVIEW" %}
-  <p>Reason: {{ evaluation.failing_clause }} ({{ evaluation.failing_clause_page }}).</p>
-  {% endif %}
-  {% if v.open_points %}
-  <p>To be settled by a person:</p>
-  <ul>{% for point in v.open_points %}<li>{{ point }}</li>{% endfor %}</ul>
-  {% endif %}
+  <p>{{ plain_finding }}</p>
   {% for rank in v.ranks or [] %}
   <h3>{{ DESIGNATIONS.get(rank.designation, rank.designation) }}: {{ {"PASS": "met", "FAIL": "not met", "UNKNOWN": "cannot be settled from the record"}[rank.result] }}</h3>
   <table>
@@ -66,6 +60,45 @@
     Recorded {{ decided.decided_at|ddmmyyyy }}.</p>
   {% if decided.justification %}<p>Justification: {{ decided.justification }}</p>{% endif %}
   <p class="hint">Short-listing is for interview only. Selection is made by the Selection Committee.</p>
+</section>
+
+<section class="panel" id="email">
+  <h2>Email to the candidate</h2>
+  {% if email and email.status == "SENT" %}
+  <p><strong>Sent {{ email.sent_at|ddmmyyyy }}</strong> to {{ email.to_address }}. Approved by {{ "HR" if email.approved_by == "user:hr" else email.approved_by }}.</p>
+  <p><strong>{{ email.subject }}</strong></p>
+  <pre class="letter">{{ email.body }}</pre>
+  {% elif email %}
+  <p>{% if email.status == "APPROVED" %}<strong>Approved, not yet sent to the candidate.</strong>
+     {% if email.redirected and email.sent_at %}A test copy went to the redirect address on {{ email.sent_at|ddmmyyyy }}.{% endif %}
+     {% if not mail_configured %}No mail server is configured, so it is waiting.{% endif %}
+     {% else %}<strong>Draft.</strong> Nothing is sent until you approve it.{% endif %}
+     Written by {{ {"template": "the system from the decision above", "person": "HR", "model": "the language model, from the system's draft"}[email.drafted_by] }}.</p>
+  {% if mail_configured and redirect_to %}
+  <p class="notice" role="status"><strong>Test mode.</strong> When you press Approve and send, this email goes to
+    <strong>{{ redirect_to }}</strong>, not to the address in the To box. The candidate receives nothing, and the application
+    is not marked as informed. (Set by EMAIL_REDIRECT_TO.)</p>
+  {% elif mail_configured %}
+  <p class="panel warn"><strong>Live.</strong> Approve and send delivers this email to the address in the To box.</p>
+  {% endif %}
+  {% if PLACEHOLDER in email.body %}<p class="error">This decision was HR's own, so the reason is yours to write: replace the part marked [HR: ...] before approving.</p>{% endif %}
+  {% if email.error %}<p class="error">The last attempt to send it failed ({{ email.error }}).</p>{% endif %}
+  <form method="post" action="/hr/applications/{{ a.application_id }}/email" class="stack">
+    <label>To <input type="email" name="to_address" value="{{ email.to_address or "" }}" maxlength="254"></label>
+    <label>Subject <input type="text" name="subject" value="{{ email.subject }}" maxlength="250"></label>
+    <label>Message <textarea name="body" rows="16">{{ email.body }}</textarea></label>
+    <div class="inline">
+      <button type="submit" name="do" value="save" class="quiet">Save changes</button>
+      <button type="submit" name="do" value="approve">{{ "Approve and send" if mail_configured else "Approve" }}</button>
+      <button type="submit" name="do" value="reword" class="quiet">Reword with the language model</button>
+      <button type="submit" name="do" value="discard" class="quiet">Discard</button>
+    </div>
+    <span class="hint">Rewording uses one request to the language model. The candidate's name is not sent, and the result is kept
+      only if it changed no post, clause, reference or figure. You still read and approve it.</span>
+  </form>
+  {% else %}
+  <p>No email is drafted for this decision.</p>
+  {% endif %}
 </section>
 {% elif awaiting_hr %}
 <section class="panel">

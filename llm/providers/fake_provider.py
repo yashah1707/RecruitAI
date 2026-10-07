@@ -114,6 +114,7 @@ class FakeProvider:
         script: list[ExtractionResult | Exception] | None = None,
         cache_model_id: str | None = None,
         prompt_version: str | None = None,
+        texts: list[str | Exception] | None = None,
     ) -> None:
         self._results = list(results or CANNED_RESULTS)
         self._cursor: Iterator[ExtractionResult] = cycle(self._results)
@@ -122,10 +123,22 @@ class FakeProvider:
         # tests replay "503, 503, then success" without any network.
         self._script = list(script or [])
         self.calls = 0
+        # Scripted answers for draft_text; with none, the text comes back as it was sent.
+        self._texts = list(texts or [])
+        self.text_calls: list[tuple[str, str]] = []
         # Only set these to opt in to the result cache, like a real provider.
         if cache_model_id is not None:
             self.cache_model_id = cache_model_id
             self.prompt_version = prompt_version or "fake-v1"
+
+    def draft_text(self, instructions: str, text: str) -> str:
+        self.text_calls.append((instructions, text))
+        if self._texts:
+            item = self._texts.pop(0)
+            if isinstance(item, Exception):
+                raise item
+            return item
+        return text
 
     def extract_fields(self, resume_text: str) -> ExtractionResult:
         self.calls += 1

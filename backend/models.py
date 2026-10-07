@@ -618,6 +618,33 @@ class HrDecision(Base):
     decided_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
 
 
+class EmailDraft(Base):
+    """One email to a candidate, from draft to sent (Gate 3: a person approves each send).
+
+    DRAFT      written, not yet approved      APPROVED   a person approved it; ready to send
+    SENT       accepted by the mail server    DISCARDED  replaced or dropped
+    """
+
+    __tablename__ = "email_drafts"
+
+    draft_id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    application_id: Mapped[int] = mapped_column(ForeignKey("applications.application_id"), index=True)
+    decision_id: Mapped[int | None] = mapped_column(ForeignKey("hr_decisions.decision_id"))
+    to_address: Mapped[str | None] = mapped_column(String(254))
+    subject: Mapped[str] = mapped_column(String(250))
+    body: Mapped[str] = mapped_column(Text)
+    status: Mapped[str] = mapped_column(String(10), default="DRAFT")
+    drafted_by: Mapped[str] = mapped_column(String(10), default="template")  # template / person / model
+    approved_by: Mapped[str | None] = mapped_column(String(80))
+    approved_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    sent_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    # True when the last send was a test copy to EMAIL_REDIRECT_TO, not to the candidate.
+    # Such a draft stays APPROVED, with `sent_at` holding the time of the test.
+    redirected: Mapped[bool] = mapped_column(Boolean, default=False)
+    error: Mapped[str | None] = mapped_column(String(120))  # the kind of failure only, never an address
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
+
+
 class EvaluationResult(Base):
     """The deterministic engine's output, traceable to a clause and gazette page."""
 

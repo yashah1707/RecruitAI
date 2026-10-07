@@ -146,6 +146,22 @@ assessed again. "Download as Excel" on the opening's page gives the whole list
 with findings, clauses and decisions. It is listed in order of receipt and is
 not a ranking.
 
+When HR records a decision, an email to the candidate is drafted on the same
+page. Nothing is sent until a person approves it, and nothing can be sent at
+all until a mail server is set in `.env`:
+
+```
+SMTP_HOST=smtp.example.org
+SMTP_PORT=587
+SMTP_USER=...
+SMTP_PASSWORD=...
+SMTP_FROM=hr@example.org
+EMAIL_REDIRECT_TO=you@example.org    while testing: every email goes here, never to a candidate
+```
+
+"Digest" on the opening's page shows every application of that opening, grouped
+by where it stands, with the reason for each finding. Print it from the browser.
+
 Institutions and their tiers are HR's list. Load or update it from a CSV with
 the columns `institution_name, tier, category, aliases` (aliases separated by `;`):
 

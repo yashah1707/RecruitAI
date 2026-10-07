@@ -620,6 +620,32 @@ class GeminiProvider:
                 )
                 time.sleep(wait)
 
+    def draft_text(self, instructions: str, text: str) -> str:
+        """Write prose to instructions: one request, no retries. Used only when a person asks for it.
+
+        The caller checks the answer against the text it sent; nothing returned
+        here is trusted to have kept a fact.
+        """
+        model = self._next_usable_model() or self.pool[0]
+        logger.warning(
+            "sending_text_to_gemini_free_tier chars=%d model=%s "
+            "(free-tier prompts may be used by Google for model training)", len(text), model,
+        )
+        try:
+            response = self._client.models.generate_content(
+                model=model,
+                contents=text,
+                config=types.GenerateContentConfig(
+                    system_instruction=instructions,
+                    temperature=0.2,
+                    http_options=types.HttpOptions(timeout=int(self.timeout * 1000)),
+                ),
+            )
+        except Exception as exc:
+            logger.warning("gemini_draft_text_failed kind=%s", type(exc).__name__)
+            raise ExtractionFailure("the model could not write the text", kind="api_unavailable") from exc
+        return response.text or ""
+
     def extract_fields(self, resume_text: str) -> ExtractionResult:
         """Extract one resume, falling over to the next pool model on quota.
 

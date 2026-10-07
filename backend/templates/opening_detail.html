@@ -51,7 +51,7 @@
 </form>
 {% endif %}
 <p class="hint">A short-listing aid. Applications are listed in order of receipt, not ranked; every outcome needs an HR decision.
-  {% if rows %}<a href="/hr/openings/{{ o.opening_id }}/export.xlsx">Download as Excel</a>{% endif %}</p>
+  {% if rows %}<a href="/hr/openings/{{ o.opening_id }}/digest">Digest</a> · <a href="/hr/openings/{{ o.opening_id }}/export.xlsx">Download as Excel</a>{% endif %}</p>
 {% set to_assess = rows|selectattr("a.status", "equalto", "EXTRACTED")|list|length %}
 {% if to_assess %}
 <form method="post" action="/hr/openings/{{ o.opening_id }}/assess" class="inline">
