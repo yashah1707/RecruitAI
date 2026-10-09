@@ -39,6 +39,7 @@ def _details(d: Decision) -> dict:
 
     return {
         "as_of": d.as_of.isoformat() if d.as_of else None,
+        "as_of_basis": d.as_of_basis,
         "rule_version": d.rule_version,
         "open_points": d.open_points,
         "notes": d.notes,

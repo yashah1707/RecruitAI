@@ -35,3 +35,16 @@ SMTP_FROM: str = os.environ.get("SMTP_FROM", "").strip()
 SMTP_STARTTLS: bool = os.environ.get("SMTP_STARTTLS", "true").strip().lower() not in ("0", "false", "no")
 # A development safeguard: when set, every email goes to this address and never to a candidate.
 EMAIL_REDIRECT_TO: str = os.environ.get("EMAIL_REDIRECT_TO", "").strip()
+
+# Whether an applicant is sent an acknowledgement of receipt. Set to "false" to turn it off.
+ACKNOWLEDGE_APPLICATIONS: bool = os.environ.get("ACKNOWLEDGE_APPLICATIONS", "true").strip().lower() not in ("0", "false", "no")
+
+# Incoming mail (the inbox channel). Read over IMAP, read-only, and only when a person asks.
+# The login defaults to the sending account, since one mailbox often does both.
+IMAP_HOST: str = os.environ.get("IMAP_HOST", "").strip()
+IMAP_PORT: int = int(os.environ.get("IMAP_PORT", "993") or 993)
+IMAP_USER: str = (os.environ.get("IMAP_USER", "") or SMTP_USER).strip()
+IMAP_PASSWORD: str = os.environ.get("IMAP_PASSWORD", "") or SMTP_PASSWORD
+IMAP_FOLDER: str = os.environ.get("IMAP_FOLDER", "INBOX").strip()
+# Addresses a Google Form response may come from (comma-separated). Empty means the mailbox's own address.
+GOOGLE_FORM_SENDERS: str = os.environ.get("GOOGLE_FORM_SENDERS", "").strip()

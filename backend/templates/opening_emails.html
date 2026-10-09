@@ -1,0 +1,60 @@
+{% extends "base.html" %}
+{% block title %}Emails · {{ o.reference }} · RecruitAI{% endblock %}
+{% block area %}HR{% endblock %}
+{% block nav %}<a href="/">Openings</a> <a href="/hr/openings/{{ o.opening_id }}">{{ o.reference }}</a>{% endblock %}
+{% block content %}
+<h1>Emails to candidates: {{ o.reference }}, {{ DESIGNATIONS[o.designation] }}</h1>
+
+{% if not mail_configured %}
+<p class="panel warn">No mail server is configured. Ticked emails will be approved and will wait; nothing can be sent.</p>
+{% elif redirect_to %}
+<p class="notice" role="status"><strong>Test mode.</strong> Every email goes to <strong>{{ redirect_to }}</strong> as a test copy, not to the
+  candidate. The candidates receive nothing and are not marked as informed. (Set by EMAIL_REDIRECT_TO.)</p>
+{% else %}
+<p class="panel warn"><strong>Live.</strong> Every ticked email is delivered to the candidate's address shown in its row.</p>
+{% endif %}
+
+{% if rows %}
+<form method="post" action="/hr/openings/{{ o.opening_id }}/emails">
+  <p class="hint">A decision letter was drafted from the decision recorded for that application. Open a letter to read it; to change one,
+    go to its application. Tick the ones you approve. Nothing unticked is sent. An acknowledgement only confirms receipt:
+    for an application made on a form it goes by itself, and for an emailed resume it waits here for your tick.</p>
+  <table>
+    <thead><tr><th>Approve</th><th>Reference</th><th>Candidate</th><th>Kind</th><th>To</th><th>Letter</th><th>State</th></tr></thead>
+    <tbody>
+      {% for r in rows %}
+      <tr>
+        <td>{% if r.can_send %}<input type="checkbox" name="draft_id" value="{{ r.d.draft_id }}" aria-label="Approve the email for {{ r.a.reference }}">{% endif %}</td>
+        <td class="nowrap"><a href="/hr/applications/{{ r.a.application_id }}#email">{{ r.a.reference }}</a></td>
+        <td>{{ r.name or "Not known" }}</td>
+        <td>{{ r.kind }}</td>
+        <td>{{ r.d.to_address or "" }}</td>
+        <td><details><summary>{{ r.d.subject }}</summary><pre class="letter">{{ r.d.body }}</pre></details></td>
+        <td>{{ r.state }}{% if r.problem %}<br><span class="error">{{ r.problem }}</span>{% endif %}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% if sendable %}
+  <p class="inline">
+    <button type="submit">{{ "Approve and send the ticked emails" if mail_configured else "Approve the ticked emails" }}</button>
+    <span class="hint">{{ sendable }} can be approved here. A letter with a part still to be written, or with no address, has to be finished on its application's page first.</span>
+  </p>
+  {% endif %}
+</form>
+<script>
+  // One box to tick or untick all, added only when scripts run; every letter is still listed and can be read.
+  (function () {
+    var boxes = document.querySelectorAll("input[name=draft_id]");
+    if (boxes.length < 2) { return; }
+    var all = document.createElement("label");
+    all.className = "choice";
+    all.innerHTML = '<input type="checkbox"> Tick all ' + boxes.length;
+    all.firstChild.addEventListener("change", function (e) { boxes.forEach(function (b) { b.checked = e.target.checked; }); });
+    document.querySelector("form table").before(all);
+  })();
+</script>
+{% else %}
+<p>No emails yet. A letter is drafted when HR records a decision on an application, and an acknowledgement when one arrives.</p>
+{% endif %}
+{% endblock %}

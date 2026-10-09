@@ -9,7 +9,7 @@ from __future__ import annotations
 import calendar
 import re
 from dataclasses import dataclass, field
-from datetime import date
+from datetime import date, timezone
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -116,13 +116,22 @@ class Item:
     count: int | None = None
 
 
+HELD, AFTER, UNSURE = "HELD", "AFTER", "UNSURE"
+
+
 @dataclass
 class Facts:
     designation: str
     discipline_group: str = "GENERAL"
     regulator_id: str = "UGC"
     regulator_implemented: bool = True
+    # The date everything is counted on, and in words why it is that date. `cut_off` is True when
+    # it is a date fixed for the opening and already past, not simply the day of assessment.
     as_of: date = field(default_factory=date.today)
+    as_of_basis: str = "the day of assessment"
+    cut_off: bool = False
+    received_on: date | None = None  # the day the application arrived
+    notes: list[str] = field(default_factory=list)  # what was left out of the count, in words
     institution_state: str = "Maharashtra"
     # from the application form (or entered at Gate 1); None = not known
     category: str | None = None
@@ -149,9 +158,40 @@ class Facts:
     research_score: Bounds | None = None
     experience_years: Bounds | None = None
 
+    def _standing(self, awarded: Period | None) -> str:
+        """Whether a completed degree was held on the date eligibility is counted on.
+
+        Only a stated award date can put it after that date. A resume that
+        arrived by the date and already called the degree completed settles a
+        date known only to the year.
+        """
+        if not self.cut_off or awarded is None or awarded.latest <= self.as_of:
+            return HELD
+        if awarded.earliest > self.as_of:
+            return AFTER
+        return HELD if self.received_on is not None and self.received_on <= self.as_of else UNSURE
+
+    @property
+    def phd_award(self) -> Period | None:
+        return self.phd_awarded or next((d.completed for d in self.degrees if d.level == "PhD" and d.completed), None)
+
+    @property
+    def phd_standing(self) -> str | None:
+        """HELD, AFTER (awarded after the date) or UNSURE; None when no Ph.D. is claimed as completed."""
+        return self._standing(self.phd_award) if self.phd_status == "COMPLETED" else None
+
+    @property
+    def masters_standing(self) -> str:
+        awarded = self.masters_awarded or next((d.completed for d in self.degrees if d.level == "PG" and d.completed), None)
+        return self._standing(awarded)
+
     @property
     def has_phd(self) -> bool:
-        return self.phd_status == "COMPLETED"
+        return self.phd_standing == HELD
+
+    @property
+    def as_of_text(self) -> str:
+        return self.as_of.strftime("%d-%m-%Y")
 
 
 def _period_from_date(value: date | None, precision: str | None) -> Period | None:
@@ -164,8 +204,31 @@ def _period_from_date(value: date | None, precision: str | None) -> Period | Non
     return Period(value, value)
 
 
+def counting_date(opening, today: date) -> tuple[date, str, bool]:
+    """The date qualifications and experience are counted on: (date, why in words, whether it is a fixed past date).
+
+    An advertisement fixes one date for every applicant, by default the last
+    date for applications, so that the answer does not depend on the day
+    someone presses Assess. Until that date has passed, the count runs to
+    the day of assessment: service not yet done cannot be counted.
+    """
+    if opening is None or (opening.eligibility_date is None and opening.closing_date is None):
+        return today, "the day of assessment, as the opening has no closing date or eligibility date", False
+    fixed = opening.eligibility_date or opening.closing_date
+    name = "eligibility date set for this opening" if opening.eligibility_date else "closing date of this opening"
+    if fixed > today:
+        return today, f"the day of assessment, as the {name} ({fixed.strftime('%d-%m-%Y')}) has not passed", False
+    return fixed, f"the {name}", True
+
+
+def _local_day(moment) -> date | None:
+    if moment is None:
+        return None
+    return (moment if moment.tzinfo else moment.replace(tzinfo=timezone.utc)).astimezone().date()
+
+
 def build_facts(session: Session, application: Application, as_of: date | None = None) -> Facts:
-    """Everything the engine may use for one application, read from the database."""
+    """Everything the engine may use for one application, read from the database. `as_of` stands in for today."""
     from backend import settings
 
     e = application.extracted
@@ -181,12 +244,13 @@ def build_facts(session: Session, application: Application, as_of: date | None =
         discipline_group=opening.discipline_group if opening is not None else NO_OPENING,
         regulator_id=school.regulator_id,
         regulator_implemented=school.regulator.is_implemented,
-        as_of=as_of or date.today(),
+        received_on=_local_day(application.created_at),
         institution_state=settings.INSTITUTION_STATE,
         category=application.category,
         differently_abled=application.differently_abled,
         study_leave_taken=application.study_leave_taken,
     )
+    f.as_of, f.as_of_basis, f.cut_off = counting_date(opening, as_of or date.today())
     if e is not None:
         f.highest_degree, f.phd_status, f.phd_regulation = e.highest_degree, e.phd_status, e.phd_regulation
         f.masters_marks_pct, f.masters_cgpa = e.marks_pct, e.cgpa
@@ -203,7 +267,11 @@ def build_facts(session: Session, application: Application, as_of: date | None =
     for x in rows(CandidateExperience):
         f.posts.append(Post(kind=x.experience_type, designation=x.designation_held, start=parse_period(x.start_stated),
                             end=parse_period(x.end_stated), is_current=x.is_current))
+    later = 0
     for p in rows(CandidatePublication):
+        if f.cut_off and p.year is not None and p.year > f.as_of.year:
+            later += 1  # published after the date; not part of the record on that date
+            continue
         f.papers.append(Paper(kind=p.publication_type, year=p.year, cleared_review=p.status in ("PUBLISHED", "ACCEPTED"),
                               author_count=p.author_count, is_first_author=p.is_first_author, impact_factor=p.impact_factor))
     for a in rows(CandidateAchievement):
@@ -215,4 +283,10 @@ def build_facts(session: Session, application: Application, as_of: date | None =
     for g in rows(CandidateGuidance):
         if g.level in ("PHD", "PG"):
             f.items.append(Item(kind=f"GUIDANCE_{g.level}", status=g.description, count=g.student_count))
+    if later:
+        f.notes.append(f"{later} publication(s) dated after {f.as_of.year} are not counted.")
+    if (f.cut_off and f.phd_status == "COMPLETED" and f.phd_award is None
+            and f.received_on is not None and f.received_on > f.as_of):
+        f.notes.append(f"The resume gives no Ph.D. award date and arrived after {f.as_of_text}; "
+                       "the certificate should confirm the degree was awarded by then.")
     return f

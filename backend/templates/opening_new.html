@@ -54,6 +54,13 @@
     {{ err("closing_date") }}
   </label>
 
+  <label>Eligibility counted as on <span class="hint">(optional)</span>
+    <input type="date" name="eligibility_date" value="{{ v.get('eligibility_date', '') }}">
+    {{ err("eligibility_date") }}
+    <span class="hint">The date on which qualifications and experience are counted, if the advertisement names one.
+      Left empty, the closing date is used. Until that date has passed, the count runs to the day of assessment.</span>
+  </label>
+
   <fieldset>
     <legend>Advertisement <span class="hint">(optional)</span></legend>
     <label>Reference number

@@ -9,7 +9,7 @@ decision changes, this file is edited in the same commit and the change is
 noted in the [Change log](#change-log).
 
 - Last updated: 2026-10-07
-- Current phase: **Phase 7 — Reporting and Gate 3** (done and merged; the model rewording still to be tried live). Next: Phase 8, more intake channels
+- Current phase: **Phase 8 — More intake channels** (built; awaiting the user's check on the real mailbox)
 
 ## Status at a glance
 
@@ -23,7 +23,7 @@ noted in the [Change log](#change-log).
 | 5 | Assessor and Decision: the deterministic rule engine | Built; several readings await the mentor |
 | 6 | HR dashboard: outcomes with reasons, approve or override (Gate 2) | Done |
 | 7 | Reporting: digest, plain-language reasons, drafted emails (Gate 3) | Done; live rewording untried |
-| 8 | More intake channels: email inbox, Google Forms | Not started |
+| 8 | More intake channels: email inbox, Google Forms | Built; inbox tried live once; form script untried |
 | 9 | Logins, school-scoped access, views, highlights, policy layer, drives dashboard | Not started |
 | 10 | Hardening and delivery: encryption, deployment, manual, final report | Not started |
 
@@ -530,15 +530,171 @@ Not done, or not yet tried:
 - One email per decision. A reminder or a second letter would be written by hand outside the system.
 - Emails are plain text, in English only.
 
-## Phase 8 — More intake channels
+## Phase 8 — More intake channels (built; not yet tried on the real mailbox)
 
-- [ ] Email inbox over IMAP (Gmail in development; the college mailbox later is a settings change).
-- [ ] Classify each message as JOB_OPENING, APPLICATION or OTHER: fixed rules first,
-      the model only for ambiguous cases, and which path was used is logged (§16).
-- [ ] Unmatched applications held in NEEDS_JOB_MATCH.
-- [ ] Google Forms channel: read responses from the linked Sheet and resumes from Drive.
+Goal: an application can arrive by email or through a Google Form and end up exactly where a web-form one does.
 
-Development uses made-up resumes only.
+- [x] Email inbox over IMAP (`backend/inbox.py`, table `inbox_messages`, migration 0008). Settings `IMAP_HOST`,
+      `IMAP_PORT`, `IMAP_USER`, `IMAP_PASSWORD`, `IMAP_FOLDER`; the login defaults to the sending account, so one
+      mailbox for both needs only the host. Moving to the college mailbox is a change to `.env`.
+- [x] Read only when a person asks ("Check inbox" on the Inbox page, or `python -m backend.inbox`), over the last
+      14 days. The mailbox is opened read-only and messages are peeked: nothing is deleted, moved or marked read.
+      Each message is remembered by its Message-ID and never taken twice.
+- [x] Each message is sorted APPLICATION, JOB_OPENING or OTHER by fixed rules, and the rule that decided is stored
+      on the row (`classified_by`). A resume (PDF or DOCX) makes it an application; vacancy wording makes it an
+      opening announcement; automatic replies, bounces and the account's own mail are set aside.
+- [x] An application names its opening by reference ("OPN-00003") in the subject or body. It is then filed under
+      that opening and queued for reading. **Whose resume it is comes from the resume, not from who sent the
+      message**: resumes are forwarded by HR, colleagues and agencies. The applicant's name and address are read
+      from the resume, as for an HR upload; the sender is kept on the inbox row and shown on the application page,
+      with a note when the sender's name is not the name on the resume. One sender may send many resumes; the same
+      file is not taken twice for one opening. (The first build took the sender as the applicant. The user's first
+      live test, forwarding a resume from their own address, showed it.)
+- [x] One that names no opening, or a closed one, is held as NEEDS_JOB_MATCH with its resume stored, until a person
+      picks the opening on the Inbox page or sets it aside.
+- [x] What a person needs to choose the opening for a held application is on the row: the start of what the sender
+      wrote (`body_excerpt`, migration 0009), a link to open the attached resume, and a suggested opening when the
+      message's own words name a post, department, school or opening title that matches one, with the reason shown.
+      The suggestion only pre-selects; a message that names nothing gets none. A "Reply to ask which post" link
+      opens the person's own mail program. (The first build showed only sender, subject and file name, and the
+      user rightly asked how HR was meant to choose.)
+- [x] A held resume that is already in the system (the very same file, under any opening) is pointed out on its
+      row with a link to the existing application and its state, before a person files it again. It is not
+      refused outright: one person may apply for two posts. Under the same opening it is still refused.
+- [x] The read button says how many applications a press will read ("Read the 1 waiting application", "Read 12 of
+      the 14"), not only its limit.
+- [x] On the field-check form a value and the "leave empty" tick can no longer be given together: the form
+      prevents it and the server refuses it.
+- [x] Google Form channel, through the same mailbox. A short script on the form (docs/GOOGLE_FORM_SETUP.md) emails
+      each response with the uploaded resume and the answers as "Field: value" lines. Such a message is trusted
+      only from the form owner's address, and its answers pass the same checks as the web form; answers that fail
+      go to a person with the reason. The application is marked as received by Google Form.
+- [x] Inbox page: what is waiting for a person, with "File under this opening" and "Set aside", and the last 50
+      messages seen with how each was sorted. The HR home page shows how many are waiting.
+
+Verified: 53 new tests in this phase and its review; 900 in total on SQLite and the backend tests on PostgreSQL 16. Migrations 0008 and 0009 applied,
+checked, downgraded and re-applied on PostgreSQL. No mailbox was contacted in
+building or testing this: messages are built in the tests and handed over by a stand-in mailbox. The user then ran the
+first live check: a resume emailed to the development mailbox was found, filed under its opening and read.
+
+Different from the plan as first written:
+
+- **No language model sorts mail.** The plan allowed the model for ambiguous cases. A message the rules cannot
+  place is shown to a person instead. That sends no applicant's email to a model, costs no requests, and a wrong
+  guess here would file or drop a real application.
+- **An opening is never created from an email** (the design document's Section 16.1 has one created
+  automatically). The opening fixes which regulation a candidate is judged under, so it stays HR's choice; a
+  vacancy announcement is shown to HR to act on.
+- **Google Forms goes through the mailbox, not through the Sheets and Drive APIs.** That needs no Google Cloud
+  project, key or consent screen, and leaves one channel to look after. The linked spreadsheet is not read.
+- **Held applications are rows in `inbox_messages`, not applications in the NEEDS_JOB_MATCH state.** An application
+  row needs a school and a post, which only an opening gives. The state remains in the state machine, unused.
+
+Not done, or not yet tried:
+
+- The form script has not been run on a real Google Form.
+- Tried on the real mailbox by the user: a filed application, a held one, a refused duplicate and a repeat check. The form-response path has not been seen live.
+- Only the first PDF or DOCX of a message is taken. A resume sent as a link, a ZIP or an image is not read.
+- An emailed application has no form answers (category, State, study leave); they are entered on its page.
+- If the resume gives no email address, the candidate's letter has no address until a person types one; the
+  sender's address is not used for it.
+- No automatic checking on a schedule. `python -m backend.inbox` can be run by a scheduler when wanted.
+- No acknowledgement is sent to someone who applies by email.
+
+## Gap review, 2026-10-08
+
+After the user's live tests of Phase 8 turned up one gap after another, the whole application was walked through
+flow by flow, as HR and as an applicant would use it, and then page by page on a temporary server with made-up data
+in every state. What was clear-cut was fixed; what needs a decision is listed for the user.
+
+Fixed:
+
+- **A reply to one of our letters could become a second application.** Our letters quote the application reference
+  and invite a reply with documents; a reply with a PDF attached would have been filed as a new resume. A message
+  quoting an existing "APP-" reference is now attached to that application as correspondence, shown on its page
+  and on the Inbox page, and its attachment is kept as a document, not read as a resume.
+- **An application could be withdrawn only before it was read or checked.** An applicant may pull out at any
+  stage, so every live state can now reach WITHDRAWN, and a letter not yet sent is dropped when it does.
+- **A scanned resume was accepted at the application form** and failed later, with the applicant none the wiser.
+  The form now refuses a file with no readable text, in words the applicant can act on. (An HR upload or an
+  emailed resume is still accepted and reported under "Needs attention", since the sender is not at the screen.)
+- **Every inbox check downloaded every message of the window again**, attachments included. A message already seen
+  is now recognised from one header and skipped, and the window is 30 days, not 14.
+- **One overloaded Gemini model stopped a reading**, though the other was serving (seen on both days of live
+  use). After the retries on one model end in "overloaded", the next model in the pool is tried. A timeout or
+  malformed output still does not spend the rest of the pool. This reverses an earlier decision, on evidence.
+- **Sending back needed HR to work out which field to tick.** The fields that would settle what the assessment
+  left open are now ticked ready (the SET's State, the Bachelor's marks, the category, and so on).
+- **Before assessment only the form answers could be reopened.** Any field can now be reopened from the
+  application page, so a value read wrongly need not go through an assessment first.
+- A message's received time is stored in UTC (on SQLite it was shown hours out); "Reply to ask which post" appears
+  only on a row waiting for a post; an attachment is called a resume only when it is one; a draft with no address
+  says so; the applicant link is shown whole; `run_app.bat` brings the database up to date and starts the app.
+
+Built after the review, at the user's choice (items 1 and 2 of the list below):
+
+- **Emails to candidates, per opening** (`/hr/openings/{id}/emails`). Every letter of the opening is listed and can
+  be opened and read there. A person ticks the ones they approve and presses one button; nothing unticked is
+  sent. A letter with a reason still to be written, or with no address, cannot be ticked and says why. One
+  refused by the mail server does not stop the others. The page states the mode in force: no mail server, test
+  mode with the redirect address, or live. It is still one approval per letter (Gate 3), with fewer clicks.
+- **Editing an opening** (`/hr/openings/{id}/edit`): the rule set, department, title and closing date; and a closed
+  opening can be reopened. The school and the post cannot be changed, being what was applied for. Changing the
+  rule set sets aside every assessment not yet decided (kept as history) so it is assessed again under the new
+  rules; an application HR has already decided keeps its decision, and the page says how many there are.
+
+Built next, also at the user's choice (items 3, 5 and 7 of the list below):
+
+- **The date eligibility is counted on.** Each opening has one date on which qualifications and experience are
+  counted: the eligibility date HR sets for it, or else its closing date (`job_openings.eligibility_date`,
+  migration 0010; `backend.engine.facts.counting_date`). Until that date has passed, and for an opening with
+  neither date, the count runs to the day of assessment, since service not yet done cannot be counted. Once it has
+  passed: service after it is not counted, whenever the post ended; a Ph.D. whose stated award date is after it is
+  not held on it (and does not exempt from NET/SET); publications dated after its year are left out, and the
+  assessment says so. A degree dated only to a year that includes the date is taken as held if the resume arrived
+  by the date, and otherwise goes to a person, with the award date offered ready-ticked on "send back". A Master's
+  degree dated after the date is never failed by the engine: it goes to a person, cited as "Eligibility date of
+  the opening, set by HR" and not as a clause of the Regulations. Every assessment records the date it used and
+  why. Changing the date in force sets aside assessments not yet decided, as a change of rule set does. An
+  assessment made before the closing date becomes out of date when that date passes; the opening's page counts
+  these and offers one button to assess them again. **The default (closing date) is the usual practice and is
+  provisional: neither Regulation names a date, so the mentor or HR is to confirm it.**
+- **Reading a resume again** (application page, before HR has decided). The application goes back to the reading
+  queue as a job of kind READ_AGAIN, which does not use the stored result of the first reading; nothing is sent
+  to the model until a person runs the queue. The new reading replaces the old one, including corrections made
+  by hand; the form answers and the list of earlier corrections are kept; an assessment already made is set
+  aside. The model runs at temperature 0, so the same resume often reads the same; its use is after a back-up
+  model reading or a change of prompt.
+- **Correcting the posts held** (application page, before HR has decided). The type and the dates of each post
+  can be corrected and a missing post added, with dates to a year, a month or a day. A post entered by HR is
+  marked as such. Each change is in `review_edits`. Saving sets an assessment already made aside, and the
+  application is assessed again. A post of type "Other" is not counted.
+
+- **Acknowledgement of receipt** (item 6 below; built 2026-10-09). A second kind of letter
+  (`email_drafts.kind`, migration 0011): fixed wording written by code, giving the post, the date received and
+  the reference, and saying in terms that it states nothing about eligibility. **By the user's decision it is the
+  one letter that may go without a person approving it**, and only where the applicant typed their own address:
+  the application form (sent after the page has answered) and the Google Form (sent when the inbox is checked).
+  It is recorded as approved by `system:acknowledgement`. For an emailed resume the address is the one read off
+  the resume, so the letter is written only after the reading, as a draft, and waits on the opening's emails
+  page for a person's tick. A resume HR uploaded gets none. One per application, ever. It obeys
+  `EMAIL_REDIRECT_TO` (one test copy, nothing to the applicant), a refusal by the mail server never disturbs the
+  application (the letter waits on the emails page), sending it moves the application nowhere, and
+  `ACKNOWLEDGE_APPLICATIONS=false` turns it off. Every other letter still needs a person's approval.
+  `tests/conftest.py` now blanks the mail settings for every test, so no test can reach a real mail server.
+
+For the user to decide (not built):
+
+1. (Built; see above.)
+2. (Built; see above.)
+3. (Built; see above.) Reading a resume again.
+4. **A recorded HR decision cannot be reopened** from the screen (already noted; planned with the Phase 9 roles).
+5. (Built; see above.) The date eligibility is counted on. The default awaits the mentor's or HR's confirmation.
+6. (Built; see above.) Acknowledgement of receipt. A page where an applicant looks up their status is not built.
+7. (Built; see above.) Entering and correcting post dates.
+8. **Form answers for uploaded and emailed resumes** are still entered by HR when wanted; asking the applicant
+   through a private link was discussed and set aside for now.
+9. The README's opening section still describes the first, Excel-only stage. To be rewritten in Phase 10.
 
 ## Phase 9 — Access control and the Section 17 extensions
 
@@ -572,6 +728,8 @@ Development uses made-up resumes only.
 | 2026-10-06 | The engine answers met, not met or cannot be told. Anything it cannot tell goes to a person; it is never rounded. |
 | 2026-10-06 | Until the mentor rules, the open readings are taken as listed under Phase 5, and scores are given as ranges. |
 | 2026-10-06 | Disciplines with their own UGC clause (4.2 to 4.6) are chosen as such on the opening and assessed by a person until their rules are loaded. |
+| 2026-10-08 | When a Gemini model stays overloaded through its retries, the next model in the pool is tried (reverses the earlier "do not spend the pool" choice for that one case). |
+| 2026-10-08 | An application may be withdrawn at any stage; a message quoting an application's reference is correspondence, never a new application. |
 | Earlier | Rank and score across uploaded resumes kept in the Phase 0 workbook at the user's request; to be superseded in Phase 5. |
 | Earlier | CGPA shown as a percentage using (CGPA − 0.75) × 10, marked as converted. |
 
@@ -582,7 +740,7 @@ Development uses made-up resumes only.
 | HR-confirmed school list and which schools have departments (§7.4) | Before go-live (seeded with the document's 21) |
 | Regulator for School of Education (NCTE?) and Allied Healthcare (§7.4) | Phase 5 |
 | Are category and contact details hidden from the interview panel? (§17.5) | Phase 9 |
-| Which college mailbox, and who grants access | Phase 8 |
+| Which college mailbox, and who grants access (a development mailbox is in use for now) | Before go-live |
 | Which mail server and sender address candidate emails go out from | Before any email is sent |
 | Where the system will be hosted | Phase 10 |
 | Does the university assess technical-school posts under AICTE cl. 5.1/5.2 and not UGC cl. 4.1? (mentor sheet, Section 11) | Phase 5 |
@@ -594,6 +752,7 @@ Development uses made-up resumes only.
 | Table 3A: does an M.Tech/M.E. score as Post-Graduation, under S.No. 3, or both? | Phase 5 (short-listing score) |
 | How is a CGPA placed in the percentage bands of Table 3A? | Phase 5 |
 | Load UGC cl. 4.2 to 4.6 (music, arts, drama, yoga, therapy)? Needed only if those schools recruit through the system | Phase 6 or later |
+| Is eligibility counted as on the last date for applications where the advertisement names no other date? (built that way, provisionally, 2026-10-08) | Before results are relied on |
 | Who checks and signs the rules transcription sheet (one question was added on 2026-10-06, so the mentor's copy is one behind) | Before Phase 5 results are relied on |
 | Does the university apply the UGC cl. 3.11 exclusion to AICTE-governed posts? AICTE's Regulation has none | Before Phase 5 results are relied on |
 | HR's institutions list with tiers and other spellings (four workbook rows are loaded) | Phase 6 (highlights) |
@@ -633,3 +792,10 @@ Development uses made-up resumes only.
 | 2026-10-07 | Phase 6 checked on the live data and closed. The user moved the 12 applications to an Assistant Professor opening: 11 meet the post, 1 needs a person (no class or marks stated). The experience shown beside an AICTE outcome now counts industry posts. Known and left: a post with no dates gives "at least 0" years; entering post dates at Gate 1 is not built. |
 | 2026-10-07 | Phase 7 built: plain-language findings, the per-opening digest, candidate emails drafted on decision, Gate 3 approval, SMTP sending with a redirect safeguard, and optional model rewording behind a fact check. The explanation is written by code and not by the model. No mail server is configured, so nothing can be sent yet. |
 | 2026-10-07 | The user set up a sending account and a catch-all address and sent two test copies through Gmail; both arrived. Two things came out of it: the panel did not say where an email would really go (now it does), and a test copy was recorded as sent for good, which would have stopped the real letter later (now a test copy leaves the email approved). |
+| 2026-10-07 | Phase 8 built: the inbox channel over IMAP (read-only, on request), fixed-rule sorting with the rule recorded, held applications, and the Google Form channel through the same mailbox by a form script. No model sorts mail, and no opening is created from an email. One development mailbox is used for sending and reading for now; the college mailbox comes later. |
+| 2026-10-08 | First live inbox test by the user. Two fixes from it: an emailed resume is no longer assumed to be about its sender (name and address come from the resume; the sender is shown for comparison), and a resume that lists dated teaching posts but states no total is no longer sent to Gate 1 for the total, since the engine counts the posts. The application page now shows teaching years counted from the dated posts. |
+| 2026-10-08 | The user's live inbox tests led to five changes: the applicant comes from the resume and not the sender; no stop for a teaching total when posts are dated; the held row shows the message text, the resume, a suggested opening and a reply link; a resume already in the system is pointed out; the read button states its real count. |
+| 2026-10-08 | Gap review of the whole application at the user's request, after live tests kept finding gaps. Twelve fixed (see "Gap review"); nine listed for the user's decision. |
+| 2026-10-08 | Built at the user's choice: the date eligibility is counted on (per opening; the closing date unless HR names another; migration 0010), reading a resume again, and correcting or adding the posts held. The closing-date default is provisional until the mentor or HR confirms it. The Excel download does not yet show the counting date. |
+| 2026-10-09 | Acknowledgement of receipt built. The user agreed that this one letter, which carries no finding, may be sent without a person's approval where the applicant typed their own address; for an emailed resume it is a draft a person approves. Migration 0011 (`email_drafts.kind`). A shared test fixture keeps every test away from a real mail server. |
+| 2026-10-09 | From the user's live test of the acknowledgement: the home page and each opening's page now say how many letters (acknowledgements and decision letters) are drafts waiting for approval, with a link, since a waiting draft was easy to miss. Emailed resumes keep the tick; automatic sending for them was considered and left out because the address is read from the resume. Inbox: a duplicate the system refused is shown in the same red style as one waiting for a choice; promotional mailings (a noreply sender anywhere in the address, an unsubscribe header, or marked bulk) with no resume are no longer shown to HR. |

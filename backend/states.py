@@ -37,22 +37,26 @@ INTERVIEW_SCHEDULED = "INTERVIEW_SCHEDULED"
 # "return the application for re-assessment"):
 #   outcome -> PENDING_REVIEW   to correct named fields first
 #   outcome -> EXTRACTED        to be assessed again as it stands
+# An applicant may withdraw at any point up to the interview, not only before reading
+# (the document draws WITHDRAWN from PENDING_REVIEW alone), so every live state can reach it.
 # and EXTRACTED -> PENDING_REVIEW, when HR reopens fields before assessment (to enter
 # form answers an uploaded resume came without, or to correct something they noticed).
+# and "read this resume again": any state before HR's decision can go back to RECEIVED,
+# to wait in the reading queue (backend.jobs.read_again).
 ALLOWED: dict[str, frozenset[str]] = {
     RECEIVED: frozenset({PARSING, FAILED, WITHDRAWN}),
     NEEDS_JOB_MATCH: frozenset({RECEIVED, WITHDRAWN}),
     PARSING: frozenset({EXTRACTED, PENDING_REVIEW, FAILED, RECEIVED}),
     FAILED: frozenset({RECEIVED, WITHDRAWN}),
-    PENDING_REVIEW: frozenset({EXTRACTED, WITHDRAWN}),
-    EXTRACTED: frozenset({ASSESSED, MANUAL_REVIEW, PENDING_REVIEW}),
+    PENDING_REVIEW: frozenset({EXTRACTED, RECEIVED, WITHDRAWN}),
+    EXTRACTED: frozenset({ASSESSED, MANUAL_REVIEW, PENDING_REVIEW, RECEIVED, WITHDRAWN}),
     ASSESSED: frozenset({SHORTLISTED, RE_CATEGORISED, NOT_ELIGIBLE}),
-    SHORTLISTED: frozenset({HR_APPROVED, PENDING_REVIEW, EXTRACTED}),
-    RE_CATEGORISED: frozenset({HR_APPROVED, PENDING_REVIEW, EXTRACTED}),
-    NOT_ELIGIBLE: frozenset({HR_APPROVED, PENDING_REVIEW, EXTRACTED}),
-    MANUAL_REVIEW: frozenset({HR_APPROVED, PENDING_REVIEW, EXTRACTED}),
-    HR_APPROVED: frozenset({CONTACTED}),
-    CONTACTED: frozenset({INTERVIEW_SCHEDULED}),
+    SHORTLISTED: frozenset({HR_APPROVED, PENDING_REVIEW, EXTRACTED, RECEIVED, WITHDRAWN}),
+    RE_CATEGORISED: frozenset({HR_APPROVED, PENDING_REVIEW, EXTRACTED, RECEIVED, WITHDRAWN}),
+    NOT_ELIGIBLE: frozenset({HR_APPROVED, PENDING_REVIEW, EXTRACTED, RECEIVED, WITHDRAWN}),
+    MANUAL_REVIEW: frozenset({HR_APPROVED, PENDING_REVIEW, EXTRACTED, RECEIVED, WITHDRAWN}),
+    HR_APPROVED: frozenset({CONTACTED, WITHDRAWN}),
+    CONTACTED: frozenset({INTERVIEW_SCHEDULED, WITHDRAWN}),
     INTERVIEW_SCHEDULED: frozenset(),
     WITHDRAWN: frozenset(),
 }

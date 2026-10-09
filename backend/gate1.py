@@ -13,6 +13,7 @@ here judges eligibility.
 
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass, field
 from datetime import date
 from typing import get_args
@@ -288,7 +289,10 @@ def save_review(
     new: dict[str, object] = {}
     for f in flags:
         raw = (answers.get(f.name) or "").strip()
-        if f.name in left_empty and f.spec.may_be_empty:
+        if raw and f.name in left_empty and f.spec.may_be_empty:
+            # A value and "leave empty" together say two different things. Neither is assumed.
+            errors[f.name] = "Either give a value or tick the box, not both."
+        elif f.name in left_empty and f.spec.may_be_empty:
             new[f.name] = None
         elif not raw:
             errors[f.name] = ("Enter a value, or tick the box to leave it empty." if f.spec.may_be_empty
@@ -441,12 +445,186 @@ def resolve_duplicate(session: Session, application: Application, same_person: b
 
 
 def withdraw(session: Session, application: Application, actor: str = ACTOR) -> None:
-    """Take an application out of consideration (a second copy, or at the applicant's request)."""
+    """Take an application out of consideration (a second copy, or at the applicant's request), at any stage."""
     if states.WITHDRAWN not in states.ALLOWED[application.status]:
         raise ReviewError({"": f"An application that is {application.status} cannot be withdrawn here."})
     application.possible_duplicate_candidate_id = None
     states.transition(session, application, states.WITHDRAWN, actor, note="withdrawn by HR")
+    # A letter not yet sent must not go out to someone who has withdrawn.
+    from backend.models import EmailDraft
+
+    for draft in session.scalars(select(EmailDraft).where(
+            EmailDraft.application_id == application.application_id, EmailDraft.status.in_(("DRAFT", "APPROVED")))):
+        draft.status = "DISCARDED"
     session.flush()
+
+
+# --- reading a resume again, and the dates of posts ---------------------------
+
+# Until HR has decided, the record can still be put right.
+BEFORE_HR_DECISION: frozenset[str] = frozenset({
+    states.PENDING_REVIEW, states.EXTRACTED, states.SHORTLISTED, states.RE_CATEGORISED, states.NOT_ELIGIBLE,
+    states.MANUAL_REVIEW,
+})
+_ASSESSED: frozenset[str] = BEFORE_HR_DECISION - {states.PENDING_REVIEW, states.EXTRACTED}
+
+
+def _set_aside_assessment(session: Session, application: Application, actor: str) -> None:
+    """An assessment made on the record as it was no longer stands. It is kept as history, marked as sent back."""
+    if application.status in _ASSESSED:
+        from backend.models import HrDecision
+
+        session.add(HrDecision(application_id=application.application_id, action="RETURNED", actor=actor))
+
+
+def read_again(session: Session, application: Application, actor: str = ACTOR) -> None:
+    """Put a resume already read back in the reading queue, to be read afresh by the model.
+
+    What the new reading finds replaces what the first one found, including
+    corrections a person made to it; the list of those corrections is kept.
+    The answers from the application form are not touched. Nothing is read
+    here: the job waits until a person runs the queue.
+    """
+    if application.status not in BEFORE_HR_DECISION or application.extracted is None:
+        raise ReviewError({"": f"A resume can be read again only after a first reading and before HR has decided (this application is {application.status})."})
+    from backend import jobs
+
+    _set_aside_assessment(session, application, actor)
+    session.add(ReviewEdit(application_id=application.application_id, field="resume", action="READ_AGAIN", actor=actor))
+    states.transition(session, application, states.RECEIVED, actor, note="gate1: to be read again")
+    jobs.enqueue_read(session, application, fresh=True)
+    session.flush()
+
+
+POST_KINDS: tuple[tuple[str, str], ...] = (
+    ("TEACHING", "Teaching"), ("RESEARCH", "Research"), ("INDUSTRY", "Industry"), ("OTHER", "Other (not counted)"),
+)
+_DATE_SHAPES = (
+    (re.compile(r"^(?P<y>\d{4})$"), "{y}"),
+    (re.compile(r"^(?P<y>\d{4})-(?P<m>\d{1,2})$"), "{y}-{m:0>2}"),
+    (re.compile(r"^(?P<m>\d{1,2})[-/](?P<y>\d{4})$"), "{y}-{m:0>2}"),
+    (re.compile(r"^(?P<y>\d{4})-(?P<m>\d{1,2})-(?P<d>\d{1,2})$"), "{y}-{m:0>2}-{d:0>2}"),
+    (re.compile(r"^(?P<d>\d{1,2})[-/](?P<m>\d{1,2})[-/](?P<y>\d{4})$"), "{y}-{m:0>2}-{d:0>2}"),
+)
+
+
+def _post_date(raw: str | None) -> str | None:
+    """A date typed for a post, to a year, a month or a day, as it is stored. Raises ValueError in words."""
+    from backend.engine.facts import parse_period
+
+    raw = (raw or "").strip()
+    if not raw:
+        return None
+    text = next((shape.format(**m.groupdict()) for pattern, shape in _DATE_SHAPES if (m := pattern.match(raw))), None)
+    period = parse_period(text)
+    if period is None:
+        raise ValueError("write the date as 2019, 07-2019 or 15-07-2019")
+    if period.earliest.year < 1950 or period.earliest > date.today():
+        raise ValueError("the date must be between 1950 and today")
+    return text
+
+
+def _post_text(kind: str, start: str | None, end: str | None, current: bool) -> str:
+    dates = f"{start or 'not dated'} to {'present' if current else (end or 'not stated')}" if (start or end or current) else "no dates"
+    return f"{kind.capitalize()}, {dates}"
+
+
+def _read_post(form: dict[str, str], key: str, label: str, errors: list[str]) -> tuple[str, str | None, str | None, bool] | None:
+    """One post's type and dates from the form, checked. Adds to `errors` and returns None if it cannot stand."""
+    from backend.engine.facts import parse_period
+
+    kind = form.get(f"kind_{key}", "")
+    current = bool(form.get(f"current_{key}"))
+    problems = []
+    if kind not in {k for k, _ in POST_KINDS}:
+        problems.append("choose the type")
+    dates: list[str | None] = []
+    for name in ("start", "end"):
+        try:
+            dates.append(_post_date(form.get(f"{name}_{key}")))
+        except ValueError as exc:
+            problems.append(f"{'From' if name == 'start' else 'To'}: {exc}")
+            dates.append(None)
+    start, end = dates
+    if not problems:
+        if current and end:
+            problems.append("give an end date or tick \"still in this post\", not both")
+        elif end and not start:
+            problems.append("an end date needs a start date")
+        elif start and end and parse_period(end).latest < parse_period(start).earliest:
+            problems.append("the end date is before the start date")
+    if problems:
+        errors.append(f"{label}: " + "; ".join(problems) + ".")
+        return None
+    return kind, start, end, current
+
+
+def save_posts(session: Session, application: Application, form: dict[str, str], actor: str = ACTOR) -> int:
+    """Store the type and dates a person entered for the posts held; returns how many posts changed or were added.
+
+    Experience is counted from these dates (backend/engine/experience.py), so
+    an assessment already made is set aside and the application waits to be
+    assessed again. All or nothing: one bad date and nothing is stored.
+    """
+    if application.status not in BEFORE_HR_DECISION or application.extracted is None:
+        raise ReviewError({"": f"Posts can be corrected only after the resume is read and before HR has decided (this application is {application.status})."})
+    app_id = application.application_id
+    posts = session.scalars(
+        select(CandidateExperience).where(CandidateExperience.application_id == app_id).order_by(CandidateExperience.experience_id)
+    ).all()
+    errors: list[str] = []
+    changes: list[tuple[CandidateExperience, tuple]] = []
+    for n, post in enumerate(posts, start=1):
+        if f"kind_{post.experience_id}" not in form:
+            continue  # not on the form that was sent; left alone
+        new = _read_post(form, str(post.experience_id), f"Post {n}", errors)
+        old = (post.experience_type, post.start_stated, post.end_stated, bool(post.is_current))
+        if new is not None and new != old:
+            changes.append((post, new))
+
+    added = None
+    designation = " ".join((form.get("new_designation") or "").split())[:200]
+    employer = " ".join((form.get("new_employer") or "").split())[:250]
+    if designation or employer or (form.get("start_new") or "").strip() or (form.get("end_new") or "").strip():
+        added = _read_post(form, "new", "New post", errors)
+        if added is not None and not (designation and added[1]):
+            errors.append("New post: give at least the post and its start date.")
+    if errors:
+        raise ReviewError({"": " ".join(errors)})
+    if not changes and added is None:
+        raise ReviewError({"": "Nothing was changed."})
+
+    for post, new in changes:
+        n = posts.index(post) + 1
+        old_text = _post_text(post.experience_type, post.start_stated, post.end_stated, bool(post.is_current))
+        post.experience_type, post.start_stated, post.end_stated, post.is_current = new
+        session.add(ReviewEdit(application_id=app_id, field=f"Post {n}: type and dates", action="CORRECTED",
+                               old_value=old_text, new_value=_post_text(*new), actor=actor))
+    if added is not None:
+        kind, start, end, current = added
+        session.add(CandidateExperience(
+            candidate_id=application.candidate_id, application_id=app_id, found_in_resume=False,
+            employer_name=employer or None, designation_held=designation, experience_type=kind,
+            start_stated=start, end_stated=end, is_current=current,
+        ))
+        session.add(ReviewEdit(application_id=app_id, field=f"Post {len(posts) + 1}: added", action="ENTERED",
+                               new_value=f"{designation[:150]}: {_post_text(*added)}", actor=actor))
+    session.flush()
+
+    if application.status in _ASSESSED:
+        _set_aside_assessment(session, application, actor)
+        states.transition(session, application, states.EXTRACTED, actor, note="gate1: posts corrected; to be assessed again")
+    elif application.status == states.PENDING_REVIEW:
+        # A total was asked for only because no teaching post could be dated. If one now can, it is not needed.
+        dated = session.scalars(select(CandidateExperience.experience_id).where(
+            CandidateExperience.application_id == app_id, CandidateExperience.experience_type == "TEACHING",
+            CandidateExperience.start_stated.is_not(None))).first()
+        reasons = list(application.extracted.review_reasons or [])
+        if dated and "teaching_years_raw:missing_required" in reasons:
+            reasons.remove("teaching_years_raw:missing_required")
+            _finish(session, application, reasons, actor, note="gate1: posts dated")
+    session.flush()
+    return len(changes) + (1 if added is not None else 0)
 
 
 def history(session: Session, application: Application) -> list[ReviewEdit]:

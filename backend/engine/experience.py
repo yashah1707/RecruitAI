@@ -66,8 +66,9 @@ def _intervals(posts: list[Post], as_of: date) -> tuple[list[_Interval], list[_I
             shortest.append((p.start.latest, as_of))
             longest.append((p.start.earliest, as_of))
         elif p.end is not None:
-            shortest.append((p.start.latest, p.end.earliest))
-            longest.append((p.start.earliest, p.end.latest))
+            # Nothing after `as_of` is counted, whenever the post ended.
+            shortest.append((p.start.latest, min(p.end.earliest, as_of)))
+            longest.append((p.start.earliest, min(p.end.latest, as_of)))
         else:  # started, but the resume does not say when it ended
             undated = True
             longest.append((p.start.earliest, as_of))

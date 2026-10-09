@@ -1,0 +1,51 @@
+{% extends "base.html" %}
+{% block title %}Edit {{ o.reference }} · RecruitAI{% endblock %}
+{% block area %}HR{% endblock %}
+{% block nav %}<a href="/">Openings</a> <a href="/hr/openings/{{ o.opening_id }}">{{ o.reference }}</a>{% endblock %}
+{% macro err(name) %}{% if errors.get(name) %}<span class="error">{{ errors[name] }}</span>{% endif %}{% endmacro %}
+{% block content %}
+<h1>Edit {{ o.reference }}</h1>
+<dl class="facts">
+  <dt>School</dt><dd>{{ o.school.name }}</dd>
+  <dt>Post</dt><dd>{{ DESIGNATIONS[o.designation] }}</dd>
+</dl>
+<p class="hint">The school and the post cannot be changed here: they are what applicants applied for. If applications were
+  filed under the wrong post, create the right opening and use "Move all" on this opening's page.</p>
+
+<form method="post" action="/hr/openings/{{ o.opening_id }}/edit" class="stack">
+  <label>Rules that apply to this post
+    <select name="discipline_group" required>
+      {% for code, text in DISCIPLINE_GROUPS.items() %}
+      <option value="{{ code }}" {{ "selected" if v.discipline_group == code }}>{{ text }}</option>
+      {% endfor %}
+    </select>
+    {{ err("discipline_group") }}
+    <span class="hint">Changing this changes the regulation every applicant here is judged under.
+      {% if assessed %}<strong>{{ assessed }} assessed application(s) will be set aside and must be assessed again.</strong>{% endif %}
+      {% if decided %}{{ decided }} already decided by HR will keep their decision; look at them again yourself.{% endif %}</span>
+  </label>
+
+  <label>Department <span class="hint">(optional)</span>
+    <input name="department_name" value="{{ v.department_name }}" maxlength="200">
+  </label>
+
+  <label>Title <span class="hint">(optional, shown to applicants)</span>
+    <input name="title" value="{{ v.title }}" maxlength="200">
+  </label>
+
+  <label>Closing date <span class="hint">(optional; applications are refused after it)</span>
+    <input type="date" name="closing_date" value="{{ v.closing_date }}">
+    {{ err("closing_date") }}
+  </label>
+
+  <label>Eligibility counted as on <span class="hint">(optional)</span>
+    <input type="date" name="eligibility_date" value="{{ v.eligibility_date }}">
+    {{ err("eligibility_date") }}
+    <span class="hint">The date on which qualifications and experience are counted, if the advertisement names one.
+      Left empty, the closing date is used. Until that date has passed, the count runs to the day of assessment.
+      {% if assessed %}If a change here moves the date in force, the {{ assessed }} assessed application(s) not yet decided are set aside to be assessed again.{% endif %}</span>
+  </label>
+
+  <button type="submit">Save changes</button>
+</form>
+{% endblock %}

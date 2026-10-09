@@ -1,7 +1,7 @@
 {% extends "base.html" %}
 {% block title %}Openings · RecruitAI{% endblock %}
 {% block area %}HR{% endblock %}
-{% block nav %}<a href="/hr/openings/new">New opening</a> <a href="/apply">Applicant view</a>{% endblock %}
+{% block nav %}<a href="/hr/openings/new">New opening</a> <a href="/hr/inbox">Inbox{% if inbox_waiting %} ({{ inbox_waiting }}){% endif %}</a> <a href="/apply">Applicant view</a>{% endblock %}
 {% block content %}
 <h1>Openings</h1>
 
@@ -31,6 +31,19 @@
     or run <code>python -m backend.worker</code>.</p>
   {% endif %}
 </section>
+
+{% if letters %}
+<section class="panel">
+  <h2>Emails waiting for your approval</h2>
+  <ul>
+    {% for o in openings if letters.get(o.opening_id) %}
+    <li><a href="/hr/openings/{{ o.opening_id }}/emails">{{ o.reference }}</a>: {{ letters[o.opening_id] }}</li>
+    {% endfor %}
+  </ul>
+  <p class="hint">Nothing is sent until you approve it. An acknowledgement for a resume that came by email waits here
+    because its address was read from the resume.</p>
+</section>
+{% endif %}
 
 {% if attention or stuck %}
 <section class="panel warn">

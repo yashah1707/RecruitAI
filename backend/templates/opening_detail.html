@@ -11,15 +11,16 @@
   <dt>Rules that apply</dt><dd>{{ DISCIPLINE_GROUPS[o.discipline_group] }}</dd>
   {% if o.drive %}<dt>Advertisement</dt><dd>{{ o.drive.advertisement_ref }}, published {{ o.drive.advertisement_date|ddmmyyyy }}</dd>{% endif %}
   <dt>Closing date</dt><dd>{{ o.closing_date|ddmmyyyy or "Open-ended" }}</dd>
+  <dt>Eligibility counted as on</dt><dd>{{ counted_on[0]|ddmmyyyy }} <span class="hint">{{ counted_on[1] }}</span></dd>
   <dt>Status</dt><dd>{{ "Accepting applications" if accepting else "Closed" }}</dd>
-  <dt>Link for applicants</dt><dd><code>/apply/{{ o.opening_id }}</code></dd>
+  <dt>Link for applicants</dt><dd><code>{{ request.base_url }}apply/{{ o.opening_id }}</code>
+    <span class="hint">Works only on this computer until the application is hosted. Applicants can also email a resume quoting {{ o.reference }}.</span></dd>
 </dl>
 
-{% if o.status == "OPEN" %}
-<form method="post" action="/hr/openings/{{ o.opening_id }}/close" class="inline">
-  <button type="submit" class="quiet">Close this opening</button>
+<form method="post" action="/hr/openings/{{ o.opening_id }}/{{ "close" if o.status == "OPEN" else "reopen" }}" class="inline">
+  <a class="button" href="/hr/openings/{{ o.opening_id }}/edit">Edit this opening</a>
+  <button type="submit" class="quiet">{{ "Close this opening" if o.status == "OPEN" else "Reopen this opening" }}</button>
 </form>
-{% endif %}
 
 <section class="panel">
   <h2>Add resumes you already hold</h2>
@@ -40,23 +41,35 @@
 </section>
 
 <h2>Applications ({{ rows|length }})</h2>
+{% if letters %}
+<p class="notice" role="status"><strong>{{ letters }} waiting for your approval.</strong> Nothing is sent until you approve it.
+  <a href="/hr/openings/{{ o.opening_id }}/emails">Read and approve them</a></p>
+{% endif %}
 {% if reading %}
 <p class="notice" role="status"><strong>Reading in progress.</strong> This page refreshes every few seconds.</p>
 {% elif due %}
 <form method="post" action="/hr/queue/run" class="inline">
   <input type="hidden" name="back" value="/hr/openings/{{ o.opening_id }}">
   <input type="hidden" name="limit" value="12">
-  <button type="submit">Read waiting applications (up to 12)</button>
-  <span class="hint">{{ due }} waiting across all openings. Each is one request to the language model.</span>
+  <button type="submit">{% if due > 12 %}Read 12 of the {{ due }} waiting applications{% elif due == 1 %}Read the 1 waiting application{% else %}Read the {{ due }} waiting applications{% endif %}</button>
+  <span class="hint">{{ "That is" if due <= 12 else "Twelve at a time;" }} {{ [due, 12]|min }} request(s) to the language model, one per application.
+    The count is across all openings.</span>
 </form>
 {% endif %}
 <p class="hint">A short-listing aid. Applications are listed in order of receipt, not ranked; every outcome needs an HR decision.
-  {% if rows %}<a href="/hr/openings/{{ o.opening_id }}/digest">Digest</a> · <a href="/hr/openings/{{ o.opening_id }}/export.xlsx">Download as Excel</a>{% endif %}</p>
+  {% if rows %}<a href="/hr/openings/{{ o.opening_id }}/digest">Digest</a> · <a href="/hr/openings/{{ o.opening_id }}/emails">Emails to candidates</a> · <a href="/hr/openings/{{ o.opening_id }}/export.xlsx">Download as Excel</a>{% endif %}</p>
 {% set to_assess = rows|selectattr("a.status", "equalto", "EXTRACTED")|list|length %}
 {% if to_assess %}
 <form method="post" action="/hr/openings/{{ o.opening_id }}/assess" class="inline">
   <button type="submit">Assess {{ to_assess }} read application(s)</button>
   <span class="hint">Checks each against the rules chosen for this opening. No language model is used.</span>
+</form>
+{% endif %}
+{% if out_of_date %}
+<form method="post" action="/hr/openings/{{ o.opening_id }}/reassess" class="inline">
+  <button type="submit">Assess {{ out_of_date }} application(s) again as on {{ counted_on[0]|ddmmyyyy }}</button>
+  <span class="hint">These were assessed counting to another date. Eligibility for this opening is counted as on
+    {{ counted_on[0]|ddmmyyyy }}, {{ counted_on[1] }}. The earlier findings are kept as history. No language model is used.</span>
 </form>
 {% endif %}
 {% if rows %}

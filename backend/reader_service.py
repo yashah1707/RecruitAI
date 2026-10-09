@@ -67,9 +67,13 @@ def _cut(text: str | None, limit: int) -> str | None:
 
 
 def read_application(
-    session: Session, application: Application, provider: LLMProvider, cache: ResultCache | None = None
+    session: Session, application: Application, provider: LLMProvider, cache: ResultCache | None = None,
+    fresh: bool = False,
 ) -> str:
     """Run the Reader on one application; returns the state it ends in.
+
+    `fresh` is for "read this resume again": the stored result of the earlier
+    reading is not used, so the model is asked again, and its answer replaces it.
 
     RECEIVED -> PARSING -> EXTRACTED        every required field is trustworthy
                         -> PENDING_REVIEW   a person must check or complete fields (Gate 1)
@@ -88,7 +92,7 @@ def read_application(
 
     model_id = getattr(provider, "cache_model_id", None)
     key = cache_key(resume.text, getattr(provider, "prompt_version", ""), model_id) if cache and model_id else None
-    result = cache.get(key) if key else None
+    result = cache.get(key) if key and not fresh else None
     if result is None:
         try:
             result = provider.extract_fields(resume.text)
@@ -106,6 +110,10 @@ def read_application(
         # Under an AICTE discipline rule there is no NET/SET requirement, so neither the State of a
         # SET nor the Regulations a Ph.D. was awarded under changes anything. Not asked for.
         reasons = [r for r in reasons if r not in _NET_SET_ONLY_REASONS]
+    if any(x.kind == "TEACHING" and x.start for x in result.experience):
+        # Experience is counted from the dated posts (backend/engine/experience.py). A resume that
+        # lists its teaching posts with dates but states no total has left nothing for a person to supply.
+        reasons = [r for r in reasons if r != "teaching_years_raw:missing_required"]
     if application.applicant_name:
         # The applicant typed their own name; how well it was read off the resume no longer matters.
         reasons = [r for r in reasons if not r.startswith("candidate_name:")]
@@ -123,6 +131,11 @@ def read_application(
         note=_cut("; ".join(reasons), 500),  # field and rule names only, no values
     )
     logger.info("application_read id=%s state=%s reasons=%d", application.application_id, application.status, len(reasons))
+    if application.resume_source == "EMAIL":
+        # Only now is there an address to acknowledge to: the one on the resume. A draft, for a person to approve.
+        from backend import emails
+
+        emails.acknowledge(session, application)
     return application.status
 
 

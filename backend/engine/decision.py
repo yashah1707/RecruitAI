@@ -19,7 +19,7 @@ from datetime import date
 
 from backend.engine import scores
 from backend.engine.experience import adjusted_years, service_years
-from backend.engine.facts import Bounds, Degree, Facts, Period
+from backend.engine.facts import AFTER, UNSURE, Bounds, Degree, Facts, Period
 from backend.engine.rules import NO_OPENING, RANKS, UGC_OTHER_SECTIONS, Relaxation, Rule, RuleSet
 
 PASS, FAIL, UNKNOWN = "PASS", "FAIL", "UNKNOWN"
@@ -70,6 +70,7 @@ class Decision:
     research_score: Bounds | None = None
     shortlist_score: dict | None = None
     as_of: date | None = None
+    as_of_basis: str | None = None
 
 
 def at_least(value: Bounds, needed: float) -> str:
@@ -106,6 +107,8 @@ def _marks_check(facts: Facts, rule: Rule, relaxations: list[Relaxation]) -> Che
                 applies.append(r)
             elif facts.has_phd and (awarded is None or awarded.earliest < cutoff):
                 might.append(f"the Master's award date is not known to the day ({r.authority_clause})")
+            elif facts.phd_standing == UNSURE and (awarded is None or awarded.earliest < cutoff):
+                might.append(f"whether the Ph.D. was awarded by {facts.as_of_text} is not known ({r.authority_clause})")
     # The relaxations are alternatives, each lowering the same floor; they do not add up.
     relaxed = floor - max((r.relaxation_pct for r in applies), default=0.0)
     lowest = floor - max((r.relaxation_pct for r in relaxations), default=0.0) if might else relaxed
@@ -148,6 +151,9 @@ def _net_set_check(facts: Facts, rule: Rule) -> Check:
         return check(UNKNOWN, f"{wrong_state}a Ph.D. is held, but whether it is one that exempts from NET/SET "
                               "(2009 or 2016 Regulations, the five certified conditions, or a foreign top-500 university) "
                               "has to be read from the certificate")
+    if facts.phd_standing == UNSURE:
+        return check(UNKNOWN, f"{wrong_state}a Ph.D. could exempt, but whether it was awarded on or before {facts.as_of_text} "
+                              "is not on the record")
     if status is None:
         return check(UNKNOWN, "whether NET/SET/SLET is held is not on the record")
     return check(FAIL, f"{wrong_state}no NET, no SET or SLET of {facts.institution_state}, and no exempting Ph.D.")
@@ -156,6 +162,13 @@ def _net_set_check(facts: Facts, rule: Rule) -> Check:
 def _phd_check(facts: Facts, rule: Rule) -> Check:
     if facts.has_phd:
         return Check("phd", "Ph.D.", PASS, "Ph.D. completed", rule.authority_clause, rule.authority_page)
+    if facts.phd_standing == AFTER:
+        return Check("phd", "Ph.D.", FAIL, f"a Ph.D. is required: it was awarded after {facts.as_of_text}, the date eligibility is counted on",
+                     rule.authority_clause, rule.authority_page)
+    if facts.phd_standing == UNSURE:
+        return Check("phd", "Ph.D.", UNKNOWN, f"the Ph.D. is dated only to a period that includes {facts.as_of_text}, the date eligibility "
+                     "is counted on; whether it was awarded on or before that date is not on the record",
+                     rule.authority_clause, rule.authority_page)
     if facts.phd_status is None:
         return Check("phd", "Ph.D.", UNKNOWN, "the Ph.D. status is not on the record", rule.authority_clause, rule.authority_page)
     stage = {"NOT_APPLICABLE": "no doctoral study", "REGISTERED": "registered, not awarded",
@@ -367,6 +380,13 @@ def check_rank(facts: Facts, rule: Rule, rules: RuleSet) -> RankResult:
     criteria = rule.criteria or {}
     kinds = tuple(criteria.get("experience_types") or ("TEACHING", "RESEARCH"))
 
+    if facts.masters_standing != "HELD":
+        # Not a clause of the Regulations: the date is the opening's own. A person confirms it either way.
+        when = "after" if facts.masters_standing == AFTER else "in a period that includes"
+        checks.append(Check("masters_by_date", "Master's degree held on the eligibility date", UNKNOWN,
+                            f"the Master's degree is dated {when} {facts.as_of_text}, the date eligibility is counted on; "
+                            "whether it can be counted is for a person to confirm from the certificate",
+                            "Eligibility date of the opening", "set by HR"))
     if rule.is_aicte and rule.designation == "ASSISTANT_PROFESSOR":
         checks += _best_route(facts, criteria.get("routes") or [criteria], rule, rules)
     if rule.is_aicte and rule.designation != "ASSISTANT_PROFESSOR" and criteria.get("first_class"):
@@ -390,7 +410,7 @@ def check_rank(facts: Facts, rule: Rule, rules: RuleSet) -> RankResult:
     if criteria.get("min_years_post_phd"):
         phd = next((d.completed for d in facts.degrees if d.level == "PhD" and d.completed), None) or facts.phd_awarded
         if phd is None:
-            checks.append(Check("post_phd", "Experience after the Ph.D.", UNKNOWN if facts.has_phd else FAIL,
+            checks.append(Check("post_phd", "Experience after the Ph.D.", UNKNOWN if facts.has_phd or facts.phd_standing == UNSURE else FAIL,
                                 "the date the Ph.D. was awarded is not on the record" if facts.has_phd else "no Ph.D. has been awarded",
                                 rule.authority_clause, rule.authority_page))
         else:
@@ -470,7 +490,8 @@ def _add_shortlist_score(d: Decision, facts: Facts, rules: RuleSet) -> None:
 def decide(facts: Facts, rules: RuleSet) -> Decision:
     """Applied rank first, then each lower rank in turn, so a candidate lands at the highest rank they meet."""
     applied = facts.designation
-    d = Decision(outcome=MANUAL_REVIEW, applied_designation=applied, as_of=facts.as_of)
+    d = Decision(outcome=MANUAL_REVIEW, applied_designation=applied, as_of=facts.as_of, as_of_basis=facts.as_of_basis)
+    d.notes.extend(facts.notes)
     if not facts.regulator_implemented:
         # cl. 1.1, proviso 1: another regulator's norms govern, and none of these thresholds is applied.
         d.open_points.append(f"{facts.regulator_id} post: its norms are outside what the engine implements; no UGC or AICTE rule was applied")

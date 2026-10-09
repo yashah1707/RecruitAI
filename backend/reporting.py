@@ -95,7 +95,8 @@ def digest(session: Session, opening: JobOpening) -> dict:
         current = a.status in gate2.AWAITING_HR or a.status in (states.HR_APPROVED, states.CONTACTED, states.INTERVIEW_SCHEDULED)
         decided = gate2.final_decision(session, a)
         email = session.scalars(
-            select(EmailDraft).where(EmailDraft.application_id == a.application_id, EmailDraft.status != "DISCARDED")
+            select(EmailDraft).where(EmailDraft.application_id == a.application_id, EmailDraft.status != "DISCARDED",
+                                     EmailDraft.kind == "DECISION")
             .order_by(EmailDraft.draft_id.desc()).limit(1)
         ).first()
         if decided is not None:

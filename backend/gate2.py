@@ -127,6 +127,88 @@ def return_for_reassessment(session: Session, application: Application, actor: s
     session.flush()
 
 
+def out_of_date(session: Session, opening, today=None) -> list[Application]:
+    """Applications awaiting HR whose assessment was counted on another date than the one now fixed for the opening.
+
+    This happens by itself: an assessment made before the closing date counts
+    to the day it was made, and once the closing date has passed the count
+    belongs on that date. Nothing is changed here; a person asks for it.
+    """
+    from datetime import date
+
+    from backend.engine.facts import counting_date
+
+    counted_on, _, fixed = counting_date(opening, today or date.today())
+    if not fixed:
+        return []
+    found = []
+    for application in session.scalars(select(Application).where(
+            Application.opening_id == opening.opening_id, Application.status.in_(AWAITING_HR)).order_by(Application.application_id)):
+        evaluation = latest_evaluation(session, application.application_id)
+        if evaluation is not None and (evaluation.details or {}).get("as_of") != counted_on.isoformat():
+            found.append(application)
+    return found
+
+
+def reassess_out_of_date(session: Session, opening, today=None, actor: str = ACTOR) -> dict[str, int]:
+    """Assess again every application `out_of_date` names; returns how many ended in each outcome."""
+    from backend.assessor_service import assess_application
+
+    counts: dict[str, int] = {}
+    for application in out_of_date(session, opening, today):
+        _record(session, application, "RETURNED", None, None, None, actor)
+        states.transition(session, application, states.EXTRACTED, actor, note="gate2: to be counted on the opening's eligibility date")
+        outcome = assess_application(session, application, today).outcome
+        counts[outcome] = counts.get(outcome, 0) + 1
+    session.flush()
+    return counts
+
+
+def fields_that_would_settle(evaluation) -> list[str]:
+    """The Gate 1 fields behind the points the engine left open, so "send back" can offer them ready-ticked.
+
+    Read from the stored working: each open requirement names what it is
+    missing. A help to the person, who may tick more or fewer.
+    """
+    wanted: list[str] = []
+
+    def want(*names: str) -> None:
+        wanted.extend(n for n in names if n in gate1.FIELDS and n not in wanted)
+
+    for rank in ((evaluation.details or {}).get("ranks") or []) if evaluation is not None else []:
+        for check in rank.get("checks", []):
+            if check["result"] != "UNKNOWN":
+                continue
+            key, detail = check["key"], check["detail"].lower()
+            if key == "first_class":
+                want("ug_marks_pct", "marks_pct")
+            elif key == "marks":
+                if "category" in detail or "disability" in detail:
+                    want("category", "differently_abled")
+                if "award date" in detail:
+                    want("masters_award_date")
+                if "cgpa" in detail or "not stated" in detail:
+                    want("marks_pct")
+            elif key == "net_set":
+                if "state is not known" in detail:
+                    want("set_state")
+                elif "certificate" in detail:
+                    want("phd_regulation")
+                else:
+                    want("net_set_status")
+            elif key == "phd":
+                want("phd_award_date" if "awarded on or before" in detail else "phd_status")
+            elif key == "masters_by_date":
+                want("masters_award_date")
+            elif key == "experience" and "study leave" in detail:
+                want("study_leave_taken")
+            elif key == "post_phd":
+                want("phd_award_date")
+            elif key == "publications":
+                want("publications_count")
+    return wanted
+
+
 def decisions(session: Session, application_id: int) -> list[HrDecision]:
     return list(session.scalars(
         select(HrDecision).where(HrDecision.application_id == application_id).order_by(HrDecision.decision_id)

@@ -112,6 +112,8 @@ generated from that file for a person to check against the gazette; regenerate
 them with `python -m backend.rules_seed --write-transcription` and
 `python tools/make_mentor_review_docx.py` after any correction.
 
+On Windows, `run_app.bat` in the project folder does the three steps above and starts the application; double-click it.
+
 Then open http://127.0.0.1:8000/ for the HR pages (openings, uploads, the reading
 queue) and http://127.0.0.1:8000/apply for the applicant view. There is no login
 yet, so keep the server on 127.0.0.1.
@@ -158,6 +160,13 @@ SMTP_PASSWORD=...
 SMTP_FROM=hr@example.org
 EMAIL_REDIRECT_TO=you@example.org    while testing: every email goes here, never to a candidate
 ```
+
+Applications can also arrive by email. Set `IMAP_HOST` in `.env` (the login
+defaults to the sending account), then open **Inbox** and press **Check inbox**.
+A message with a PDF or DOCX resume that names an opening ("OPN-00003") is filed
+under it; one that names none waits on the Inbox page for you to choose. The
+mailbox is only read, never changed. To take applications through a Google
+Form, follow [docs/GOOGLE_FORM_SETUP.md](docs/GOOGLE_FORM_SETUP.md).
 
 "Digest" on the opening's page shows every application of that opening, grouped
 by where it stands, with the reason for each finding. Print it from the browser.

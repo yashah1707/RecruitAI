@@ -609,9 +609,11 @@ class GeminiProvider:
                 logger.warning("gemini_request_error attempt=%d", attempt)
 
             if attempt >= limit:
-                raise ExtractionFailure(
-                    f"extraction failed after {attempt} attempts: {last_error}", kind=kind
-                ) from last_error
+                failure = ExtractionFailure(f"extraction failed after {attempt} attempts: {last_error}", kind=kind)
+                # "This model is overloaded" is a fact about this model. Seen on live runs: one pool
+                # model answered 503 for minutes while the other was serving normally.
+                failure.overloaded = _is_unavailable(last_error)
+                raise failure from last_error
             if backoff:
                 wait = _backoff_seconds(attempt, suggested)
                 logger.warning(
@@ -656,8 +658,10 @@ class GeminiProvider:
         result is flagged as such.
         """
         failure: ExtractionFailure | None = None
+        overloaded: set[str] = set()  # models that answered 503 throughout, for this resume only
         while True:
-            model = self._next_usable_model()
+            with self._lock:
+                model = next((m for m in self.pool if m not in self._exhausted and m not in overloaded), None)
             if model is None:
                 if failure is None:
                     failure = ExtractionFailure(
@@ -678,9 +682,13 @@ class GeminiProvider:
             except ExtractionFailure as exc:
                 if exc.kind == "bad_config":
                     raise
-                # Retries exhausted for a transient reason -- don't burn the
-                # rest of the pool on what is probably the same fault.
                 failure = exc
+                if getattr(exc, "overloaded", False):
+                    # Overloaded is about this model: the next one in the pool gets its turn.
+                    overloaded.add(model)
+                    continue
+                # Any other transient fault (a timeout, malformed output) is probably not the
+                # model's own, so the rest of the pool is not spent on it.
                 break
 
         if self.lighter_fallback and self.fallback_model and self.fallback_model not in self.pool:

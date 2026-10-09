@@ -88,15 +88,15 @@ def test_503_is_retried_with_growing_jittered_backoff_then_succeeds(monkeypatch,
         assert centre * gp._JITTER_LOW <= wait <= min(centre * gp._JITTER_HIGH, gp._MAX_BACKOFF_SECONDS)
 
 
-def test_503_gets_six_attempts_then_fails_as_api_unavailable(monkeypatch, sleeps):
-    p = _provider(monkeypatch, [_503()] * 6)
+def test_503_gets_six_attempts_on_each_model_then_fails_as_api_unavailable(monkeypatch, sleeps):
+    p = _provider(monkeypatch, [_503()] * 12)
     with pytest.raises(ExtractionFailure) as exc:
         p.extract_fields(RESUME_TEXT)
 
     assert exc.value.kind == "api_unavailable"
     assert "6 attempts" in str(exc.value)
-    assert _calls(p) == 6
-    assert len(sleeps) == 5  # no sleep after the last attempt
+    assert _calls(p) == 12  # six on each of the two pool models
+    assert len(sleeps) == 10  # no sleep after the last attempt on a model
 
 
 def test_backoff_is_never_longer_than_the_cap(monkeypatch, sleeps):
@@ -106,8 +106,24 @@ def test_backoff_is_never_longer_than_the_cap(monkeypatch, sleeps):
     assert max(sleeps) <= gp._MAX_BACKOFF_SECONDS
 
 
-def test_503_does_not_burn_through_the_rest_of_the_pool(monkeypatch, sleeps):
-    p = _provider(monkeypatch, [_503()] * 6)
+def test_an_overloaded_model_hands_over_to_the_next_one_in_the_pool(monkeypatch, sleeps):
+    """Seen live on two days running: one model answered 503 for minutes while the other was serving."""
+    p = _provider(monkeypatch, [_503()] * 6 + [GOOD])
+    result = p.extract_fields(RESUME_TEXT)
+    assert result.model_used == p.pool[1] and p._client.models.models_called == [p.pool[0]] * 6 + [p.pool[1]]
+    assert p._exhausted == set()  # overloaded now is not out for the day: the next resume starts from the first model again
+
+
+def test_every_model_overloaded_is_still_a_failure_after_each_had_its_turn(monkeypatch, sleeps):
+    p = _provider(monkeypatch, [_503()] * 12)
+    with pytest.raises(ExtractionFailure) as exc:
+        p.extract_fields(RESUME_TEXT)
+    assert exc.value.kind == "api_unavailable" and _calls(p) == 12
+    assert set(p._client.models.models_called) == set(p.pool)
+
+
+def test_a_timeout_does_not_burn_through_the_rest_of_the_pool(monkeypatch, sleeps):
+    p = _provider(monkeypatch, [TimeoutError("slow")] * 5)
     with pytest.raises(ExtractionFailure):
         p.extract_fields(RESUME_TEXT)
     assert set(p._client.models.models_called) == {p.pool[0]}
@@ -220,14 +236,14 @@ def test_missing_api_key_is_bad_config(monkeypatch):
 
 def test_fallback_is_off_by_default(monkeypatch, sleeps):
     monkeypatch.setattr(gp.config, "GEMINI_LIGHTER_FALLBACK", False)
-    p = _provider(monkeypatch, [_503()] * 6 + [GOOD])
+    p = _provider(monkeypatch, [_503()] * 12 + [GOOD])
     with pytest.raises(ExtractionFailure):
         p.extract_fields(RESUME_TEXT)
     assert p.fallback_model not in p._client.models.models_called
 
 
 def test_fallback_when_enabled_succeeds_and_is_flagged_for_review(monkeypatch, sleeps):
-    p = _provider(monkeypatch, [_503()] * 6 + [GOOD], lighter_fallback=True, fallback_model="model-lite")
+    p = _provider(monkeypatch, [_503()] * 12 + [GOOD], lighter_fallback=True, fallback_model="model-lite")
     result = p.extract_fields(RESUME_TEXT)
 
     assert p._client.models.models_called[-1] == "model-lite"

@@ -331,6 +331,15 @@ def test_an_incomplete_check_is_refused_whole_and_names_each_field(session, tmp_
     assert session.scalars(select(ReviewEdit)).all() == []
 
 
+def test_a_value_and_the_leave_empty_tick_together_are_refused_not_resolved_by_guessing(session, tmp_path):
+    a = _pending(session, tmp_path)
+    with pytest.raises(gate1.ReviewError) as exc:
+        gate1.save_review(session, a, {"set_state": "Maharashtra"}, {"set_state", "phd_regulation"})
+    assert exc.value.errors == {"set_state": "Either give a value or tick the box, not both."}
+    session.rollback()
+    assert a.extracted.set_state is None and session.scalars(select(ReviewEdit)).all() == []
+
+
 def test_completing_the_check_stores_the_answers_audits_them_and_moves_on(session, tmp_path):
     a = _pending(session, tmp_path)
     settled = gate1.save_review(session, a, {"set_state": "Maharashtra"}, {"phd_regulation"})
@@ -480,9 +489,12 @@ def test_the_duplicate_question_stays_open_until_it_is_answered(session, tmp_pat
     assert second.status == states.EXTRACTED
 
 
-def test_an_assessed_application_cannot_be_withdrawn_from_this_screen(session, tmp_path):
+def test_an_application_can_be_withdrawn_at_any_stage_but_only_once(session, tmp_path):
     a = _application(session, tmp_path)
     read_application(session, a, FakeProvider(script=[_clean_result()]))
+    assert a.status == states.EXTRACTED
+    gate1.withdraw(session, a)  # an applicant may pull out after being read, assessed or decided
+    assert a.status == states.WITHDRAWN and a.transitions[-1].note == "withdrawn by HR"
     with pytest.raises(gate1.ReviewError):
         gate1.withdraw(session, a)
 

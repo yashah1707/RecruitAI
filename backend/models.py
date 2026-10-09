@@ -118,6 +118,10 @@ class JobOpening(Base):
     # resume: it decides which regulation the candidate is judged under.
     discipline_group: Mapped[str] = mapped_column(String(40), default="GENERAL", server_default="GENERAL")
     closing_date: Mapped[date | None] = mapped_column(Date)
+    # The date on which qualifications and experience are counted, when the
+    # advertisement names one other than the closing date. Empty means the
+    # closing date is used (backend.engine.facts.counting_date).
+    eligibility_date: Mapped[date | None] = mapped_column(Date)
     status: Mapped[str] = mapped_column(String(20), default="OPEN")
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
     closed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
@@ -618,17 +622,53 @@ class HrDecision(Base):
     decided_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
 
 
+class InboxMessage(Base):
+    """One email seen in the mailbox, how it was sorted, and what became of it (Section 16.1).
+
+    Remembered by its Message-ID so it is never taken twice. The message
+    itself stays in the mailbox; only an attached resume is copied, into the
+    same store as every other resume.
+    """
+
+    __tablename__ = "inbox_messages"
+    __table_args__ = (UniqueConstraint("message_id", name="uq_inbox_messages_message_id"),)
+
+    inbox_id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    message_id: Mapped[str] = mapped_column(String(250))
+    received_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    sender: Mapped[str | None] = mapped_column(String(254))
+    sender_name: Mapped[str | None] = mapped_column(String(200))
+    subject: Mapped[str] = mapped_column(String(300))
+    kind: Mapped[str] = mapped_column(String(12))  # APPLICATION / JOB_OPENING / OTHER
+    classified_by: Mapped[str] = mapped_column(String(60))  # "rule:<name>": which rule sorted it
+    status: Mapped[str] = mapped_column(String(16), index=True)  # IMPORTED / NEEDS_JOB_MATCH / FOR_HR / REJECTED / IGNORED
+    note: Mapped[str | None] = mapped_column(String(300))
+    attachment_name: Mapped[str | None] = mapped_column(String(255))
+    attachment_path: Mapped[str | None] = mapped_column(String(500))
+    form_answers: Mapped[dict | None] = mapped_column(JSON)  # a Google Form response's answers
+    # The start of what the sender wrote, kept so a person deciding what to do with the message
+    # can read it without opening the mailbox.
+    body_excerpt: Mapped[str | None] = mapped_column(String(1200))
+    application_id: Mapped[int | None] = mapped_column(ForeignKey("applications.application_id"))
+    seen_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
+
+
 class EmailDraft(Base):
     """One email to a candidate, from draft to sent (Gate 3: a person approves each send).
 
     DRAFT      written, not yet approved      APPROVED   a person approved it; ready to send
     SENT       accepted by the mail server    DISCARDED  replaced or dropped
+
+    `kind` is DECISION (the outcome of screening, always approved by a person)
+    or ACKNOWLEDGEMENT (receipt of the application; fixed wording with no
+    finding in it, which the system may approve itself: backend.emails.acknowledge).
     """
 
     __tablename__ = "email_drafts"
 
     draft_id: Mapped[int] = mapped_column(Integer, primary_key=True)
     application_id: Mapped[int] = mapped_column(ForeignKey("applications.application_id"), index=True)
+    kind: Mapped[str] = mapped_column(String(20), default="DECISION", server_default="DECISION")
     decision_id: Mapped[int | None] = mapped_column(ForeignKey("hr_decisions.decision_id"))
     to_address: Mapped[str | None] = mapped_column(String(254))
     subject: Mapped[str] = mapped_column(String(250))

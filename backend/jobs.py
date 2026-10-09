@@ -28,6 +28,8 @@ from llm.interface import LLMProvider
 logger = logging.getLogger("recruitai.jobs")
 
 READ_APPLICATION = "READ_APPLICATION"
+# The same work, asked for by a person for a resume already read: the stored result is not reused.
+READ_AGAIN = "READ_AGAIN"
 PENDING, RUNNING, DONE, FAILED = "PENDING", "RUNNING", "DONE", "FAILED"
 
 # After this many unavailable-model attempts the job stops retrying and waits
@@ -51,18 +53,18 @@ def retry_delay(attempts: int, reason: str) -> timedelta:
     return timedelta(minutes=min(2 ** attempts, 60))
 
 
-def enqueue_read(session: Session, application: Application, run_after: datetime | None = None) -> Job:
+def enqueue_read(session: Session, application: Application, run_after: datetime | None = None, fresh: bool = False) -> Job:
     """Queue the Reader for an application, unless a job is already waiting."""
     existing = session.scalar(
         select(Job).where(
             Job.application_id == application.application_id,
-            Job.kind == READ_APPLICATION,
+            Job.kind.in_((READ_APPLICATION, READ_AGAIN)),
             Job.status.in_((PENDING, RUNNING)),
         )
     )
     if existing is not None:
         return existing
-    job = Job(kind=READ_APPLICATION, application_id=application.application_id, status=PENDING,
+    job = Job(kind=READ_AGAIN if fresh else READ_APPLICATION, application_id=application.application_id, status=PENDING,
               run_after=run_after or _now())
     session.add(job)
     session.flush()
@@ -102,7 +104,7 @@ def run_next_job(
         session.flush()
         return job
 
-    state = read_application(session, application, provider, cache)
+    state = read_application(session, application, provider, cache, fresh=job.kind == READ_AGAIN)
     if state == states.RECEIVED:
         # The model was unavailable. The reason is in the last audit row.
         reason = (application.transitions[-1].note or "reader_unavailable")[:200]

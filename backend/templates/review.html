@@ -6,8 +6,22 @@
 <h1>{{ a.reference }}: {{ a.applicant_name or (personal.full_name if personal else None) or "Name not yet known" }}</h1>
 <dl class="facts">
   <dt>Applied for</dt><dd>{{ DESIGNATIONS.get(a.applied_designation, a.applied_designation) }}, {{ a.school.name }}{% if o %} ({{ o.reference }}){% endif %}</dd>
-  <dt>Received</dt><dd>{{ a.created_at|ddmmyyyy }}, {{ {"WEB_FORM": "application form", "MANUAL_UPLOAD": "HR upload", "EMAIL": "email", "GOOGLE_FORM": "Google Form"}.get(a.resume_source, a.resume_source) }}</dd>
+  <dt>Received</dt><dd>{{ a.created_at|ddmmyyyy }}, {{ {"WEB_FORM": "application form", "MANUAL_UPLOAD": "HR upload", "EMAIL": "by email", "GOOGLE_FORM": "Google Form"}.get(a.resume_source, a.resume_source) }}</dd>
+  {% if sent_by %}
+  <dt>Email sent by</dt><dd>{{ sent_by.name or "No name given" }} ({{ sent_by.address }}).
+    {% if sent_by.same_person is sameas false %}<span class="hint">The sender's name is not the name on the resume, so this was probably forwarded.
+      The applicant's name and email address are taken from the resume.</span>
+    {% elif sent_by.same_person %}<span class="hint">Matches the name on the resume.</span>{% endif %}</dd>
+  {% endif %}
   <dt>Status</dt><dd>{{ STATE_LABELS.get(a.status, a.status) }}</dd>
+  {% if acknowledgement %}
+  <dt>Acknowledgement</dt><dd>
+    {% if acknowledgement.status == "SENT" %}Sent {{ acknowledgement.sent_at|ddmmyyyy }} to {{ acknowledgement.to_address }}.
+    {% elif acknowledgement.redirected and acknowledgement.sent_at %}A test copy went to the redirect address on {{ acknowledgement.sent_at|ddmmyyyy }}; the applicant has received nothing.
+    {% elif acknowledgement.status == "APPROVED" %}Not yet sent{% if acknowledgement.error %} (the mail server did not accept it){% endif %}.
+    {% else %}Drafted, to {{ acknowledgement.to_address }}; waiting for approval.{% endif %}
+    {% if acknowledgement.status != "SENT" and o %}<a href="/hr/openings/{{ o.opening_id }}/emails">Emails for this opening</a>{% endif %}</dd>
+  {% endif %}
   <dt>Resume</dt><dd><a href="/hr/applications/{{ a.application_id }}/resume" target="_blank" rel="noopener">Open the resume in a new tab</a></dd>
 </dl>
 
@@ -45,7 +59,8 @@
     {% if v.experience_years %}<dt>Experience counted</dt><dd>{{ span(v.experience_years, " years") }}{% if v.experience_kinds %} ({{ v.experience_kinds|map("lower")|join(", ") }}){% endif %}</dd>{% endif %}
     {% if v.research_score %}<dt>Research Score claimed (Table 2)</dt><dd>{{ span(v.research_score) }}</dd>{% endif %}
     {% if v.shortlist_score %}<dt>Short-listing score (Table 3A)</dt><dd>{{ span(v.shortlist_score) }} out of 100. An aid for calling candidates to interview; selection is on the interview alone.</dd>{% endif %}
-    <dt>Rules applied</dt><dd>{{ v.rule_version or "None" }}, as on {{ v.as_of }}</dd>
+    <dt>Rules applied</dt><dd>{{ v.rule_version or "None" }}</dd>
+    <dt>Counted as on</dt><dd>{{ v.as_of|ddmmyyyy }}{% if v.as_of_basis %} <span class="hint">{{ v.as_of_basis }}</span>{% endif %}</dd>
   </dl>
   {% for note in v.notes or [] %}<p class="hint">{{ note }}</p>{% endfor %}
   <p class="hint">This is the engine's finding, not a decision. HR approves or overrides every outcome.</p>
@@ -84,7 +99,8 @@
   {% if PLACEHOLDER in email.body %}<p class="error">This decision was HR's own, so the reason is yours to write: replace the part marked [HR: ...] before approving.</p>{% endif %}
   {% if email.error %}<p class="error">The last attempt to send it failed ({{ email.error }}).</p>{% endif %}
   <form method="post" action="/hr/applications/{{ a.application_id }}/email" class="stack">
-    <label>To <input type="email" name="to_address" value="{{ email.to_address or "" }}" maxlength="254"></label>
+    <label>To <input type="email" name="to_address" value="{{ email.to_address or "" }}" maxlength="254">
+      {% if not email.to_address %}<span class="error">No email address was found on the resume. Type the applicant's address and save before approving.</span>{% endif %}</label>
     <label>Subject <input type="text" name="subject" value="{{ email.subject }}" maxlength="250"></label>
     <label>Message <textarea name="body" rows="16">{{ email.body }}</textarea></label>
     <div class="inline">
@@ -133,9 +149,10 @@
   <form method="post" action="/hr/applications/{{ a.application_id }}/return" class="stack">
     <strong>Or send it back</strong>
     <label class="choice"><input type="radio" name="how" value="correct" checked> Correct the record first. Tick what needs correcting:</label>
+    {% if would_settle %}<span class="hint">Already ticked: the fields that would settle what the assessment left open.</span>{% endif %}
     <div class="ticks">
       {% for name, spec in returnable.items() %}
-      <label class="choice"><input type="checkbox" name="fields" value="{{ name }}"> {{ spec.label }}</label>
+      <label class="choice"><input type="checkbox" name="fields" value="{{ name }}"{% if name in would_settle %} checked{% endif %}> {{ spec.label }}</label>
       {% endfor %}
     </div>
     <label class="choice"><input type="radio" name="how" value="reassess"> Assess it again as it stands</label>
@@ -156,6 +173,21 @@
     <button type="submit" class="quiet">Enter them now</button>
   </form>
 </section>
+{% endif %}
+
+{% if a.status == "EXTRACTED" %}
+<details class="panel">
+  <summary>Something read wrongly? Correct a field before assessment</summary>
+  <form method="post" action="/hr/applications/{{ a.application_id }}/reopen" class="stack">
+    <span class="hint">Tick what needs correcting. The application comes back here once you have saved the corrections.</span>
+    <div class="ticks">
+      {% for name, spec in returnable.items() %}
+      <label class="choice"><input type="checkbox" name="fields" value="{{ name }}"> {{ spec.label }}</label>
+      {% endfor %}
+    </div>
+    <button type="submit" class="quiet">Open these fields</button>
+  </form>
+</details>
 {% endif %}
 
 {% if failed_note %}
@@ -212,6 +244,19 @@
     {% endfor %}
     <button type="submit">Save and finish the check</button>
   </form>
+  <script>
+    // A field takes a value or the "leave empty" tick, never both. The server refuses both together;
+    // this only keeps the form from getting into that state.
+    document.querySelectorAll("form.review .check").forEach(function (box) {
+      var field = box.querySelector("select, input:not([type=checkbox])");
+      var tick = box.querySelector("input[type=checkbox][name=empty]");
+      if (!field || !tick) { return; }
+      function sync() { field.disabled = tick.checked; if (tick.checked) { field.value = ""; } }
+      tick.addEventListener("change", sync);
+      field.addEventListener("input", function () { if (field.value) { tick.checked = false; } });
+      sync();
+    });
+  </script>
 </section>
 {% elif a.status == "PENDING_REVIEW" and not duplicate %}
 <p class="notice">Nothing is left to check on this application.</p>
@@ -225,6 +270,7 @@
   <dt>Ph.D.</dt><dd>{{ {"NOT_APPLICABLE": "No doctoral study", "REGISTERED": "Registered", "PURSUING": "Pursuing", "THESIS_SUBMITTED": "Thesis submitted", "COMPLETED": "Completed"}.get(e.phd_status, "Not stated") }}{% if e.phd_regulation %} ({{ e.phd_regulation }} Regulations){% endif %}</dd>
   <dt>NET / SET</dt><dd>{{ "None" if e.net_set_status == "NONE" else (e.net_set_status or "Not stated") }}{% if e.set_state %} ({{ e.set_state }}){% endif %}</dd>
   <dt>Teaching experience stated</dt><dd>{% if e.teaching_years is not none %}{{ "%g"|format(e.teaching_years) }} years{% else %}No total stated{% endif %}</dd>
+  {% if teaching_from_posts %}{% set t = teaching_from_posts.years %}<dt>Teaching, from the dated posts</dt><dd>{% if t.high is none %}at least {{ "%g"|format(t.low) }}{% elif t.low == t.high %}{{ "%g"|format(t.low) }}{% else %}between {{ "%g"|format(t.low) }} and {{ "%g"|format(t.high) }}{% endif %} years <span class="hint">counted to {{ teaching_from_posts.to }}; this is what the assessment uses</span></dd>{% endif %}
   <dt>Publications</dt><dd>{{ e.publications_count if e.publications_count is not none else "Not stated" }}{% if e.publications_in_progress_count %}, and {{ e.publications_in_progress_count }} under review{% endif %}</dd>
   <dt>Category</dt><dd>{{ a.category or "Not given" }}</dd>
   <dt>State</dt><dd>{{ (personal.state if personal else None) or "Not given" }}</dd>
@@ -248,20 +294,62 @@
 </table>
 {% endif %}
 
+{% if experience or correctable %}
+<h2 id="posts">Posts held</h2>
 {% if experience %}
-<h2>Posts held</h2>
 <table>
   <thead><tr><th>Post</th><th>Employer</th><th>Type</th><th>From</th><th>To</th><th>Duration stated</th></tr></thead>
   <tbody>
     {% for x in experience %}
     <tr>
-      <td>{{ x.designation_held or "" }}</td><td>{{ x.employer_name or "" }}</td>
+      <td>{{ x.designation_held or "" }}{% if not x.found_in_resume %}<br><span class="hint">Entered by HR</span>{% endif %}</td><td>{{ x.employer_name or "" }}</td>
       <td>{{ x.experience_type|capitalize }}</td><td class="nowrap">{{ x.start_stated or "" }}</td>
       <td class="nowrap">{{ "Present" if x.is_current else (x.end_stated or "") }}</td><td>{{ x.duration_stated or "" }}</td>
     </tr>
     {% endfor %}
   </tbody>
 </table>
+{% else %}
+<p>The reader found no posts on this resume.</p>
+{% endif %}
+{% if correctable %}
+<details class="panel">
+  <summary>Correct the dates or type of a post, or add a post</summary>
+  <form method="post" action="/hr/applications/{{ a.application_id }}/posts" class="stack">
+    <span class="hint">Experience is counted from these dates. Take them from the resume or an experience certificate.
+      Write a date as 2019, 07-2019 or 15-07-2019: a year alone is read as any day in that year, so giving the month
+      narrows the range. A post of the type "Other" is not counted.
+      {% if awaiting_hr %}<strong>Saving sets the assessment above aside; the application is then assessed again.</strong>{% endif %}</span>
+    <table>
+      <thead><tr><th>Post</th><th>Type</th><th>From</th><th>To</th><th>Still in this post</th></tr></thead>
+      <tbody>
+        {% for x in experience %}
+        <tr>
+          <td>{{ x.designation_held or "Post not named" }}{% if x.employer_name %}<br><span class="hint">{{ x.employer_name }}</span>{% endif %}</td>
+          <td><select name="kind_{{ x.experience_id }}" aria-label="Type of post {{ loop.index }}">
+            {% for code, label in POST_KINDS %}<option value="{{ code }}"{% if code == x.experience_type %} selected{% endif %}>{{ label }}</option>{% endfor %}
+          </select></td>
+          <td><input name="start_{{ x.experience_id }}" value="{{ x.start_stated or "" }}" size="10" maxlength="10" aria-label="Post {{ loop.index }} from"></td>
+          <td><input name="end_{{ x.experience_id }}" value="{{ x.end_stated or "" }}" size="10" maxlength="10" aria-label="Post {{ loop.index }} to"></td>
+          <td><input type="checkbox" name="current_{{ x.experience_id }}" value="yes"{% if x.is_current %} checked{% endif %} aria-label="Still in post {{ loop.index }}"></td>
+        </tr>
+        {% endfor %}
+        <tr>
+          <td><input name="new_designation" placeholder="Add a post: its title" maxlength="200" aria-label="New post: title">
+            <input name="new_employer" placeholder="Employer" maxlength="250" aria-label="New post: employer"></td>
+          <td><select name="kind_new" aria-label="Type of the new post">
+            {% for code, label in POST_KINDS %}<option value="{{ code }}">{{ label }}</option>{% endfor %}
+          </select></td>
+          <td><input name="start_new" size="10" maxlength="10" aria-label="New post from"></td>
+          <td><input name="end_new" size="10" maxlength="10" aria-label="New post to"></td>
+          <td><input type="checkbox" name="current_new" value="yes" aria-label="Still in the new post"></td>
+        </tr>
+      </tbody>
+    </table>
+    <button type="submit" class="quiet">Save posts</button>
+  </form>
+</details>
+{% endif %}
 {% endif %}
 
 {% if publications %}
@@ -335,6 +423,24 @@
 {% endif %}
 {% endif %}
 
+{% if correspondence %}
+<h2>Messages received about this application ({{ correspondence|length }})</h2>
+<table>
+  <thead><tr><th>Received</th><th>From</th><th>Subject and message</th><th>Attachment</th></tr></thead>
+  <tbody>
+    {% for m in correspondence %}
+    <tr>
+      <td class="nowrap">{{ m.received_at|ddmmyyyy }}</td><td>{{ m.sender_name or "" }}<br><span class="hint">{{ m.sender or "" }}</span></td>
+      <td>{{ m.subject }}{% if m.body_excerpt %}<p class="quote">{{ m.body_excerpt }}</p>{% endif %}</td>
+      <td>{% if m.attachment_path %}<a href="/hr/inbox/{{ m.inbox_id }}/attachment" target="_blank" rel="noopener">Open the attached document</a>
+        <br><span class="hint">{{ m.attachment_name }}</span>{% endif %}</td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+<p class="hint">If a message changes the record (a certificate, corrected marks), send the application back for correction above, or record your own decision.</p>
+{% endif %}
+
 {% if decisions %}
 <h2>Decisions at this gate</h2>
 <table>
@@ -368,6 +474,21 @@
 </table>
 {% endif %}
 
+{% if correctable %}
+<details class="panel">
+  <summary>Resume read badly? Read it again</summary>
+  <form method="post" action="/hr/applications/{{ a.application_id }}/read-again" class="stack">
+    <span class="hint">Use this when much of the record is wrong; to fix one or two values, correct those fields instead.
+      The resume goes back to the reading queue and is read afresh when you press the Read button on the opening's page,
+      which uses one request to the language model. What the new reading finds replaces everything shown under
+      "What the reader found", including corrections made by hand to fields and posts. Category, state and the other
+      form answers are kept.{% if awaiting_hr %} The assessment above is set aside.{% endif %}
+      The same resume read by the same model often comes back the same.</span>
+    <button type="submit" class="quiet">Read this resume again</button>
+  </form>
+</details>
+{% endif %}
+
 {% if other_openings %}
 <form method="post" action="/hr/applications/{{ a.application_id }}/move" class="inline">
   <label>Filed under the wrong post? Move to
@@ -383,7 +504,7 @@
 {% if can_withdraw %}
 <form method="post" action="/hr/applications/{{ a.application_id }}/withdraw" class="inline">
   <button type="submit" class="quiet">Withdraw this application</button>
-  <span class="hint">For a second copy of an application, or at the applicant's request. This cannot be undone here.</span>
+  <span class="hint">For a second copy of an application, or when the applicant pulls out, at any stage. A letter not yet sent is dropped. This cannot be undone here.</span>
 </form>
 {% endif %}
 {% endblock %}

@@ -96,6 +96,7 @@ def create_opening(
     closing_date: date | None = None,
     advertisement_ref: str | None = None,
     advertisement_date: date | None = None,
+    eligibility_date: date | None = None,
 ) -> JobOpening:
     errors: dict[str, str] = {}
     school = session.get(School, school_id)
@@ -143,11 +144,91 @@ def create_opening(
     opening = JobOpening(
         school_id=school_id, department=department, drive=drive, designation=designation,
         discipline_group=discipline_group, title=(" ".join((title or "").split())[:200] or None),
-        closing_date=closing_date, status="OPEN",
+        closing_date=closing_date, eligibility_date=eligibility_date, status="OPEN",
     )
     session.add(opening)
     session.flush()
     return opening
+
+
+def update_opening(
+    session: Session,
+    opening: JobOpening,
+    *,
+    discipline_group: str,
+    department_name: str | None = None,
+    title: str | None = None,
+    closing_date: date | None = None,
+    eligibility_date: date | None = None,
+    actor: str = "user:hr",
+    today: date | None = None,
+) -> dict[str, int]:
+    """Change what may be changed about an opening. Returns how many applications it sent back to be assessed again.
+
+    The school and the post are fixed: they are what was applied for. The
+    rule set may be corrected, and so may the date eligibility is counted
+    on; then every assessment made under the old one no longer stands.
+    Those not yet decided go back to be assessed again, their old finding
+    kept as history. One HR has already decided keeps its decision, which
+    was a person's and is not undone by a setting.
+    """
+    from backend.engine.facts import counting_date
+    from backend.models import HrDecision
+
+    today = today or date.today()
+    counted_on = counting_date(opening, today)[0]
+
+    errors: dict[str, str] = {}
+    if discipline_group not in DISCIPLINE_GROUPS:
+        errors["discipline_group"] = "Choose a rule set from the list."
+    drive_date = opening.drive.advertisement_date if opening.drive else None
+    if closing_date and drive_date and closing_date < drive_date:
+        errors["closing_date"] = "The closing date is before the advertisement date."
+    if errors:
+        raise IntakeError(errors)
+
+    department = None
+    department_name = " ".join((department_name or "").split())
+    if department_name:
+        department = session.scalar(select(Department).where(
+            Department.school_id == opening.school_id, func.lower(Department.name) == department_name.lower()))
+        if department is None:
+            department = Department(school_id=opening.school_id, name=department_name[:200])
+            session.add(department)
+            opening.school.has_departments = True
+            session.flush()
+
+    rules_changed = discipline_group != opening.discipline_group
+    old_rules = opening.discipline_group
+    opening.discipline_group = discipline_group
+    opening.department = department
+    opening.title = " ".join((title or "").split())[:200] or None
+    opening.closing_date = closing_date
+    opening.eligibility_date = eligibility_date
+    date_changed = counting_date(opening, today)[0] != counted_on
+    why = (f"rule set of {opening.reference} changed from {old_rules} to {discipline_group}" if rules_changed
+           else f"date eligibility is counted on changed for {opening.reference}")
+
+    counts = {"reassess": 0, "decided": 0}
+    for application in session.scalars(select(Application).where(Application.opening_id == opening.opening_id)):
+        application.department_id = department.department_id if department else None
+        if not (rules_changed or date_changed):
+            continue
+        if application.status in _ASSESSED:
+            session.add(HrDecision(application_id=application.application_id, action="RETURNED", actor=actor))
+            states.transition(session, application, states.EXTRACTED, actor, note=f"{why}; to be assessed again")
+            counts["reassess"] += 1
+        elif application.status in (states.HR_APPROVED, states.CONTACTED, states.INTERVIEW_SCHEDULED):
+            counts["decided"] += 1
+    session.flush()
+    return counts
+
+
+def reopen_opening(session: Session, opening: JobOpening) -> None:
+    """Take applications again for an opening that was closed by hand. A closing date still applies."""
+    if opening.status == "CLOSED":
+        opening.status, opening.closed_at = "OPEN", None
+        session.flush()
 
 
 def close_opening(session: Session, opening: JobOpening) -> None:
@@ -208,6 +289,27 @@ class ApplicantForm:
         return e
 
 
+def _must_have_text(filename: str, data: bytes) -> None:
+    """Refuse, at the form, a file the Reader could never read: a scan, a photograph saved as PDF, a damaged file.
+
+    Accepting it would leave the application unreadable and the applicant
+    none the wiser. Checking costs nothing: it is the same text extraction the
+    Reader does first, and no model is involved.
+    """
+    import io
+
+    from app.resume_text import UnreadableResumeError, extract_text
+    from pathlib import Path
+
+    if Path(filename).suffix.lower() not in (".pdf", ".docx"):
+        return  # the type check that follows says so in its own words
+    try:
+        extract_text(io.BytesIO(data), filename)
+    except UnreadableResumeError:
+        raise RejectedUpload("this file has no text that can be read (it looks like a scan, a photograph or a damaged file); "
+                             "upload a PDF or DOCX in which the text can be selected") from None
+
+
 def _new_application(session: Session, opening: JobOpening, candidate: Candidate, filename: str, data: bytes,
                      source: str, **fields) -> Application:
     digest, path = save_resume(filename, data)
@@ -227,8 +329,9 @@ def _new_application(session: Session, opening: JobOpening, candidate: Candidate
     return application
 
 
-def submit_application(session: Session, opening: JobOpening, form: ApplicantForm, filename: str, data: bytes) -> Application:
-    """An applicant's own submission through the web form."""
+def submit_application(session: Session, opening: JobOpening, form: ApplicantForm, filename: str, data: bytes,
+                       source: str = "WEB_FORM") -> Application:
+    """An applicant's own submission: through the web form, or a Google Form whose answers were checked the same way."""
     errors = form.validate()
     if not is_accepting(opening):
         errors["opening"] = "This opening is no longer accepting applications."
@@ -253,17 +356,47 @@ def submit_application(session: Session, opening: JobOpening, form: ApplicantFor
         try:
             if not filename:
                 raise RejectedUpload("attach your resume as a PDF or DOCX file")
+            _must_have_text(filename, data)
             application = _new_application(
-                session, opening, candidate or Candidate(email=form.email), filename, data, "WEB_FORM",
+                session, opening, candidate or Candidate(email=form.email), filename, data, source,
                 applicant_name=form.full_name, applicant_email=form.email, applicant_phone=form.phone,
                 applicant_state=form.state, category=form.category,
                 differently_abled=form.differently_abled == "yes",
                 study_leave_taken={"yes": True, "no": False, "na": None}[form.study_leave_taken],
             )
+            from backend import emails  # emails builds on the gates, which build on this module
+
+            emails.acknowledge(session, application)  # written here; sent by whoever called
             return application
         except RejectedUpload as exc:
             errors["resume"] = str(exc)[:1].upper() + str(exc)[1:] + "."
     form.errors = errors
+    raise IntakeError(errors)
+
+
+def email_application(session: Session, opening: JobOpening, filename: str, data: bytes) -> Application:
+    """An application that arrived by email: a resume, and nothing else that can be relied on.
+
+    Who sent the message says nothing certain about whose resume it is: HR
+    forwards resumes, so do colleagues and agencies. So, as with a resume HR
+    uploads, the applicant's name and address are read from the resume itself,
+    and the sender is kept on the inbox record for a person to compare. The
+    same file is not taken twice for one opening; a sender may send many.
+    """
+    errors: dict[str, str] = {}
+    if not is_accepting(opening):
+        errors["opening"] = "This opening is no longer accepting applications."
+    if not errors:
+        try:
+            digest, _ = save_resume(filename, data)
+            same_file = session.scalar(select(Application).where(
+                Application.opening_id == opening.opening_id, Application.resume_sha256 == digest,
+                Application.status != states.WITHDRAWN))
+            if same_file is not None:
+                raise RejectedUpload(f"this resume is already under this opening ({same_file.reference})")
+            return _new_application(session, opening, Candidate(), filename, data, "EMAIL")
+        except RejectedUpload as exc:
+            errors["resume"] = str(exc)[:1].upper() + str(exc)[1:] + "."
     raise IntakeError(errors)
 
 

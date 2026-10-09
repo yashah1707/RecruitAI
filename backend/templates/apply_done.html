@@ -5,7 +5,8 @@
 {% block nav %}<a href="/apply">All openings</a>{% endblock %}
 {% block content %}
 <h1>Application received</h1>
-<p class="notice">Your application reference is <strong>{{ a.reference }}</strong>. Please keep it.</p>
+<p class="notice">Your application reference is <strong>{{ a.reference }}</strong>. Please keep it.
+  {% if acknowledged %}An acknowledgement is being sent to the email address you gave.{% endif %}</p>
 <dl class="facts">
   <dt>Post</dt><dd>{{ DESIGNATIONS[o.designation] }}{% if o.title %}, {{ o.title }}{% endif %}</dd>
   <dt>School</dt><dd>{{ o.school.name }}</dd>

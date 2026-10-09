@@ -25,6 +25,7 @@ from tests.test_backend_foundation import _application, _clean_result, client, e
 from tests.test_backend_intake import _opening, _storage  # noqa: F401
 
 TODAY = date(2026, 10, 6)
+_people = iter(range(1, 10_000))
 
 
 @pytest.fixture
@@ -49,6 +50,13 @@ def _assessed(session, tmp_path, result=None, **opening_fields) -> Application:
 def _no_net():
     r = _clean_result()
     r.net_set_status.value = "NONE"
+    return r
+
+
+def _other_person():
+    """The clean result under another made-up address, so two applications are not taken for one person."""
+    r = _clean_result()
+    r.email = f"person{next(_people)}@example.org"
     return r
 
 
@@ -415,3 +423,70 @@ def test_the_excel_download_is_a_workbook_named_for_the_opening(client, engine, 
     assert load_workbook(io.BytesIO(r.content))["candidates"].max_row == 2
     assert "Download as Excel" in client.get(f"/hr/openings/{opening_id}").text
     assert client.get("/hr/openings/999999/export.xlsx").status_code == 404
+
+
+# --- gaps found by walking through the application as HR would ----------------
+
+
+def test_sending_back_offers_ready_ticked_the_fields_that_would_settle_what_is_open(session, tmp_path, client, engine):
+    a = _assessed(session, tmp_path, _class_unstated(), school_id="SCH-008", discipline_group="ENGINEERING_TECHNOLOGY")
+    assert a.status == states.MANUAL_REVIEW
+    assert gate2.fields_that_would_settle(latest_evaluation(session, a.application_id)) == ["ug_marks_pct", "marks_pct"]
+    settled = _assessed(session, tmp_path, _other_person())
+    assert gate2.fields_that_would_settle(latest_evaluation(session, settled.application_id)) == []
+    assert gate2.fields_that_would_settle(None) == []
+
+
+@pytest.mark.parametrize("change, fields", [
+    ({"net_set_status": ("SET", None)}, ["set_state"]),
+    ({"marks_pct": (None, None), "cgpa": (8.4, "CGPA 8.4")}, ["marks_pct"]),
+])
+def test_each_kind_of_open_point_names_its_field(session, tmp_path, change, fields):
+    r = _other_person()
+    for name, (value, evidence) in change.items():
+        f = getattr(r, name)
+        f.value, f.evidence, f.confidence = value, evidence, 0.9 if value is not None else 0.0
+    if "net_set_status" in change:
+        r.net_set_status.evidence, r.set_state.value = "Cleared State Eligibility Test", None
+    o = _opening(session, school_id="SCH-013", discipline_group="GENERAL")
+    a = _application(session, tmp_path, category="General", differently_abled=False, study_leave_taken=False)
+    a.opening_id, a.school_id = o.opening_id, o.school_id
+    read_application(session, a, FakeProvider(script=[r]))
+    if a.status == states.PENDING_REVIEW:  # the SET without a State stops at Gate 1 first; a person leaves it empty
+        gate1.save_review(session, a, {}, {f.name for f in gate1.flagged_fields(session, a)})
+    assess_application(session, a, TODAY)
+    assert a.status == states.MANUAL_REVIEW
+    assert gate2.fields_that_would_settle(latest_evaluation(session, a.application_id)) == fields
+
+
+def test_withdrawing_after_a_decision_drops_the_letter_that_was_waiting(session, tmp_path):
+    from backend import emails
+
+    a = _assessed(session, tmp_path)
+    gate2.approve(session, a)
+    draft = emails.active_draft(session, a.application_id)
+    emails.approve(session, draft)
+    gate1.withdraw(session, a)
+    assert a.status == states.WITHDRAWN and draft.status == "DISCARDED" and emails.active_draft(session, a.application_id) is None
+    assert gate2.final_decision(session, a) is None
+
+
+def test_a_field_can_be_reopened_before_assessment_from_the_page(client, engine, tmp_path):
+    from sqlalchemy.orm import Session as _Session
+
+    with _Session(engine) as s:
+        seed_rules(s)
+        o = _opening(s, school_id="SCH-013", discipline_group="GENERAL")
+        a = _application(s, tmp_path, category="General", differently_abled=False, study_leave_taken=False)
+        a.opening_id = o.opening_id
+        read_application(s, a, FakeProvider(script=[_clean_result()]))
+        s.commit()
+        app_id, opening_id = a.application_id, o.opening_id
+    page = client.get(f"/hr/applications/{app_id}").text
+    assert "Something read wrongly? Correct a field before assessment" in page
+    opened = client.post(f"/hr/applications/{app_id}/reopen", data={"fields": ["marks_pct"]}).text
+    assert "Fields to check (1)" in opened and 'name="f_marks_pct"' in opened and 'value="68.4"' in opened
+    client.post(f"/hr/applications/{app_id}/review", data={"f_marks_pct": "58.4"})
+    assert client.get(f"/applications/{app_id}").json()["extracted"]["marks_pct"] == 58.4
+    listing = client.get(f"/hr/openings/{opening_id}").text
+    assert f"http://testserver/apply/{opening_id}" in listing  # the whole link, ready to copy

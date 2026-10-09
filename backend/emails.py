@@ -1,10 +1,15 @@
 """Gate 3: candidate emails are drafted and queued, and a person approves each send.
 
 A draft is written by code from HR's recorded decision the moment that
-decision is made. Nothing is ever sent on its own: a person reads the draft,
-may edit it, and approves it; only then does it go, and only if a mail
-server is configured. Every draft, approval and send is a row in
-`email_drafts`, and a successful send moves the application to CONTACTED.
+decision is made. No letter that carries a decision is ever sent on its own:
+a person reads the draft, may edit it, and approves it; only then does it go,
+and only if a mail server is configured. Every draft, approval and send is a
+row in `email_drafts`, and a successful send moves the application to CONTACTED.
+
+One letter is the exception, by the user's decision of 2026-10-09: the
+acknowledgement of receipt. Its wording is fixed, it is written by code, and
+it states no finding, so where the applicant typed their own address it is
+approved by the system and sent without a person (`acknowledge`).
 
 A language model may reword the body at a person's request. It is given the
 text with the candidate's name taken out, and its answer is refused unless it
@@ -34,6 +39,11 @@ from backend.reporting import RANKS, _not_met, regulation_name
 logger = logging.getLogger("recruitai.emails")
 
 ACTOR = gate2.ACTOR
+DECISION, ACKNOWLEDGEMENT = "DECISION", "ACKNOWLEDGEMENT"
+# Recorded as the approver of an acknowledgement no person approved.
+SYSTEM = "system:acknowledgement"
+# Channels on which the applicant typed their own address.
+_OWN_ADDRESS_SOURCES = ("WEB_FORM", "GOOGLE_FORM")
 # Left in a draft where only a person can supply the words. A draft holding one cannot be approved.
 PLACEHOLDER = "[HR:"
 NAME_TOKEN = "{{candidate_name}}"
@@ -121,11 +131,77 @@ def compose(application: Application, decision: HrDecision, evaluation: Evaluati
     return subject, body
 
 
-def active_draft(session: Session, application_id: int) -> EmailDraft | None:
+def active_draft(session: Session, application_id: int, kind: str = DECISION) -> EmailDraft | None:
+    """The live letter of one kind for an application; by default the one that carries HR's decision."""
     return session.scalars(
-        select(EmailDraft).where(EmailDraft.application_id == application_id, EmailDraft.status != "DISCARDED")
+        select(EmailDraft).where(EmailDraft.application_id == application_id, EmailDraft.status != "DISCARDED",
+                                 EmailDraft.kind == kind)
         .order_by(EmailDraft.draft_id.desc()).limit(1)
     ).first()
+
+
+# --- the acknowledgement of receipt --------------------------------------------
+
+
+def compose_acknowledgement(application: Application, name: str | None) -> tuple[str, str]:
+    """(subject, body) confirming receipt. Fixed wording: it says what arrived, and nothing about eligibility."""
+    post = RANKS.get(application.applied_designation, application.applied_designation)
+    school, ref = application.school.name, application.reference
+    received = application.created_at
+    if received.tzinfo is None:
+        received = received.replace(tzinfo=timezone.utc)
+    subject = f"Application {ref} received: {post}, {school}"
+    body = (f"{'Dear ' + name if name else 'Dear Applicant'},\n\n"
+            f"Thank you for applying for the post of {post} at {school}. Your application was received on "
+            f"{received.astimezone().strftime('%d-%m-%Y')} and its reference is {ref}. Please quote this reference "
+            "in any message about your application.\n\n"
+            "This message confirms receipt only and says nothing about eligibility. Your application will be examined "
+            "against the minimum qualifications prescribed for the post, and you will be informed of the outcome by email.\n\n"
+            "If you did not make this application, please reply to this message to say so.\n\n"
+            f"Yours sincerely,\nHuman Resources\n{settings.INSTITUTION_NAME}\n")
+    return subject, body
+
+
+def acknowledge(session: Session, application: Application) -> EmailDraft | None:
+    """Write the acknowledgement for an application, once. Nothing is sent by this call.
+
+    Application form and Google Form: the applicant typed the address, so the
+    letter is approved by the system and is ready to go. Emailed resume: the
+    address is the one read off the resume, which may be misread and may not
+    be the sender's, so the letter is only a draft and a person approves it.
+    A resume HR uploaded gets none: the applicant did not send it to us.
+    """
+    if not settings.ACKNOWLEDGE_APPLICATIONS or application.resume_source not in (*_OWN_ADDRESS_SOURCES, "EMAIL"):
+        return None
+    if session.scalars(select(EmailDraft.draft_id).where(
+            EmailDraft.application_id == application.application_id, EmailDraft.kind == ACKNOWLEDGEMENT)).first():
+        return None  # written before, whatever became of it; an applicant is told once
+    name, address = _name_and_address(session, application)
+    if not address:
+        return None
+    own = application.resume_source in _OWN_ADDRESS_SOURCES and bool(application.applicant_email)
+    subject, body = compose_acknowledgement(application, name)
+    draft = EmailDraft(
+        application_id=application.application_id, kind=ACKNOWLEDGEMENT, to_address=address, subject=subject[:250], body=body,
+        status="APPROVED" if own else "DRAFT", drafted_by="template",
+        approved_by=SYSTEM if own else None, approved_at=datetime.now(timezone.utc) if own else None,
+    )
+    session.add(draft)
+    session.flush()
+    return draft
+
+
+def send_acknowledgement(session: Session, draft: EmailDraft | None, transport: Transport | None = None) -> bool:
+    """Send an acknowledgement the system approved. Returns whether it went. Never raises: receipt of the
+    application does not depend on it, and one that fails waits on the opening's emails page."""
+    if (draft is None or draft.kind != ACKNOWLEDGEMENT or draft.status != "APPROVED" or draft.approved_by != SYSTEM
+            or draft.sent_at is not None or (transport is None and not mail_is_configured())):
+        return False
+    try:
+        send(session, draft, transport, SYSTEM)
+    except DraftError:
+        return False
+    return True
 
 
 def history(session: Session, application_id: int) -> list[EmailDraft]:
@@ -134,7 +210,7 @@ def history(session: Session, application_id: int) -> list[EmailDraft]:
 
 def draft_for_decision(session: Session, application: Application, decision: HrDecision) -> EmailDraft:
     """Write the draft for a decision just recorded. One live draft per application."""
-    existing = active_draft(session, application.application_id)
+    existing = active_draft(session, application.application_id)  # the decision letter; an acknowledgement is apart
     if existing is not None and existing.status == "SENT":
         return existing
     if existing is not None:
@@ -223,10 +299,88 @@ def send(session: Session, draft: EmailDraft, transport: Transport | None = None
         return
     draft.status = "SENT"
     application = session.get(Application, draft.application_id)
-    if application.status == states.HR_APPROVED:
+    if draft.kind == DECISION and application.status == states.HR_APPROVED:  # an acknowledgement informs of no decision
         states.transition(session, application, states.CONTACTED, actor, note="gate3: email approved and sent")
     session.flush()
     logger.info("email_sent draft=%s application=%s redirected=%s", draft.draft_id, draft.application_id, draft.redirected)
+
+
+def waiting_for_approval(session: Session) -> dict[int, dict[str, int]]:
+    """Per opening, how many letters are drafts no one has approved yet: {opening_id: {"acknowledgements": n, "decisions": n}}.
+
+    A draft is the one state in which a letter waits on a person and on nothing
+    else, so this is what the pages point to. A withdrawn application has none.
+    """
+    found: dict[int, dict[str, int]] = {}
+    rows = session.execute(
+        select(Application.opening_id, EmailDraft.kind)
+        .join(Application, Application.application_id == EmailDraft.application_id)
+        .where(EmailDraft.status == "DRAFT", Application.opening_id.is_not(None), Application.status != states.WITHDRAWN)
+    )
+    for opening_id, kind in rows:
+        bucket = found.setdefault(opening_id, {"acknowledgements": 0, "decisions": 0})
+        bucket["acknowledgements" if kind == ACKNOWLEDGEMENT else "decisions"] += 1
+    return found
+
+
+def waiting_in_words(counts: dict[str, int] | None) -> str:
+    """ "1 acknowledgement and 2 decision letters", or "" when nothing waits."""
+    counts = counts or {}
+    parts = [f"{n} {word}{'' if n == 1 else 's'}" for n, word in (
+        (counts.get("acknowledgements", 0), "acknowledgement"), (counts.get("decisions", 0), "decision letter")) if n]
+    return " and ".join(parts)
+
+
+def problem_with(draft: EmailDraft) -> str | None:
+    """Why a draft cannot be approved as it stands, or None."""
+    if draft.status not in ("DRAFT", "APPROVED"):
+        return None
+    if not draft.to_address:
+        return "No address. Enter one on the application's page."
+    if PLACEHOLDER in draft.body or PLACEHOLDER in draft.subject:
+        return "The reason is still to be written, on the application's page."
+    return None
+
+
+def approve_and_send(session: Session, drafts: list[EmailDraft], transport: Transport | None = None, actor: str = ACTOR) -> dict[str, int]:
+    """Approve each of the drafts a person ticked, and send it if a mail server is configured.
+
+    Each is still one approval of one letter: the person had every letter in
+    front of them and chose these. One that fails does not stop the others.
+    """
+    counts = {"sent": 0, "test_copies": 0, "waiting": 0, "failed": 0, "skipped": 0}
+    for draft in drafts:
+        if draft.status not in ("DRAFT", "APPROVED") or problem_with(draft):
+            counts["skipped"] += 1
+            continue
+        if draft.status == "DRAFT":
+            approve(session, draft, actor)
+        if transport is None and not mail_is_configured():
+            counts["waiting"] += 1
+            continue
+        try:
+            send(session, draft, transport, actor)
+        except DraftError:
+            counts["failed"] += 1
+            continue
+        counts["test_copies" if draft.redirected else "sent"] += 1
+    session.flush()
+    return counts
+
+
+def summarise_sending(counts: dict[str, int]) -> str:
+    parts = []
+    if counts["sent"]:
+        parts.append(f"{counts['sent']} sent to candidates")
+    if counts["test_copies"]:
+        parts.append(f"{counts['test_copies']} sent as test copies to the redirect address (the candidates received nothing)")
+    if counts["waiting"]:
+        parts.append(f"{counts['waiting']} approved and waiting, because no mail server is configured")
+    if counts["failed"]:
+        parts.append(f"{counts['failed']} approved but not accepted by the mail server; try those again")
+    if counts["skipped"]:
+        parts.append(f"{counts['skipped']} left as they were, not ready to approve")
+    return ("; ".join(parts) + ".").capitalize() if parts else "Nothing was ticked."
 
 
 # --- rewording by the language model -----------------------------------------
