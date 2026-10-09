@@ -176,3 +176,15 @@ def test_each_change_to_an_account_is_its_own_form_so_enter_does_what_the_box_sa
     page = web.get("/admin/users").text
     # One hidden "do" per form, and no button that carries the action: nothing depends on which button Enter picks.
     assert page.count('name="do" value="password"') == 2 and 'button type="submit" name="do"' not in page
+
+
+def test_the_stylesheet_keeps_wide_things_inside_the_screen(client):
+    """The layout itself was checked in a browser at widths from 320 to 1920 pixels; this keeps the rules it rests on."""
+    css = client.get("/static/app.css").text
+    assert "header nav { margin-left: auto; display: flex; flex-wrap: wrap;" in css  # the menu wraps, it does not push the page wide
+    assert "table { display: block; overflow-x: auto;" in css and ".wide { overflow-x: auto; }" in css  # a wide table scrolls in itself
+    assert "form.stack { display: grid; grid-template-columns: minmax(0, 1fr);" in css  # a long option cannot widen a form
+    from pathlib import Path
+
+    dashboard = Path(__file__).resolve().parent.parent / "backend" / "templates" / "dashboard.html"
+    assert '<div class="wide">' in dashboard.read_text(encoding="utf-8")  # its fourteen-column table, at any width

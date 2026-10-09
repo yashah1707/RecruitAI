@@ -29,6 +29,7 @@
 
 <h2>By opening and advertisement</h2>
 {% if d.openings %}
+<div class="wide">
 <table>
   <thead><tr><th>Opening</th><th>Post</th><th>School</th><th>Advertisement</th><th>Closes</th>{{ heads() }}</tr></thead>
   <tbody>
@@ -42,6 +43,7 @@
     {% endfor %}
   </tbody>
 </table>
+</div>
 <p class="hint">Give an opening its advertisement reference when creating it, and openings of one advertisement can be compared here.</p>
 {% endif %}
 
