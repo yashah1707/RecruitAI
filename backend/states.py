@@ -63,6 +63,21 @@ ALLOWED: dict[str, frozenset[str]] = {
 }
 
 ALL_STATES: frozenset[str] = frozenset(ALLOWED)
+
+# A state as it is said to a person in a sentence ("this application is ..."). The codes above are for the
+# database and the audit trail; a message on a page never shows one.
+_IN_WORDS: dict[str, str] = {
+    RECEIVED: "waiting to be read", NEEDS_JOB_MATCH: "not yet filed under an opening", PARSING: "being read",
+    FAILED: "unreadable", EXTRACTED: "read and waiting to be assessed", PENDING_REVIEW: "waiting for its fields to be checked",
+    WITHDRAWN: "withdrawn", ASSESSED: "being assessed", MANUAL_REVIEW: "assessed and waiting for a decision",
+    SHORTLISTED: "assessed and waiting for a decision", RE_CATEGORISED: "assessed and waiting for a decision",
+    NOT_ELIGIBLE: "assessed and waiting for a decision", HR_APPROVED: "already decided",
+    CONTACTED: "decided, and the candidate has been informed", INTERVIEW_SCHEDULED: "scheduled for interview",
+}
+
+
+def in_words(state: str) -> str:
+    return _IN_WORDS.get(state, state.replace("_", " ").lower())
 INITIAL_STATES: frozenset[str] = frozenset({RECEIVED, NEEDS_JOB_MATCH})
 
 

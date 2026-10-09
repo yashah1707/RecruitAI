@@ -6,23 +6,47 @@
   <title>{% block title %}RecruitAI{% endblock %}</title>
   {% if reading %}<noscript><meta http-equiv="refresh" content="5"></noscript>{% endif %}
   <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='6' fill='%231f4e8c'/%3E%3Ctext x='16' y='23' font-family='system-ui,sans-serif' font-size='19' font-weight='700' text-anchor='middle' fill='%23fff'%3ER%3C/text%3E%3C/svg%3E">
-  <link rel="stylesheet" href="/static/app.css">
+  <link rel="stylesheet" href="{{ asset("app.css") }}">
 </head>
 <body>
+  {% set me = request.state.user|default(None) %}
+  {% set forced = request.state.forced|default(False) %}
+  {% set at = request.url.path %}
+  {% set waiting_mail = inbox_waiting if inbox_waiting is defined else request.state.inbox_waiting|default(0) %}
+  {% macro item(href, text, here) %}<a href="{{ href }}"{% if here %} aria-current="page"{% endif %}>{{ text }}</a>{% endmacro %}
+  <a class="skip" href="#content">Skip to the content</a>
   <header class="top">
     <a class="brand" href="{% block home %}/{% endblock %}">RecruitAI</a>
-    <span class="sub">{% block area %}Faculty recruitment{% endblock %}</span>
-    {% set me = request.state.user|default(None) %}
-    <nav>{% block nav %}{% endblock %}
-      {% if me %}
-      <span class="who">{{ me.name }}</span>
-      {% if me.manages_accounts %}<a href="/admin/users">Accounts</a>{% endif %}
-      {% if me.user_id %}<a href="/account/password">Password</a>
-      <form method="post" action="/logout" class="signout"><button type="submit">Sign out</button></form>{% endif %}
+    {% if me %}
+    {# The same menu on every page a signed-in person sees; what is in it depends only on the kind of account. #}
+    <nav aria-label="Main">
+      {% if not forced %}
+      {% if me.user_type == "INTERVIEWER" %}
+      {{ item("/interview", "Short-listed candidates", at.startswith("/interview")) }}
+      {% else %}
+      {% if me.is_admin %}{{ item("/hr/dashboard", "Dashboard", at.startswith("/hr/dashboard")) }}{% endif %}
+      {{ item("/hr/openings", "Openings", at == "/" or at.startswith("/hr/openings") or at.startswith("/hr/applications")) }}
+      {% if me.is_admin %}
+      {{ item("/hr/inbox", "Inbox" ~ (" (" ~ waiting_mail ~ ")" if waiting_mail else ""), at.startswith("/hr/inbox")) }}
+      {{ item("/hr/policy", "University criteria", at.startswith("/hr/policy")) }}
+      {% endif %}
+      {{ item("/interview", "Panel view", at.startswith("/interview")) }}
+      {% if me.manages_accounts %}{{ item("/admin/users", "Accounts", at.startswith("/admin")) }}{% endif %}
+      {% endif %}
       {% endif %}
     </nav>
+    <nav class="account" aria-label="Your account">
+      <span class="who">{{ me.name }}</span>
+      {% if me.user_id %}{{ item("/account/password", "Password", at.startswith("/account")) }}
+      <form method="post" action="/logout" class="signout"><button type="submit">Sign out</button></form>{% endif %}
+    </nav>
+    {% else %}
+    <span class="sub">{% block area %}Faculty recruitment{% endblock %}</span>
+    <nav aria-label="Main">{% block nav %}{% endblock %}</nav>
+    {% endif %}
   </header>
-  <main>
+  {% if me %}{% set trail %}{% block trail %}{% endblock %}{% endset %}{% if trail|trim %}<p class="trail">{{ trail }}</p>{% endif %}{% endif %}
+  <main id="content">
     {% if msg %}<p class="notice" role="status">{{ msg }}</p>{% endif %}
     {% block content %}{% endblock %}
   </main>

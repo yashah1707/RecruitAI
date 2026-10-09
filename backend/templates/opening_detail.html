@@ -1,7 +1,6 @@
 {% extends "base.html" %}
 {% block title %}{{ o.reference }} · RecruitAI{% endblock %}
-{% block area %}HR{% endblock %}
-{% block nav %}<a href="/hr/openings">Openings</a> <a href="/apply/{{ o.opening_id }}">Application form</a>{% endblock %}
+{% block trail %}<a href="/hr/openings">Openings</a> › {{ o.reference }}{% endblock %}
 {% block content %}
 <h1>{{ o.reference }}: {{ DESIGNATIONS[o.designation] }}</h1>
 <dl class="facts">
@@ -20,6 +19,7 @@
 {% if can_edit %}
 <form method="post" action="/hr/openings/{{ o.opening_id }}/{{ "close" if o.status == "OPEN" else "reopen" }}" class="inline">
   <a class="button" href="/hr/openings/{{ o.opening_id }}/edit">Edit this opening</a>
+  <a href="/apply/{{ o.opening_id }}">Its application form</a>
   <button type="submit" class="quiet">{{ "Close this opening" if o.status == "OPEN" else "Reopen this opening" }}</button>
 </form>
 

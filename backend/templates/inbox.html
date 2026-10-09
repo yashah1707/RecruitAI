@@ -1,7 +1,5 @@
 {% extends "base.html" %}
 {% block title %}Inbox · RecruitAI{% endblock %}
-{% block area %}HR{% endblock %}
-{% block nav %}<a href="/hr/openings">Openings</a>{% endblock %}
 {% block content %}
 <h1>Inbox</h1>
 {% if configured %}
@@ -11,7 +9,8 @@
     language model is used. A resume that arrives is queued for reading like any other.</span>
 </form>
 {% else %}
-<p class="panel warn">No mailbox is configured. Set IMAP_HOST, IMAP_USER and IMAP_PASSWORD in <code>.env</code> and restart.</p>
+<p class="panel warn">No mailbox is configured, so applications sent by email are not picked up.
+  <span class="hint">For whoever runs the system: set IMAP_HOST, IMAP_USER and IMAP_PASSWORD in <code>.env</code> and restart.</span></p>
 {% endif %}
 
 <h2>Waiting for you ({{ rows|length }})</h2>
@@ -22,8 +21,8 @@
     {% for m in rows %}
     <tr>
       <td class="nowrap">{{ m.received_at|ddmmyyyy }}</td>
-      <td>{{ m.sender_name or "" }}<br><span class="hint">{{ m.sender or "" }}</span></td>
-      <td>{{ m.subject }}
+      <td class="long">{{ m.sender_name or "" }}<br><span class="hint">{{ m.sender or "" }}</span></td>
+      <td class="long">{{ m.subject }}
         {% if m.body_excerpt %}<p class="quote">{{ m.body_excerpt }}</p>{% else %}<br><span class="hint">The message has no text.</span>{% endif %}
         {% if m.attachment_path %}<a href="/hr/inbox/{{ m.inbox_id }}/attachment" target="_blank" rel="noopener">{{ "Open the attached resume" if m.kind == "APPLICATION" else "Open the attachment" }}</a>
           <span class="hint">({{ m.attachment_name }})</span>{% endif %}</td>
@@ -76,7 +75,7 @@
   <tbody>
     {% for m in recent %}
     <tr>
-      <td class="nowrap">{{ m.received_at|ddmmyyyy }}</td><td>{{ m.sender or "" }}</td><td>{{ m.subject }}</td>
+      <td class="nowrap">{{ m.received_at|ddmmyyyy }}</td><td>{{ m.sender or "" }}</td><td class="long">{{ m.subject }}</td>
       <td>{{ {"APPLICATION": "Application", "JOB_OPENING": "Opening announcement", "OTHER": "Other"}[m.kind] }}<br>
         <span class="hint">{{ m.classified_by|replace("rule:", "rule: ")|replace("_", " ") }}</span></td>
       <td>{{ {"IMPORTED": "Filed", "NEEDS_JOB_MATCH": "Waiting for an opening", "FOR_HR": "For you to look at", "REJECTED": "Not accepted", "IGNORED": "No action"}[m.status] }}

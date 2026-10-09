@@ -1,8 +1,7 @@
 {% extends "base.html" %}
 {% block title %}{{ a.reference }} · Interview panel · RecruitAI{% endblock %}
 {% block home %}/interview{% endblock %}
-{% block area %}Interview panel{% endblock %}
-{% block nav %}<a href="/interview">Short-listed candidates</a>{% endblock %}
+{% block trail %}<a href="/interview">Short-listed candidates</a> › {{ a.reference }}{% endblock %}
 {% macro span(b, unit="") %}{% if b.high is none %}at least {{ "%g"|format(b.low) }}{% elif b.low == b.high %}{{ "%g"|format(b.low) }}{% else %}between {{ "%g"|format(b.low) }} and {{ "%g"|format(b.high) }}{% endif %}{{ unit }}{% endmacro %}
 {% block content %}
 <h1>{{ a.reference }}: {{ name or "Name not known" }}</h1>
@@ -71,7 +70,7 @@
     {% for q in qualifications %}
     <tr><td>{{ q.degree_level }}</td><td>{{ q.degree or "" }}</td><td>{{ q.discipline or "" }}</td>
       <td>{{ q.college_name or q.university_name or "" }}{% if q.college_name and q.university_name %}<br><span class="hint">{{ q.university_name }}</span>{% endif %}</td>
-      <td class="nowrap">{{ q.completion_stated or "" }}</td>
+      <td class="nowrap">{{ q.completion_stated|as_stated }}</td>
       <td class="nowrap">{% if q.marks_pct is not none %}{{ "%g"|format(q.marks_pct) }}%{% elif q.cgpa is not none %}CGPA {{ "%g"|format(q.cgpa) }}{% endif %} {{ q.division or "" }}</td></tr>
     {% endfor %}
   </tbody>
@@ -87,7 +86,7 @@
   <tbody>
     {% for x in experience %}
     <tr><td>{{ x.designation_held or "" }}</td><td>{{ x.employer_name or "" }}</td><td>{{ x.experience_type|capitalize }}</td>
-      <td class="nowrap">{{ x.start_stated or "" }}</td><td class="nowrap">{{ "Present" if x.is_current else (x.end_stated or "") }}</td></tr>
+      <td class="nowrap">{{ x.start_stated|as_stated }}</td><td class="nowrap">{{ "Present" if x.is_current else (x.end_stated|as_stated) }}</td></tr>
     {% endfor %}
   </tbody>
 </table>

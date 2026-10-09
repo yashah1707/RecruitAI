@@ -1,7 +1,6 @@
 {% extends "base.html" %}
 {% block title %}Edit {{ o.reference }} · RecruitAI{% endblock %}
-{% block area %}HR{% endblock %}
-{% block nav %}<a href="/hr/openings">Openings</a> <a href="/hr/openings/{{ o.opening_id }}">{{ o.reference }}</a>{% endblock %}
+{% block trail %}<a href="/hr/openings">Openings</a> › <a href="/hr/openings/{{ o.opening_id }}">{{ o.reference }}</a> › Edit{% endblock %}
 {% macro err(name) %}{% if errors.get(name) %}<span class="error">{{ errors[name] }}</span>{% endif %}{% endmacro %}
 {% block content %}
 <h1>Edit {{ o.reference }}</h1>

@@ -181,10 +181,78 @@ def test_each_change_to_an_account_is_its_own_form_so_enter_does_what_the_box_sa
 def test_the_stylesheet_keeps_wide_things_inside_the_screen(client):
     """The layout itself was checked in a browser at widths from 320 to 1920 pixels; this keeps the rules it rests on."""
     css = client.get("/static/app.css").text
-    assert "header nav { margin-left: auto; display: flex; flex-wrap: wrap;" in css  # the menu wraps, it does not push the page wide
+    import re
+
+    link = re.search(r'<link rel="stylesheet" href="(/static/app\.css\?v=\d+)">', client.get("/login").text)
+    assert link and client.get(link.group(1)).status_code == 200  # the address changes with the file: no stale styles
+    assert "td { overflow-wrap: anywhere" not in css and "td.long { overflow-wrap: anywhere;" in css  # words are not broken in narrow columns
+    assert "header nav { display: flex; flex-wrap: wrap;" in css  # the menu wraps, it does not push the page wide
     assert "table { display: block; overflow-x: auto;" in css and ".wide { overflow-x: auto; }" in css  # a wide table scrolls in itself
     assert "form.stack { display: grid; grid-template-columns: minmax(0, 1fr);" in css  # a long option cannot widen a form
     from pathlib import Path
 
     dashboard = Path(__file__).resolve().parent.parent / "backend" / "templates" / "dashboard.html"
     assert '<div class="wide">' in dashboard.read_text(encoding="utf-8")  # its fourteen-column table, at any width
+
+
+# --- one menu, plain words, one date order ----------------------------------------
+
+
+def _menu(page: str) -> str:
+    return page.split('<nav aria-label="Main">')[1].split("</nav>")[0]
+
+
+def test_every_page_has_the_same_menu_for_its_kind_of_account_and_marks_where_you_are(web, engine, tmp_path):
+    import re
+
+    opening_id, app_id = _two_schools(engine, tmp_path)["science"]
+    with Session(engine) as s:
+        admin = _account(s, "Asha Admin", "UNIVERSITY_ADMIN")
+        viewer = _account(s, "Vani Viewer", "SCHOOL_HR", [(SCIENCE, None, "VIEW")])
+        panel = _account(s, "Indu Interviewer", "INTERVIEWER", [(SCIENCE, None, "VIEW")])
+        new = _account(s, "Nita New", "HR_ADMIN", must_change=True)
+
+    def links(page):
+        return re.findall(r'href="([^"]+)"', _menu(page))
+
+    _sign_in(web, admin)
+    everything = ["/hr/dashboard", "/hr/openings", "/hr/inbox", "/hr/policy", "/interview", "/admin/users"]
+    for address in ("/hr/dashboard", "/hr/openings", f"/hr/openings/{opening_id}", f"/hr/applications/{app_id}", "/hr/inbox", "/hr/policy",
+                    "/admin/users", "/admin/views", "/interview", "/account/password", f"/hr/openings/{opening_id}/emails"):
+        assert links(web.get(address).text) == everything, address
+    for address, here in (("/hr/dashboard", "Dashboard"), (f"/hr/applications/{app_id}", "Openings"), ("/hr/inbox", "Inbox"),
+                          ("/admin/views", "Accounts"), ("/interview", "Panel view")):
+        assert re.findall(r'aria-current="page">([^<(]+)', _menu(web.get(address).text)) == [here], address
+    record = web.get(f"/hr/applications/{app_id}").text
+    assert 'class="trail"' in record and f"APP-{app_id:06d}" in record.split('class="trail"')[1].split("</p>")[0]  # and where this page sits
+
+    _sign_in(web, viewer)
+    assert links(web.get(f"/hr/openings/{opening_id}").text) == ["/hr/openings", "/interview"]
+    _sign_in(web, panel)
+    assert links(web.get("/interview").text) == ["/interview"]
+    _sign_in(web, new)  # a temporary password: nothing is offered until it is changed
+    forced = web.get("/account/password").text
+    assert links(forced) == [] and "Sign out" in forced
+
+
+def test_a_message_never_shows_a_state_code_and_dates_as_stated_are_in_the_house_order(client, engine, tmp_path):
+    from backend import gate1, gate2, states
+    from backend.rules_seed import seed_rules
+    from backend.web import _as_stated
+    from tests.test_backend_gate2 import _assessed
+
+    assert all(states.in_words(code) != code and code not in states.in_words(code) for code in states.ALL_STATES)
+    with Session(engine) as s:
+        seed_rules(s)
+        a = _assessed(s, tmp_path)
+        gate2.approve(s, a)
+        for refused, error in ((lambda: gate2.approve(s, a), gate2.DecisionError), (lambda: gate1.read_again(s, a), gate1.ReviewError),
+                               (lambda: gate1.save_review(s, a, {}, set()), gate1.ReviewError)):
+            try:
+                refused()
+                raise AssertionError("was not refused")
+            except error as exc:
+                text = " ".join(exc.errors.values())
+                assert "already decided" in text and "HR_APPROVED" not in text
+    assert [_as_stated(x) for x in ("2019", "2019-07", "2019-07-15", None, "Present", "July 2019")] == [
+        "2019", "07-2019", "15-07-2019", "", "Present", "July 2019"]

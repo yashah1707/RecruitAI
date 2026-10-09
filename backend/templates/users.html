@@ -1,7 +1,5 @@
 {% extends "base.html" %}
 {% block title %}Accounts · RecruitAI{% endblock %}
-{% block area %}Accounts{% endblock %}
-{% block nav %}<a href="/hr/openings">Openings</a>{% endblock %}
 {% block content %}
 <h1>Accounts</h1>
 <p><a href="/admin/views">What the interview panel sees</a></p>
@@ -39,7 +37,7 @@
             <label>Department <span class="hint">(leave as "whole school" unless the grant is for one department)</span>
               <select name="department_id">
                 <option value="">Whole school</option>
-                {% for s in schools %}{% for d in s.departments %}<option value="{{ d.department_id }}">{{ s.name }}: {{ d.name }}</option>{% endfor %}{% endfor %}
+                {% for s in schools %}{% for d in s.departments %}<option value="{{ d.department_id }}" data-school="{{ s.school_id }}">{{ s.name }}: {{ d.name }}</option>{% endfor %}{% endfor %}
               </select></label>
             <label>Level
               <select name="level" required>{% for code, text in LEVELS.items() %}<option value="{{ code }}">{{ text }}</option>{% endfor %}</select></label>
@@ -89,4 +87,19 @@
   <button type="submit">Create the account</button>
   <span class="hint">A school or department HR account sees nothing until you grant it a school above.</span>
 </form>
+<script>
+  // The department list offers only the departments of the school chosen. (The server refuses a mismatch either way.)
+  document.querySelectorAll("select[name=school_id]").forEach(function (school) {
+    var department = school.form && school.form.querySelector("select[name=department_id]");
+    if (!department) { return; }
+    function narrow() {
+      department.querySelectorAll("option[data-school]").forEach(function (o) {
+        o.hidden = o.disabled = o.dataset.school !== school.value;
+        if (o.disabled && o.selected) { department.value = ""; }
+      });
+    }
+    school.addEventListener("change", narrow);
+    narrow();
+  });
+</script>
 {% endblock %}

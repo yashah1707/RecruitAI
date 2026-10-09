@@ -1,9 +1,9 @@
 {% extends "base.html" %}
 {% block title %}Openings · RecruitAI{% endblock %}
-{% block area %}HR{% endblock %}
-{% block nav %}{% if can_open %}<a href="/hr/openings/new">New opening</a> {% endif %}{% if request.state.user.is_admin %}<a href="/hr/inbox">Inbox{% if inbox_waiting %} ({{ inbox_waiting }}){% endif %}</a> <a href="/hr/dashboard">Dashboard</a> <a href="/hr/policy">University criteria</a> {% endif %}<a href="/interview">Panel view</a> <a href="/apply">Applicant view</a>{% endblock %}
 {% block content %}
 <h1>Openings</h1>
+<p class="inline">{% if can_open %}<a class="button" href="/hr/openings/new">New opening</a>{% endif %}
+  <a href="/apply">See the openings as an applicant does</a></p>
 
 <section class="panel">
   <h2>Reading queue</h2>

@@ -1,7 +1,6 @@
 {% extends "base.html" %}
 {% block title %}{{ a.reference }} · RecruitAI{% endblock %}
-{% block area %}HR{% endblock %}
-{% block nav %}<a href="/hr/openings">Openings</a>{% if o %} <a href="/hr/openings/{{ o.opening_id }}">{{ o.reference }}</a>{% endif %}{% endblock %}
+{% block trail %}<a href="/hr/openings">Openings</a>{% if o %} › <a href="/hr/openings/{{ o.opening_id }}">{{ o.reference }}</a>{% endif %} › {{ a.reference }}{% endblock %}
 {% block content %}
 <h1>{{ a.reference }}: {{ a.applicant_name or (personal.full_name if personal else None) or "Name not yet known" }}</h1>
 <dl class="facts">
@@ -340,7 +339,7 @@
       <td>{{ q.degree_level }}</td><td>{{ q.degree or "" }}</td>
       <td>{{ q.discipline or "" }}{% if q.discipline_listed %}<br><span class="hint">{{ q.discipline_listed }}</span>{% endif %}</td>
       <td>{{ q.college_name or q.university_name or "" }}{% if q.college_name and q.university_name %}<br><span class="hint">{{ q.university_name }}</span>{% endif %}</td>
-      <td class="nowrap">{{ q.completion_stated or "" }}</td>
+      <td class="nowrap">{{ q.completion_stated|as_stated }}</td>
       <td class="nowrap">{% if q.marks_pct is not none %}{{ "%g"|format(q.marks_pct) }}%{% elif q.cgpa is not none %}CGPA {{ "%g"|format(q.cgpa) }}{% endif %} {{ q.division or "" }}</td>
     </tr>
     {% endfor %}
@@ -357,8 +356,8 @@
     {% for x in experience %}
     <tr>
       <td>{{ x.designation_held or "" }}{% if not x.found_in_resume %}<br><span class="hint">Entered by HR</span>{% endif %}</td><td>{{ x.employer_name or "" }}</td>
-      <td>{{ x.experience_type|capitalize }}</td><td class="nowrap">{{ x.start_stated or "" }}</td>
-      <td class="nowrap">{{ "Present" if x.is_current else (x.end_stated or "") }}</td><td>{{ x.duration_stated or "" }}</td>
+      <td>{{ x.experience_type|capitalize }}</td><td class="nowrap">{{ x.start_stated|as_stated }}</td>
+      <td class="nowrap">{{ "Present" if x.is_current else (x.end_stated|as_stated) }}</td><td>{{ x.duration_stated or "" }}</td>
     </tr>
     {% endfor %}
   </tbody>
@@ -383,8 +382,8 @@
           <td><select name="kind_{{ x.experience_id }}" aria-label="Type of post {{ loop.index }}">
             {% for code, label in POST_KINDS %}<option value="{{ code }}"{% if code == x.experience_type %} selected{% endif %}>{{ label }}</option>{% endfor %}
           </select></td>
-          <td><input name="start_{{ x.experience_id }}" value="{{ x.start_stated or "" }}" size="10" maxlength="10" aria-label="Post {{ loop.index }} from"></td>
-          <td><input name="end_{{ x.experience_id }}" value="{{ x.end_stated or "" }}" size="10" maxlength="10" aria-label="Post {{ loop.index }} to"></td>
+          <td><input name="start_{{ x.experience_id }}" value="{{ x.start_stated|as_stated }}" size="10" maxlength="10" aria-label="Post {{ loop.index }} from"></td>
+          <td><input name="end_{{ x.experience_id }}" value="{{ x.end_stated|as_stated }}" size="10" maxlength="10" aria-label="Post {{ loop.index }} to"></td>
           <td><input type="checkbox" name="current_{{ x.experience_id }}" value="yes"{% if x.is_current %} checked{% endif %} aria-label="Still in post {{ loop.index }}"></td>
         </tr>
         {% endfor %}
@@ -484,8 +483,8 @@
   <tbody>
     {% for m in correspondence %}
     <tr>
-      <td class="nowrap">{{ m.received_at|ddmmyyyy }}</td><td>{{ m.sender_name or "" }}<br><span class="hint">{{ m.sender or "" }}</span></td>
-      <td>{{ m.subject }}{% if m.body_excerpt %}<p class="quote">{{ m.body_excerpt }}</p>{% endif %}</td>
+      <td class="nowrap">{{ m.received_at|ddmmyyyy }}</td><td class="long">{{ m.sender_name or "" }}<br><span class="hint">{{ m.sender or "" }}</span></td>
+      <td class="long">{{ m.subject }}{% if m.body_excerpt %}<p class="quote">{{ m.body_excerpt }}</p>{% endif %}</td>
       <td>{% if m.attachment_path %}<a href="/hr/inbox/{{ m.inbox_id }}/attachment" target="_blank" rel="noopener">Open the attached document</a>
         <br><span class="hint">{{ m.attachment_name }}</span>{% endif %}</td>
     </tr>

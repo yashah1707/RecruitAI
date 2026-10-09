@@ -96,6 +96,23 @@ def _why_unreadable(note: str | None) -> str:
     return text or "The file could not be read"
 
 
+def _as_stated(text: str | None) -> str:
+    """A date kept as the resume states it ("2019", "2019-07", "2019-07-15"), shown in the house order: 2019, 07-2019, 15-07-2019."""
+    parts = (text or "").split("-")
+    return "-".join(reversed(parts)) if all(part.isdigit() for part in parts) and len(parts[0]) == 4 else (text or "")
+
+
+def _asset(name: str) -> str:
+    """The address of a static file, changing whenever the file does, so a browser never goes on using an old stylesheet."""
+    try:
+        stamp = int((Path(__file__).resolve().parent / "static" / name).stat().st_mtime)
+    except OSError:
+        stamp = 0
+    return f"/static/{name}?v={stamp}"
+
+
+templates.env.globals["asset"] = _asset
+templates.env.filters["as_stated"] = _as_stated
 templates.env.filters["ddmmyyyy"] = _date
 templates.env.filters["why_unreadable"] = _why_unreadable
 templates.env.globals.update(DESIGNATIONS=intake.DESIGNATIONS, DISCIPLINE_GROUPS=intake.DISCIPLINE_GROUPS)
@@ -179,6 +196,9 @@ def current_user(request: Request, session: Session = Depends(get_session)) -> P
         raise access.NotSignedIn() if access.any_account(session) else access.NotSetUp()
     principal = access.principal_of(account)
     request.state.user = principal
+    request.state.forced = account.must_change_password  # nothing else is offered until the password is changed
+    if principal.is_admin:
+        request.state.inbox_waiting = len(inbox.waiting(session))  # shown beside "Inbox" in the menu on every page
     route = getattr(request.scope.get("route"), "path", request.url.path)
     if account.must_change_password and not route.startswith("/account/"):
         raise access.MustChangePassword()

@@ -419,7 +419,7 @@ def move_application(session: Session, application: Application, target: JobOpen
     from backend.models import HrDecision, ReviewEdit
 
     if application.status not in MOVABLE:
-        raise IntakeError({"opening": f"An application that is {application.status} cannot be moved."})
+        raise IntakeError({"opening": f"An application that is {states.in_words(application.status)} cannot be moved."})
     if target.opening_id == application.opening_id:
         raise IntakeError({"opening": "The application is already under that opening."})
     if target.status != "OPEN":

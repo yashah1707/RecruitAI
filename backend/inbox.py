@@ -300,7 +300,7 @@ def check_inbox(session: Session, mailbox: Mailbox | None = None, days: int = 30
     """Look at every message of the last `days` days not seen before. Returns how many ended in each status."""
     if mailbox is None:
         if not inbox_is_configured():
-            raise RuntimeError("No mailbox is configured (IMAP_HOST, IMAP_USER, IMAP_PASSWORD).")
+            raise RuntimeError("No mailbox is configured, so there is no inbox to check.")
         mailbox = ImapMailbox()
     counts: dict[str, int] = {}
     known = frozenset(session.scalars(select(InboxMessage.message_id)))

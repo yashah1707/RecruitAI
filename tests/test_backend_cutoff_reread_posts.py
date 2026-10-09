@@ -244,8 +244,8 @@ def test_post_dates_can_be_narrowed_and_a_post_added_and_the_assessment_is_done_
     assert a.status == states.EXTRACTED and a.transitions[-1].note == "gate1: posts corrected; to be assessed again"
     assert [d.action for d in gate2.decisions(session, a.application_id)] == ["RETURNED"]
     edits = [(e.field, e.action, e.old_value, e.new_value) for e in gate1.history(session, a)]
-    assert edits == [("Post 1: type and dates", "CORRECTED", "Teaching, 2018 to present", "Teaching, 2018-07 to present"),
-                     ("Post 2: added", "ENTERED", None, "Lecturer: Teaching, 2015 to 2018-06-30")]
+    assert edits == [("Post 1: type and dates", "CORRECTED", "Teaching, 2018 to present", "Teaching, 07-2018 to present"),
+                     ("Post 2: added", "ENTERED", None, "Lecturer: Teaching, 2015 to 30-06-2018")]
     after = _details(assess_application(session, a, TODAY))["experience_years"]
     assert after["low"] > before["low"] and after["high"] > before["high"]
 
@@ -316,7 +316,7 @@ def test_the_application_page_offers_both_and_reports_what_was_done(client, engi
     bad = client.post(f"/hr/applications/{app_id}/posts", data={f"kind_{k}": "TEACHING", f"start_{k}": "sometime"}).text
     assert "Not saved. Post 1: From: write the date as" in bad and "Your decision" in bad
     done = client.post(f"/hr/applications/{app_id}/posts", data={f"kind_{k}": "TEACHING", f"start_{k}": "07-2018", f"current_{k}": "yes"}).text
-    assert "Saved 1 post(s). The earlier assessment is set aside" in done and "2018-07" in done and "Your decision" not in done
+    assert "Saved 1 post(s). The earlier assessment is set aside" in done and "07-2018" in done and "2018-07" not in done and "Your decision" not in done
     assert "Post 1: type and dates" in done
 
     again = client.post(f"/hr/applications/{app_id}/read-again").text

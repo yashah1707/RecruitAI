@@ -1,7 +1,5 @@
 {% extends "base.html" %}
 {% block title %}Dashboard · RecruitAI{% endblock %}
-{% block area %}HR{% endblock %}
-{% block nav %}<a href="/hr/openings">Openings</a> <a href="/hr/inbox">Inbox{% if inbox_waiting %} ({{ inbox_waiting }}){% endif %}</a> <a href="/hr/policy">University criteria</a> <a href="/interview">Panel view</a>{% endblock %}
 {% macro cells(r) %}<td>{{ r.applications }}</td><td>{{ r.to_read }}</td><td>{{ r.to_check }}</td><td>{{ r.to_assess }}</td><td>{{ r.to_decide }}</td>
   <td>{{ r.shortlisted }}</td><td>{{ r.not_eligible }}</td><td>{{ r.unreadable }}</td><td>{{ r.withdrawn }}</td>{% endmacro %}
 {% macro heads() %}<th>Applications</th><th>To read</th><th>To check</th><th>To assess</th><th>To decide</th><th>Short-listed</th><th>Not eligible</th><th>Unreadable</th><th>Withdrawn</th>{% endmacro %}

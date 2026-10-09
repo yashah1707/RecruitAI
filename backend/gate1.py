@@ -283,7 +283,7 @@ def save_review(
     The application moves to EXTRACTED when no reason for review is left.
     """
     if application.status != states.PENDING_REVIEW:
-        raise ReviewError({"": f"This application is not waiting for review (it is {application.status})."})
+        raise ReviewError({"": f"This application is not waiting for review (it is {states.in_words(application.status)})."})
     flags = flagged_fields(session, application)
     errors: dict[str, str] = {}
     new: dict[str, object] = {}
@@ -362,7 +362,7 @@ def _finish(session: Session, application: Application, remaining: list[str], ac
 def reopen_fields(session: Session, application: Application, fields: list[str], actor: str = ACTOR) -> list[str]:
     """Before assessment, open named fields for a person to enter or correct. Returns the fields opened."""
     if application.status != states.EXTRACTED or application.extracted is None:
-        raise ReviewError({"": f"Fields can be reopened here only before assessment (this application is {application.status})."})
+        raise ReviewError({"": f"Fields can be reopened here only before assessment (this application is {states.in_words(application.status)})."})
     wanted = [f for f in fields if f in FIELDS]
     if not wanted:
         raise ReviewError({"": "Choose at least one field."})
@@ -447,7 +447,7 @@ def resolve_duplicate(session: Session, application: Application, same_person: b
 def withdraw(session: Session, application: Application, actor: str = ACTOR) -> None:
     """Take an application out of consideration (a second copy, or at the applicant's request), at any stage."""
     if states.WITHDRAWN not in states.ALLOWED[application.status]:
-        raise ReviewError({"": f"An application that is {application.status} cannot be withdrawn here."})
+        raise ReviewError({"": f"An application that is {states.in_words(application.status)} cannot be withdrawn here."})
     application.possible_duplicate_candidate_id = None
     states.transition(session, application, states.WITHDRAWN, actor, note="withdrawn by HR")
     # A letter not yet sent must not go out to someone who has withdrawn.
@@ -486,7 +486,7 @@ def read_again(session: Session, application: Application, actor: str = ACTOR) -
     here: the job waits until a person runs the queue.
     """
     if application.status not in BEFORE_HR_DECISION or application.extracted is None:
-        raise ReviewError({"": f"A resume can be read again only after a first reading and before HR has decided (this application is {application.status})."})
+        raise ReviewError({"": f"A resume can be read again only after a first reading and before HR has decided (this application is {states.in_words(application.status)})."})
     from backend import jobs
 
     _set_aside_assessment(session, application, actor)
@@ -524,7 +524,13 @@ def _post_date(raw: str | None) -> str | None:
     return text
 
 
+def _house(text: str | None) -> str | None:
+    """ "2019-07-15" as 15-07-2019, the order every other date on the pages is in."""
+    return "-".join(reversed(text.split("-"))) if text else text
+
+
 def _post_text(kind: str, start: str | None, end: str | None, current: bool) -> str:
+    start, end = _house(start), _house(end)
     dates = f"{start or 'not dated'} to {'present' if current else (end or 'not stated')}" if (start or end or current) else "no dates"
     return f"{kind.capitalize()}, {dates}"
 
@@ -567,7 +573,7 @@ def save_posts(session: Session, application: Application, form: dict[str, str],
     assessed again. All or nothing: one bad date and nothing is stored.
     """
     if application.status not in BEFORE_HR_DECISION or application.extracted is None:
-        raise ReviewError({"": f"Posts can be corrected only after the resume is read and before HR has decided (this application is {application.status})."})
+        raise ReviewError({"": f"Posts can be corrected only after the resume is read and before HR has decided (this application is {states.in_words(application.status)})."})
     app_id = application.application_id
     posts = session.scalars(
         select(CandidateExperience).where(CandidateExperience.application_id == app_id).order_by(CandidateExperience.experience_id)

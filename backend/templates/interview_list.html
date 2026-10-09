@@ -1,8 +1,6 @@
 {% extends "base.html" %}
 {% block title %}Short-listed candidates · RecruitAI{% endblock %}
 {% block home %}/interview{% endblock %}
-{% block area %}Interview panel{% endblock %}
-{% block nav %}{% if request.state.user.user_type != "INTERVIEWER" %}<a href="/hr/openings">Openings</a>{% endif %}{% endblock %}
 {% block content %}
 <h1>Short-listed candidates</h1>
 <p class="hint">Candidates HR has short-listed for interview, in the schools you are granted. Listed by opening and in order of

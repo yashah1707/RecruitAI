@@ -245,7 +245,7 @@ def test_a_temporary_password_has_to_be_changed_before_anything_else(web, engine
     _sign_in(web, hr)
     assert web.get("/", follow_redirects=False).headers["location"] == "/account/password"
     page = web.get("/").text
-    assert "Your password was set by an administrator" in page and 'href="/"' not in page.split("<main>")[1]
+    assert "Your password was set by an administrator" in page and 'href="/"' not in page.split("<main")[1]
     bad = web.post("/account/password", data={"current": PASSWORD, "new": OTHER_PASSWORD, "again": "not-the-same-thing"})
     assert bad.history[0].status_code == 303 and "The two new passwords are not the same." in bad.text
     done = web.post("/account/password", data={"current": PASSWORD, "new": OTHER_PASSWORD, "again": OTHER_PASSWORD})

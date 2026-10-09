@@ -41,7 +41,7 @@ class DecisionError(Exception):
 
 def _awaiting(application: Application) -> None:
     if application.status not in AWAITING_HR:
-        raise DecisionError({"": f"This application is not waiting for an HR decision (it is {application.status})."})
+        raise DecisionError({"": f"This application is not waiting for an HR decision (it is {states.in_words(application.status)})."})
 
 
 def _record(session: Session, application: Application, action: str, outcome: str | None, designation: str | None,
@@ -174,7 +174,7 @@ def reopen_decision(session: Session, application: Application, reason: str, act
     """
     if application.status != states.HR_APPROVED:
         raise DecisionError({"": "Only a decision the candidate has not yet been informed of can be reopened "
-                                 f"(this application is {application.status})."})
+                                 f"(this application is {states.in_words(application.status)})."})
     reason = " ".join((reason or "").split())
     if len(reason) < MIN_JUSTIFICATION:
         raise DecisionError({"reason": f"Say why the decision is reopened, in at least {MIN_JUSTIFICATION} characters; it is kept on record."})

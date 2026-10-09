@@ -255,7 +255,7 @@ def test_moving_a_whole_opening_moves_what_it_can_and_says_why_the_rest_stayed(s
     target = _opening(session, school_id="SCH-008")
     moved, stayed = intake.move_all(session, source, target)
     assert moved == 1 and waiting.opening_id == target.opening_id and waiting.status == states.RECEIVED
-    assert stayed == [f"{decided.reference}: An application that is HR_APPROVED cannot be moved."]
+    assert stayed == [f"{decided.reference}: An application that is already decided cannot be moved."]
 
 
 def test_moving_from_the_pages(client, engine, tmp_path):

@@ -16,7 +16,15 @@ body { margin: 0; overflow-wrap: break-word; font: 16px/1.5 system-ui, -apple-sy
 header.top { display: flex; flex-wrap: wrap; gap: 12px 20px; align-items: baseline; padding: 14px 24px; background: var(--card); border-bottom: 1px solid var(--line); }
 .brand { font-weight: 700; font-size: 1.15rem; color: var(--accent); text-decoration: none; }
 .sub { color: var(--muted); }
-header nav { margin-left: auto; display: flex; flex-wrap: wrap; gap: 6px 16px; align-items: baseline; }
+header nav { display: flex; flex-wrap: wrap; gap: 6px 16px; align-items: baseline; }
+header nav:first-of-type { margin-left: auto; }
+header nav.account { margin-left: 8px; padding-left: 16px; border-left: 1px solid var(--line); }
+header nav a { text-decoration: none; }
+header nav a:hover { text-decoration: underline; }
+header nav a[aria-current="page"] { color: var(--ink); font-weight: 600; text-decoration: underline; text-decoration-thickness: 2px; text-underline-offset: 6px; }
+.skip { position: absolute; left: -9999px; }
+.skip:focus { left: 8px; top: 8px; background: var(--card); padding: 8px 12px; border: 1px solid var(--line); z-index: 2; }
+.trail { max-width: 1100px; margin: 0 auto; padding: 12px 24px 0; color: var(--muted); font-size: 0.875rem; }
 main { max-width: 1100px; margin: 0 auto; padding: 24px; }
 footer { max-width: 1100px; margin: 0 auto; padding: 16px 24px 40px; color: var(--muted); font-size: 0.875rem; }
 h1 { font-size: 1.6rem; margin: 0 0 16px; }
@@ -49,7 +57,10 @@ input:focus-visible, select:focus-visible, button:focus-visible, a:focus-visible
 button, a.button { font: inherit; font-weight: 600; padding: 8px 16px; border: 1px solid var(--accent); border-radius: 5px; background: var(--accent); color: #fff; cursor: pointer; text-decoration: none; display: inline-block; }
 button.quiet { background: #fff; color: var(--accent); }
 code { background: #eef1f5; padding: 1px 5px; border-radius: 4px; }
-code, pre.letter, .quote, dd, td { overflow-wrap: anywhere; }
+code, pre.letter, .quote, dd { overflow-wrap: anywhere; }
+/* A cell of free text someone else wrote (an email's subject, a sender's address): it may be one long unbroken string.
+   Not for every cell: where a column is narrow that would break ordinary words letter by letter. */
+td.long { overflow-wrap: anywhere; min-width: 12rem; }
 /* For a table with more columns than the page's column can hold at any width: it scrolls inside this box. */
 .wide { overflow-x: auto; }
 /* A table too wide for the window scrolls inside itself; the page never scrolls sideways. Up to the width of the page's own column. */
@@ -58,7 +69,9 @@ code, pre.letter, .quote, dd, td { overflow-wrap: anywhere; }
 }
 @media (max-width: 720px) {
   header.top { padding: 12px 16px; }
-  header nav { margin-left: 0; width: 100%; }
+  header nav, header nav:first-of-type { margin-left: 0; width: 100%; }
+  header nav.account { margin-left: 0; padding-left: 0; border-left: 0; border-top: 1px solid var(--line); padding-top: 6px; }
+  .trail { padding: 10px 16px 0; }
   header nav a, form.signout button { padding: 6px 0; display: inline-block; }
   header.top nav .who { margin-left: 0; }
   main { padding: 16px; }
@@ -71,6 +84,7 @@ code, pre.letter, .quote, dd, td { overflow-wrap: anywhere; }
   section.panel form.stack { padding: 12px 0 0; }
   .panel { padding: 4px 14px 12px; }
   button, a.button { padding: 10px 16px; }
+  form.stack > button { justify-self: stretch; }  /* a full-width button is the easier target on a phone */
 }
 form.review { display: grid; gap: 14px; }
 .check { display: grid; gap: 6px; padding: 12px 14px; border: 1px solid var(--line); border-left: 4px solid var(--warn-line); border-radius: 6px; max-width: 720px; }
@@ -79,7 +93,7 @@ form.review { display: grid; gap: 14px; }
 .check ul.why { margin: 0; padding-left: 18px; color: var(--muted); font-size: 0.9rem; }
 .quote { margin: 0; font-size: 0.9rem; overflow-wrap: anywhere; }
 .quote q { background: #eef1f5; padding: 1px 4px; border-radius: 4px; }
-form.review > button { justify-self: start; }
+form.review > button, form.stack > button { justify-self: start; }
 h3 { font-size: 1rem; margin: 16px 0 6px; }
 textarea { font: inherit; padding: 8px 10px; border: 1px solid #aab2bd; border-radius: 5px; width: 100%; }
 .ticks { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(260px, 100%), 1fr)); gap: 4px 16px; padding-left: 24px; }
@@ -88,7 +102,7 @@ pre.letter { white-space: pre-wrap; font: inherit; background: #f6f7f9; border: 
 @media print { header.top nav, form, button { display: none !important; } body { background: #fff; } }
 details.panel { padding: 12px 18px; }
 details.panel summary { cursor: pointer; font-weight: 600; color: var(--accent); }
-header.top nav .who { color: var(--muted, #555); margin-left: 12px; }
+header.top nav .who { color: var(--muted); }
 form.signout { display: inline; margin: 0; }
 form.signout button { background: none; border: 0; padding: 0; color: var(--accent); text-decoration: underline; cursor: pointer; font: inherit; }
 form.narrow { max-width: 420px; }

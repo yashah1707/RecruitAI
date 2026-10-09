@@ -295,7 +295,7 @@ def send(session: Session, draft: EmailDraft, transport: Transport | None = None
         raise DraftError("An email is sent only after a person has approved it.")
     if transport is None:
         if not mail_is_configured():
-            raise DraftError("Approved, but not sent: no mail server is configured (SMTP_HOST and SMTP_FROM).")
+            raise DraftError("Approved, but not sent: no mail server is configured yet.")
         transport = SmtpTransport()
     to_address, subject = draft.to_address, draft.subject
     if settings.EMAIL_REDIRECT_TO:
