@@ -33,7 +33,11 @@ def test_no_page_may_be_kept_by_the_browser_so_back_after_signing_out_shows_noth
         assert headers["cache-control"] == "no-store", address
         assert headers["x-frame-options"] == "DENY" and headers["x-content-type-options"] == "nosniff", address
     assert "no-store" not in web.get("/static/app.css").headers.get("cache-control", "")  # the stylesheet holds no one's data
-    web.post("/logout")
+    # A page shown to someone signed in asks for itself again if the browser brings it back from memory (Back twice
+    # reaches pages that are restored without asking the server at all); a public page has no need to.
+    assert "e.persisted" in web.get("/hr/dashboard").text and "e.persisted" not in web.get("/apply").text
+    out = web.post("/logout", follow_redirects=False)
+    assert out.headers["clear-site-data"] == '"cache"'  # and signing out tells the browser to drop what it holds
     # What Back now does: the browser has no copy, asks again, and is sent to sign in.
     again = web.get(f"/hr/applications/{app_id}", follow_redirects=False)
     assert again.status_code == 303 and again.headers["location"].startswith("/login") and again.headers["cache-control"] == "no-store"

@@ -1006,6 +1006,8 @@ def logout(request: Request, session: Session = Depends(get_session)):
     session.commit()
     response = RedirectResponse("/login?said=out", status_code=303)
     response.delete_cookie(access.COOKIE, path="/")
+    # Tells the browser to drop every page of this site it is holding, including those it keeps ready for Back.
+    response.headers["Clear-Site-Data"] = '"cache"'
     return response
 
 

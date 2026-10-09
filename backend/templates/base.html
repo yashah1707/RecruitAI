@@ -34,7 +34,14 @@
       form.dataset.sent = "1";
       form.setAttribute("aria-busy", "true");
     });
-    window.addEventListener("pageshow", function () {
+    window.addEventListener("pageshow", function (e) {
+      {% if me %}
+      // Back and Forward can bring a page back exactly as it was, from the browser's memory, without asking the
+      // server (some browsers do this even for pages sent "no-store"). A page shown to someone signed in must
+      // never come back that way: they may have signed out since. So it is hidden and asked for again, and the
+      // server answers with the page if they are still signed in and with the sign-in page if they are not.
+      if (e.persisted) { document.documentElement.style.visibility = "hidden"; location.reload(); return; }
+      {% endif %}
       document.querySelectorAll("form[data-sent]").forEach(function (f) { delete f.dataset.sent; f.removeAttribute("aria-busy"); });
     });
     // A message shown once belongs to the action just taken, not to the address: refreshing or sharing the
