@@ -335,7 +335,7 @@ def test_the_eligibility_date_is_set_shown_and_acted_on_from_the_opening_pages(c
                                              "eligibility_date": "2026-07-01"}).text
     assert "01-07-2026" in made and "the eligibility date set for this opening" in made
     assert client.post("/hr/openings", data={"school_id": "SCH-013", "designation": "ASSISTANT_PROFESSOR", "discipline_group": "GENERAL",
-                                             "eligibility_date": "July"}).status_code == 422
+                                             "eligibility_date": "July"}).history[0].status_code == 303
 
     app_id, opening_id = _assessed_on_server(engine, tmp_path)
     assert "Assess 1 application(s) again" not in client.get(f"/hr/openings/{opening_id}").text

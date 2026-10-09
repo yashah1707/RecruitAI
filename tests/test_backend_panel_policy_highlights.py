@@ -142,7 +142,7 @@ def test_the_forgotten_password_pages_answer_alike_for_any_address_and_mail_only
     assert "The two passwords are not the same." in web.post(link, data={"new": OTHER_PASSWORD, "again": "something-else-9"}).text
     done = web.post(link, data={"new": OTHER_PASSWORD, "again": OTHER_PASSWORD})
     assert "Your password is changed. Sign in with the new one." in done.text
-    assert web.post("/login", data={"email": hr.email, "password": PASSWORD}).status_code == 401
+    assert web.post("/login", data={"email": hr.email, "password": PASSWORD}).history[0].status_code == 303
     _sign_in(web, hr, OTHER_PASSWORD)
     web.cookies.clear()
     used = web.get(link)

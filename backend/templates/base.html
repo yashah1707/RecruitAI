@@ -4,7 +4,8 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>{% block title %}RecruitAI{% endblock %}</title>
-  {% if reading %}<meta http-equiv="refresh" content="5">{% endif %}
+  {% if reading %}<noscript><meta http-equiv="refresh" content="5"></noscript>{% endif %}
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='6' fill='%231f4e8c'/%3E%3Ctext x='16' y='23' font-family='system-ui,sans-serif' font-size='19' font-weight='700' text-anchor='middle' fill='%23fff'%3ER%3C/text%3E%3C/svg%3E">
   <link rel="stylesheet" href="/static/app.css">
 </head>
 <body>
@@ -25,6 +26,32 @@
     {% if msg %}<p class="notice" role="status">{{ msg }}</p>{% endif %}
     {% block content %}{% endblock %}
   </main>
+  <script>
+    // A form is sent once. A second click while the first is on its way does nothing.
+    document.addEventListener("submit", function (e) {
+      var form = e.target;
+      if (form.dataset.sent) { e.preventDefault(); return; }
+      form.dataset.sent = "1";
+      form.setAttribute("aria-busy", "true");
+    });
+    window.addEventListener("pageshow", function () {
+      document.querySelectorAll("form[data-sent]").forEach(function (f) { delete f.dataset.sent; f.removeAttribute("aria-busy"); });
+    });
+    // A message shown once belongs to the action just taken, not to the address: refreshing or sharing the
+    // page must not show it again.
+    (function () {
+      var here = new URL(location.href), had = false;
+      ["msg", "sent", "expired", "said"].forEach(function (k) { if (here.searchParams.has(k)) { here.searchParams.delete(k); had = true; } });
+      if (had) { history.replaceState(null, "", here.pathname + here.search + here.hash); }
+    })();
+    {% if reading %}
+    // While resumes are being read the page keeps itself up to date, but never under someone who is typing.
+    setInterval(function () {
+      var at = document.activeElement;
+      if (!at || !/^(INPUT|TEXTAREA|SELECT)$/.test(at.tagName)) { location.reload(); }
+    }, 5000);
+    {% endif %}
+  </script>
   <script>
     // "Show password": one tick per form that has password boxes, added only when scripts run.
     // It changes what is displayed on this screen and nothing else.

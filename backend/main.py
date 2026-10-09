@@ -48,7 +48,8 @@ DESIGNATIONS = ("ASSISTANT_PROFESSOR", "ASSOCIATE_PROFESSOR", "PROFESSOR", "SENI
 CATEGORIES = ("General", "SC", "ST", "OBC-NCL", "EWS", "PwD")
 RESUME_SOURCES = ("WEB_FORM", "EMAIL", "GOOGLE_FORM", "MANUAL_UPLOAD")
 
-app = FastAPI(title="RecruitAI", version="0.1.0")
+# The interactive API pages (/docs, /redoc) and the schema are switched off: they would list the API to anyone, signed in or not.
+app = FastAPI(title="RecruitAI", version="0.1.0", docs_url=None, redoc_url=None, openapi_url=None)
 
 app.mount("/static", StaticFiles(directory=str(Path(__file__).resolve().parent / "static")), name="static")
 app.include_router(web_router)

@@ -164,14 +164,14 @@ def test_applying_on_the_form_sends_it_after_the_page_has_answered_and_hr_can_se
     monkeypatch.setattr(emails, "SmtpTransport", Server)
     opening_id = _create_opening_via_page(client)
     quiet = client.post(f"/apply/{opening_id}", data=_data(email="first@example.org"), files={"resume": ("cv.docx", _docx(), DOCX)})
-    assert quiet.status_code == 201 and "An acknowledgement is being sent" not in quiet.text and sent == []  # no mail server
+    assert quiet.history[0].status_code == 303 and "An acknowledgement is being sent" not in quiet.text and sent == []  # no mail server
     listing = client.get(f"/hr/openings/{opening_id}/emails").text
     assert "Acknowledgement" in listing and "Not yet sent to the candidate" in listing and listing.count('name="draft_id"') == 1
 
     for name, value in (("SMTP_HOST", "mail.example.org"), ("SMTP_FROM", "hr@example.org")):
         monkeypatch.setattr(settings, name, value)
     done = client.post(f"/apply/{opening_id}", data=_data(), files={"resume": ("cv.docx", _docx() + b"2", DOCX)})
-    assert done.status_code == 201 and "An acknowledgement is being sent to the email address you gave." in done.text
+    assert done.history[0].status_code == 303 and "An acknowledgement is being sent to the email address you gave." in done.text
     assert sent == [(ADDRESS, "Application APP-000002 received: Assistant Professor, MIT School of Computing")]
     assert "Sent automatically" in client.get(f"/hr/openings/{opening_id}/emails").text
     page = client.get("/hr/applications/2").text

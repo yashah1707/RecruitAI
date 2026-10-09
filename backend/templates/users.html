@@ -52,14 +52,20 @@
       <td>
         <details><summary>Change</summary>
           <form method="post" action="/admin/users/{{ u.user_id }}/update" class="stack">
+            <input type="hidden" name="do" value="type">
             <label>Kind of account
               <select name="user_type">{% for code, text in USER_TYPES.items() %}<option value="{{ code }}"{% if code == u.user_type %} selected{% endif %}>{{ text }}</option>{% endfor %}</select></label>
-            <button type="submit" name="do" value="type" class="quiet">Change the kind</button>
-            <label>Temporary password <input type="password" name="password" autocomplete="new-password" minlength="{{ min }}">
+            <button type="submit" class="quiet">Change the kind</button>
+          </form>
+          <form method="post" action="/admin/users/{{ u.user_id }}/update" class="stack">
+            <input type="hidden" name="do" value="password">
+            <label>Temporary password <input type="password" name="password" autocomplete="new-password" minlength="{{ min }}" required>
               <span class="hint">At least {{ min }} characters. Tell the person yourself; they must choose their own at the next sign-in.</span></label>
-            <button type="submit" name="do" value="password" class="quiet">Set a temporary password</button>
-            {% if u.is_active %}<button type="submit" name="do" value="close" class="quiet">Close this account</button>
-            {% else %}<button type="submit" name="do" value="open" class="quiet">Open this account again</button>{% endif %}
+            <button type="submit" class="quiet">Set a temporary password</button>
+          </form>
+          <form method="post" action="/admin/users/{{ u.user_id }}/update" class="stack">
+            <input type="hidden" name="do" value="{{ "close" if u.is_active else "open" }}">
+            <button type="submit" class="quiet">{{ "Close this account" if u.is_active else "Open this account again" }}</button>
           </form>
         </details>
       </td>

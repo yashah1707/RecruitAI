@@ -34,7 +34,7 @@
   <ul>
     {% for u in outcomes %}
     <li>{{ u.filename }}:
-      {% if u.application %}added as {{ u.application.reference }}{% else %}<span class="error">not added, {{ u.problem }}</span>{% endif %}
+      {% if u.reference %}added as {{ u.reference }}{% else %}<span class="error">not added, {{ u.problem }}</span>{% endif %}
     </li>
     {% endfor %}
   </ul>

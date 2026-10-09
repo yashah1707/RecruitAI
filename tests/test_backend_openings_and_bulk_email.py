@@ -108,7 +108,7 @@ def test_editing_from_the_pages(client, engine, tmp_path):
     assert "1 assessed application(s) will be set aside" in form and "The school and the post cannot be changed here" in form
     assert f"/hr/openings/{opening_id}/edit" in client.get(f"/hr/openings/{opening_id}").text
     bad = client.post(f"/hr/openings/{opening_id}/edit", data={"discipline_group": "GENERAL", "closing_date": "not-a-date", "title": "Kept"})
-    assert bad.status_code == 422 and "Enter a valid date." in bad.text and 'value="Kept"' in bad.text
+    assert bad.history[0].status_code == 303 and "Enter a valid date." in bad.text and 'value="Kept"' in bad.text
     done = client.post(f"/hr/openings/{opening_id}/edit", data={"discipline_group": "SCIENCE_HUMANITIES", "title": "Physics", "closing_date": "2026-12-31"}).text
     assert "Opening updated. The rule set changed, so 1 assessed application(s) were set aside" in done
     assert "31-12-2026" in done and "Assess 1 read application(s)" in done

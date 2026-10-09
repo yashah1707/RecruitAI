@@ -321,7 +321,7 @@ def test_hr_creates_an_opening_and_an_applicant_applies_through_the_pages(client
         assert needle in form
 
     done = client.post(f"/apply/{opening_id}", data=_data(), files={"resume": ("cv.docx", _docx(), DOCX)})
-    assert done.status_code == 201 and "Application received" in done.text and "APP-000001" in done.text
+    assert done.history[0].status_code == 303 and "Application received" in done.text and "APP-000001" in done.text
 
     home = client.get("/hr/openings").text
     assert "1</strong> application(s) waiting to be read" in home and f"OPN-{opening_id:05d}" in home
@@ -334,7 +334,7 @@ def test_hr_creates_an_opening_and_an_applicant_applies_through_the_pages(client
 def test_form_errors_come_back_on_the_form_with_the_answers_kept(client, engine):
     opening_id = _create_opening_via_page(client)
     r = client.post(f"/apply/{opening_id}", data=_data(email="nope", state=""), files={"resume": ("cv.docx", _docx(), DOCX)})
-    assert r.status_code == 422
+    assert r.history[0].status_code == 303
     assert "Enter a valid email address." in r.text and "Choose your state from the list." in r.text
     assert 'value="Sample Exampleton"' in r.text  # what was typed is not lost
     assert "Nothing has been submitted yet" in r.text
@@ -345,7 +345,7 @@ def test_form_errors_come_back_on_the_form_with_the_answers_kept(client, engine)
 def test_a_submission_without_a_file_is_a_form_error_not_a_crash(client):
     opening_id = _create_opening_via_page(client)
     r = client.post(f"/apply/{opening_id}", data=_data())
-    assert r.status_code == 422 and "Attach your resume as a PDF or DOCX file." in r.text
+    assert r.history[0].status_code == 303 and "Attach your resume as a PDF or DOCX file." in r.text
 
 
 def test_what_an_applicant_types_is_escaped_when_shown_back(client):
@@ -395,12 +395,12 @@ def test_a_closed_opening_disappears_from_the_applicant_list_and_refuses_the_for
     assert "There are no openings accepting applications" in client.get("/apply").text
     assert "no longer accepting applications" in client.get(f"/apply/{opening_id}").text
     r = client.post(f"/apply/{opening_id}", data=_data(), files={"resume": ("cv.docx", _docx(), DOCX)})
-    assert r.status_code == 422
+    assert r.history[0].status_code == 303
 
 
 def test_an_invalid_opening_form_is_shown_again_with_its_errors(client):
     r = client.post("/hr/openings", data={"school_id": "SCH-008", "designation": "", "discipline_group": "", "closing_date": "soon"})
-    assert r.status_code == 422 and "Enter a valid date." in r.text
+    assert r.history[0].status_code == 303 and "Enter a valid date." in r.text
 
 
 def test_unknown_openings_are_404(client):

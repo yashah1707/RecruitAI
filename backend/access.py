@@ -221,6 +221,7 @@ _APPROVE_ROUTES = frozenset({
     "/hr/applications/{application_id}/return", "/hr/applications/{application_id}/email",
     "/hr/applications/{application_id}/reopen-decision", "/hr/openings/{opening_id}/emails",
 })
+_EDIT_PAGES = frozenset({"/hr/openings/{opening_id}/edit"})
 _ACCOUNT_ROUTES_PREFIX = "/admin/"
 _ADMIN_PREFIXES = ("/hr/inbox", "/hr/jobs/", "/hr/policy", "/hr/dashboard")
 _INTERVIEW_PREFIX = "/interview"
@@ -254,7 +255,8 @@ def authorise(session: Session, principal: Principal, method: str, route: str, p
         return
 
     changing = method not in ("GET", "HEAD")
-    needed = APPROVE if changing and route in _APPROVE_ROUTES else (VIEW_EDIT if changing else VIEW)
+    # A page that is only a form for changing something needs the level the change needs.
+    needed = APPROVE if changing and route in _APPROVE_ROUTES else (VIEW_EDIT if changing or route in _EDIT_PAGES else VIEW)
     target = None
     if "application_id" in params:
         target = session.get(Application, _as_int(params["application_id"]))

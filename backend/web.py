@@ -10,7 +10,9 @@ application form under /apply is public.
 from __future__ import annotations
 
 import logging
+import secrets
 import threading
+import time
 from datetime import date, datetime, timezone
 from pathlib import Path
 from urllib.parse import quote, urlparse
@@ -127,6 +129,39 @@ def _parse_date(text: str | None, field: str, errors: dict[str, str]) -> date | 
     except ValueError:
         errors[field] = "Enter a valid date."
         return None
+
+
+# --- a refused form is answered with a redirect ---------------------------------
+#
+# A page drawn as the direct answer to a submitted form cannot be refreshed or gone back to: the browser
+# asks to send the form again ("Confirm Form Resubmission"). So a refused form sends the browser back to
+# the form's own address, and what was typed and what was wrong wait here, on the server, to be read once
+# by that page. Kept in memory for five minutes: nothing is lost if it is, the form is simply empty again.
+
+_CARRY = "recruitai_form"
+_CARRY_SECONDS = 300
+_carried_over: dict[str, tuple[float, dict]] = {}
+
+
+def _back_to(url: str, kind: str, **data) -> RedirectResponse:
+    now = time.monotonic()
+    for old in [k for k, (at, _) in _carried_over.items() if now - at > _CARRY_SECONDS]:
+        _carried_over.pop(old, None)
+    token = secrets.token_urlsafe(16)
+    _carried_over[token] = (now, {"kind": kind, **data})
+    response = RedirectResponse(url, status_code=303)
+    response.set_cookie(_CARRY, token, max_age=_CARRY_SECONDS, httponly=True, samesite="lax", path="/")
+    return response
+
+
+def _carried(request: Request, kind: str) -> dict:
+    """What a refused form left for this page, if anything. Read once; another page's leftovers are not taken."""
+    token = request.cookies.get(_CARRY)
+    at, data = _carried_over.get(token, (0.0, {})) if token else (0.0, {})
+    if data.get("kind") != kind or time.monotonic() - at > _CARRY_SECONDS:
+        return {}
+    _carried_over.pop(token, None)
+    return data
 
 
 def _same_origin(request: Request) -> None:
@@ -255,8 +290,9 @@ def opening_form(request: Request, user: Principal = Depends(current_user), sess
     schools = _schools_for(session, user)
     if not schools:
         raise access.Forbidden("Your account is not granted a whole school to edit, so it cannot create an opening.")
+    refused = _carried(request, "opening_new")
     return templates.TemplateResponse(request, "opening_new.html", {
-        "schools": schools, "errors": {}, "v": {},
+        "schools": schools, "errors": refused.get("errors", {}), "v": refused.get("v", {}),
         "suggested": {s.school_id: intake.suggested_discipline_group(s) for s in schools},
     })
 
@@ -293,22 +329,22 @@ def opening_create(
         except intake.IntakeError as exc:
             errors = exc.errors
     if errors:
-        return templates.TemplateResponse(request, "opening_new.html", {
-            "schools": schools, "errors": errors,
-            "suggested": {s.school_id: intake.suggested_discipline_group(s) for s in schools},
-            "v": {"school_id": school_id, "designation": designation, "discipline_group": discipline_group,
-                  "department_name": department_name, "title": title, "closing_date": closing_date,
-                  "advertisement_ref": advertisement_ref, "advertisement_date": advertisement_date,
-                  "eligibility_date": eligibility_date},
-        }, status_code=422)
+        session.rollback()
+        return _back_to("/hr/openings/new", "opening_new", errors=errors, v={
+            "school_id": school_id, "designation": designation, "discipline_group": discipline_group,
+            "department_name": department_name, "title": title, "closing_date": closing_date,
+            "advertisement_ref": advertisement_ref, "advertisement_date": advertisement_date,
+            "eligibility_date": eligibility_date})
     return RedirectResponse(f"/hr/openings/{opening.opening_id}?msg=" + quote("Opening created."), status_code=303)
 
 
 @router.get("/hr/openings/{opening_id}", response_class=HTMLResponse)
 def opening_detail(request: Request, opening_id: int, msg: str = "", user: Principal = Depends(current_user), session: Session = Depends(get_session)):
     opening = _opening_or_404(session, opening_id)
+    uploaded = _carried(request, f"upload:{opening_id}")
     return templates.TemplateResponse(request, "opening_detail.html", {
-        "o": opening, "rows": _applications(session, opening_id), "msg": msg, "outcomes": None,
+        "o": opening, "rows": _applications(session, opening_id), "msg": msg or uploaded.get("msg", ""),
+        "outcomes": uploaded.get("outcomes"),
         "accepting": intake.is_accepting(opening), "due": jobs.due_count(session),
         "reading": _run_lock.locked(), "counted_on": counting_date(opening, date.today()),
         "letters": emails.waiting_in_words(emails.waiting_for_approval(session).get(opening_id)),
@@ -357,16 +393,13 @@ async def opening_upload(
     opening = _opening_or_404(session, opening_id)
     files = [(f.filename or "", await f.read()) for f in resumes if f.filename]
     outcomes = intake.hr_upload(session, opening, files) if files else []
-    session.flush()
+    session.commit()
     added = len([o for o in outcomes if o.application is not None])
-    return templates.TemplateResponse(request, "opening_detail.html", {
-        "o": opening, "rows": _applications(session, opening_id), "outcomes": outcomes,
-        "msg": f"{added} of {len(outcomes)} file(s) added." if outcomes else "No files were chosen.",
-        "accepting": intake.is_accepting(opening), "due": jobs.due_count(session),
-        "counted_on": counting_date(opening, date.today()), "out_of_date": 0,
-        "letters": emails.waiting_in_words(emails.waiting_for_approval(session).get(opening_id)),
-        **_rights(request, opening),
-    })
+    # Back to the opening's own address, so refreshing the page does not upload the files again.
+    return _back_to(f"/hr/openings/{opening_id}", f"upload:{opening_id}",
+                    msg=f"{added} of {len(outcomes)} file(s) added." if outcomes else "No files were chosen.",
+                    outcomes=[{"filename": o.filename, "reference": o.application.reference if o.application else None,
+                               "problem": o.problem} for o in outcomes])
 
 
 # One reading run at a time, and what the last one did. Reading can take a
@@ -510,7 +543,9 @@ def _review_page(request: Request, session: Session, a: Application, *, msg: str
 
 @router.get("/hr/applications/{application_id}", response_class=HTMLResponse)
 def review_form(request: Request, application_id: int, msg: str = "", user: Principal = Depends(current_user), session: Session = Depends(get_session)):
-    return _review_page(request, session, _application_or_404(session, application_id), msg=msg)
+    refused = _carried(request, f"review:{application_id}")
+    return _review_page(request, session, _application_or_404(session, application_id), msg=msg or refused.get("msg", ""),
+                        errors=refused.get("errors"), answers=refused.get("answers"), left_empty=refused.get("left_empty"))
 
 
 @router.post("/hr/applications/{application_id}/review", response_class=HTMLResponse)
@@ -523,9 +558,8 @@ async def review_save(request: Request, application_id: int, user: Principal = D
         settled = gate1.save_review(session, a, answers, left_empty, actor=user.actor)
     except gate1.ReviewError as exc:
         session.rollback()
-        a = _application_or_404(session, application_id)
-        return _review_page(request, session, a, errors=exc.errors, answers=answers, left_empty=left_empty,
-                            msg=exc.errors.get("", ""), status_code=422)
+        return _back_to(f"/hr/applications/{application_id}", f"review:{application_id}", errors=exc.errors, answers=answers,
+                        left_empty=left_empty, msg=exc.errors.get("", "") or "Not saved. Correct the fields marked below.")
     text = f"Saved {len(settled)} field(s). " + (
         "The application is ready for assessment." if a.status == states.EXTRACTED
         else "The possible duplicate still needs a decision."
@@ -766,7 +800,8 @@ def inbox_set_aside(inbox_id: int, user: Principal = Depends(current_user), sess
 @router.get("/hr/openings/{opening_id}/edit", response_class=HTMLResponse)
 def opening_edit_form(request: Request, opening_id: int, user: Principal = Depends(current_user), session: Session = Depends(get_session)):
     o = _opening_or_404(session, opening_id)
-    return _opening_edit_page(request, session, o, {}, {
+    refused = _carried(request, f"opening_edit:{opening_id}")
+    return _opening_edit_page(request, session, o, refused.get("errors", {}), refused.get("v") or {
         "discipline_group": o.discipline_group, "department_name": o.department.name if o.department else "",
         "title": o.title or "", "closing_date": o.closing_date.isoformat() if o.closing_date else "",
         "eligibility_date": o.eligibility_date.isoformat() if o.eligibility_date else "",
@@ -801,10 +836,9 @@ def opening_edit(
             session.rollback()
             o, errors = _opening_or_404(session, opening_id), exc.errors
     if errors:
-        return _opening_edit_page(request, session, o, errors, {
+        return _back_to(f"/hr/openings/{opening_id}/edit", f"opening_edit:{opening_id}", errors=errors, v={
             "discipline_group": discipline_group, "department_name": department_name, "title": title, "closing_date": closing_date,
-            "eligibility_date": eligibility_date,
-        }, status_code=422)
+            "eligibility_date": eligibility_date})
     text = "Opening updated."
     if counts["reassess"]:
         what = "rule set" if discipline_group != rules_before else "date eligibility is counted on"
@@ -934,12 +968,21 @@ def _with_cookie(response, request: Request, token: str):
     return response
 
 
+# What the sign-in page may say on arrival. A code in the address chooses one; the address cannot supply words of its own,
+# since this is the page where a made-up message ("your password has expired, call ...") would do most harm.
+_SIGN_IN_MESSAGES = {"out": "You are signed out.", "changed": "Your password is changed. Sign in with the new one."}
+
+
 @router.get("/login", response_class=HTMLResponse)
-def login_form(request: Request, next: str = "/", msg: str = "", session: Session = Depends(get_session)):
+def login_form(request: Request, next: str = "/", said: str = "", expired: str = "", session: Session = Depends(get_session)):
     if not access.any_account(session):
         return RedirectResponse("/setup", status_code=303)
-    return templates.TemplateResponse(request, "login.html", {"next": _safe_next(next), "msg": msg, "email": "", "error": "",
-                                                              "can_reset": emails.mail_is_configured()})
+    if access.user_for_token(session, request.cookies.get(access.COOKIE)) is not None:
+        return RedirectResponse(_safe_next(next), status_code=303)  # already signed in: there is nothing to do here
+    refused = _carried(request, "login")
+    return templates.TemplateResponse(request, "login.html", {
+        "next": _safe_next(next), "msg": _SIGN_IN_MESSAGES.get(said, ""), "email": refused.get("email", ""), "error": refused.get("error", ""),
+        "expired": bool(expired), "can_reset": emails.mail_is_configured()})
 
 
 @router.post("/login", response_class=HTMLResponse)
@@ -950,8 +993,8 @@ def login(request: Request, email: str = Form(""), password: str = Form(""), nex
         token = access.sign_in(session, email, password)
     except access.AccessError as exc:
         session.commit()  # the count of wrong passwords is kept
-        return templates.TemplateResponse(request, "login.html", {
-            "next": _safe_next(next), "email": email, "error": str(exc), "can_reset": emails.mail_is_configured()}, status_code=401)
+        target = _safe_next(next)
+        return _back_to("/login" + ("?next=" + quote(target, safe="") if target != "/" else ""), "login", error=str(exc), email=email[:254])
     session.commit()
     return _with_cookie(RedirectResponse(_safe_next(next), status_code=303), request, token)
 
@@ -961,7 +1004,7 @@ def logout(request: Request, session: Session = Depends(get_session)):
     _same_origin(request)
     access.sign_out(session, request.cookies.get(access.COOKIE))
     session.commit()
-    response = RedirectResponse("/login?msg=" + quote("You are signed out."), status_code=303)
+    response = RedirectResponse("/login?said=out", status_code=303)
     response.delete_cookie(access.COOKIE, path="/")
     return response
 
@@ -970,7 +1013,9 @@ def logout(request: Request, session: Session = Depends(get_session)):
 def setup_form(request: Request, session: Session = Depends(get_session)):
     if access.any_account(session):
         return RedirectResponse("/login", status_code=303)
-    return templates.TemplateResponse(request, "setup.html", {"name": "", "email": "", "error": "", "min": access.MIN_PASSWORD})
+    refused = _carried(request, "setup")
+    return templates.TemplateResponse(request, "setup.html", {
+        "name": refused.get("name", ""), "email": refused.get("email", ""), "error": refused.get("error", ""), "min": access.MIN_PASSWORD})
 
 
 @router.post("/setup", response_class=HTMLResponse)
@@ -987,8 +1032,7 @@ def setup(request: Request, name: str = Form(""), email: str = Form(""), passwor
         session.rollback()
         if access.any_account(session):
             return RedirectResponse("/login", status_code=303)
-        return templates.TemplateResponse(request, "setup.html", {
-            "name": name, "email": email, "error": str(exc), "min": access.MIN_PASSWORD}, status_code=422)
+        return _back_to("/setup", "setup", error=str(exc), name=name[:200], email=email[:254])
     session.commit()
     return _with_cookie(RedirectResponse("/hr/openings?msg=" + quote("Your administrator account is created. Add the other accounts under Accounts."),
                                          status_code=303), request, token)
@@ -998,7 +1042,8 @@ def setup(request: Request, name: str = Form(""), email: str = Form(""), passwor
 def password_form(request: Request, user: Principal = Depends(current_user), session: Session = Depends(get_session)):
     account = session.get(User, user.user_id) if user.user_id else None
     return templates.TemplateResponse(request, "password.html", {
-        "error": "", "min": access.MIN_PASSWORD, "forced": bool(account and account.must_change_password)})
+        "error": _carried(request, "password").get("error", ""), "min": access.MIN_PASSWORD,
+        "forced": bool(account and account.must_change_password)})
 
 
 @router.post("/account/password", response_class=HTMLResponse)
@@ -1012,8 +1057,7 @@ def password_change(request: Request, current: str = Form(""), new: str = Form("
             raise access.AccessError("The two new passwords are not the same.")
         access.change_own_password(session, account, current, new, keep_token=request.cookies.get(access.COOKIE))
     except access.AccessError as exc:
-        return templates.TemplateResponse(request, "password.html", {
-            "error": str(exc), "min": access.MIN_PASSWORD, "forced": bool(account and account.must_change_password)}, status_code=422)
+        return _back_to("/account/password", "password", error=str(exc))
     session.commit()
     home = "/" if user.user_type != "INTERVIEWER" else "/interview"
     return RedirectResponse(home + "?msg=" + quote("Your password is changed."), status_code=303)
@@ -1098,8 +1142,9 @@ _RESET_SENT = ("If there is an account with that address, a link to choose a new
 
 
 @router.get("/forgot", response_class=HTMLResponse)
-def forgot_form(request: Request):
-    return templates.TemplateResponse(request, "forgot.html", {"available": emails.mail_is_configured(), "sent": ""})
+def forgot_form(request: Request, sent: str = ""):
+    return templates.TemplateResponse(request, "forgot.html", {
+        "available": emails.mail_is_configured(), "sent": _RESET_SENT if sent and emails.mail_is_configured() else ""})
 
 
 @router.post("/forgot", response_class=HTMLResponse)
@@ -1107,7 +1152,7 @@ def forgot(request: Request, email: str = Form(""), session: Session = Depends(g
     """Email a reset link to the account's own address. The answer is the same whether or not there is such an account."""
     _same_origin(request)
     if not emails.mail_is_configured():
-        return templates.TemplateResponse(request, "forgot.html", {"available": False, "sent": ""})
+        return RedirectResponse("/forgot", status_code=303)
     made = access.start_password_reset(session, email)
     session.commit()
     if made is not None:
@@ -1117,14 +1162,15 @@ def forgot(request: Request, email: str = Form(""), session: Session = Depends(g
             f"Dear {account.name},\n\nA new password was asked for on your RecruitAI account. To choose one, open this link "
             f"within 30 minutes:\n\n{link}\n\nIt works once. If you did not ask for this, ignore this message: your password "
             f"has not been changed.\n\nHuman Resources\n{settings.INSTITUTION_NAME}\n"))
-    return templates.TemplateResponse(request, "forgot.html", {"available": True, "sent": _RESET_SENT})
+    return RedirectResponse("/forgot?sent=1", status_code=303)
 
 
 @router.get("/reset/{token}", response_class=HTMLResponse)
 def reset_form(request: Request, token: str, session: Session = Depends(get_session)):
     live = access.reset_is_live(session, token)
-    return templates.TemplateResponse(request, "reset.html", {"live": live, "token": token, "error": "", "min": access.MIN_PASSWORD},
-                                      status_code=200 if live else 410)
+    return templates.TemplateResponse(request, "reset.html", {
+        "live": live, "token": token, "error": _carried(request, "reset").get("error", ""), "min": access.MIN_PASSWORD},
+        status_code=200 if live else 410)
 
 
 @router.post("/reset/{token}", response_class=HTMLResponse)
@@ -1136,11 +1182,9 @@ def reset(request: Request, token: str, new: str = Form(""), again: str = Form("
         access.finish_password_reset(session, token, new)
     except access.AccessError as exc:
         session.rollback()
-        live = access.reset_is_live(session, token)
-        return templates.TemplateResponse(request, "reset.html", {"live": live, "token": token, "error": str(exc), "min": access.MIN_PASSWORD},
-                                          status_code=422 if live else 410)
+        return _back_to(f"/reset/{token}", "reset", error=str(exc))
     session.commit()
-    return RedirectResponse("/login?msg=" + quote("Your password is changed. Sign in with the new one."), status_code=303)
+    return RedirectResponse("/login?said=changed", status_code=303)
 
 
 # --- the interview panel's view (Section 17.5) -------------------------------------
@@ -1320,16 +1364,63 @@ def dashboard_page(request: Request, msg: str = "", user: Principal = Depends(cu
 # --- what a refused request is answered with -----------------------------------
 
 
+# The JSON API answers in JSON; everything else is a page for a person.
+_API_PREFIXES = ("/applications", "/schools", "/rules", "/health")
+_PROBLEMS = {
+    404: ("Page not found", "This page does not exist, or it is not one your account can see."),
+    405: ("This address cannot be opened directly", "It is where a form on another page is sent. Go back and use the button there."),
+    422: ("That could not be read", "Something in the address or the form was not what this page expects. Nothing was changed."),
+    500: ("Something went wrong", "The fault is on our side, not in what you entered. Nothing more was changed. Try again; if it happens again, tell the administrator."),
+}
+
+
 def install(app) -> None:
-    """Register how the access refusals are answered."""
+    """Register how refusals and errors are answered, and the headers every answer carries."""
+    from fastapi.exceptions import RequestValidationError
     from fastapi.responses import JSONResponse
+    from starlette.exceptions import HTTPException as StarletteHTTPException
+
+    def _problem(request: Request, status: int, detail=None):
+        if request.url.path.startswith(_API_PREFIXES):
+            return JSONResponse({"detail": detail if detail is not None else _PROBLEMS.get(status, ("",))[0]}, status_code=status)
+        title, text = _PROBLEMS.get(status, _PROBLEMS[500 if status >= 500 else 422])
+        return templates.TemplateResponse(request, "error.html", {"title": title, "text": text}, status_code=status)
+
+    @app.middleware("http")
+    async def _headers(request: Request, call_next):
+        response = await call_next(request)
+        if not request.url.path.startswith("/static/"):
+            # Pages hold personal data. The browser must not keep them: after signing out, Back asks the server
+            # again and gets the sign-in page, where a kept copy would show the candidate's record to the next person.
+            response.headers.setdefault("Cache-Control", "no-store")
+        response.headers.setdefault("X-Frame-Options", "DENY")  # never shown inside another site's page
+        response.headers.setdefault("X-Content-Type-Options", "nosniff")
+        response.headers.setdefault("Referrer-Policy", "same-origin")  # addresses here are not told to other sites
+        return response
+
+    @app.exception_handler(StarletteHTTPException)
+    def _http_problem(request: Request, exc):
+        return _problem(request, exc.status_code, exc.detail)
+
+    @app.exception_handler(RequestValidationError)
+    def _unreadable(request: Request, exc):
+        return _problem(request, 422, exc.errors() if request.url.path.startswith(_API_PREFIXES) else None)
+
+    @app.exception_handler(Exception)
+    def _fault(request: Request, exc):
+        logger.exception("unhandled_error path=%s", request.url.path)
+        return _problem(request, 500)
 
     @app.exception_handler(access.NotSignedIn)
     def _to_sign_in(request: Request, exc):
         if request.method == "GET":
             target = request.url.path + ("?" + request.url.query if request.url.query else "")
             return RedirectResponse("/login?next=" + quote(target, safe=""), status_code=303)
-        return RedirectResponse("/login", status_code=303)
+        # A form sent after the session ended. Nothing was done with it. After signing in the person is taken
+        # back to the page the form was on, which is the most that can be given back: what was typed is gone.
+        came_from = urlparse(request.headers.get("referer", ""))
+        back = came_from.path + ("?" + came_from.query if came_from.query else "") if came_from.netloc == request.headers.get("host") else "/"
+        return RedirectResponse("/login?expired=1&next=" + quote(_safe_next(back), safe=""), status_code=303)
 
     @app.exception_handler(access.NotSetUp)
     def _to_setup(request: Request, exc):
@@ -1350,7 +1441,7 @@ def install(app) -> None:
     @app.exception_handler(access.OutOfScope)
     def _not_found(request: Request, exc):
         # The same answer as for something that does not exist.
-        return JSONResponse({"detail": "not found"}, status_code=404)
+        return _problem(request, 404, "not found")
 
 
 # --- applicants --------------------------------------------------------------
@@ -1376,8 +1467,9 @@ def apply_list(request: Request, session: Session = Depends(get_session)):
 @router.get("/apply/{opening_id}", response_class=HTMLResponse)
 def apply_form(request: Request, opening_id: int, session: Session = Depends(get_session)):
     opening = _opening_or_404(session, opening_id)
+    refused = _carried(request, f"apply:{opening_id}")
     return templates.TemplateResponse(request, "apply_form.html", {
-        "o": opening, "f": intake.ApplicantForm(), "accepting": intake.is_accepting(opening),
+        "o": opening, "f": refused.get("form") or intake.ApplicantForm(), "accepting": intake.is_accepting(opening),
         "states": intake.STATES, "categories": intake.CATEGORIES,
     })
 
@@ -1413,10 +1505,21 @@ async def apply_submit(
         if ack is not None:
             background.add_task(_acknowledge_in_background, factory, ack.draft_id)
     except intake.IntakeError:
-        return templates.TemplateResponse(request, "apply_form.html", {
-            "o": opening, "f": form, "accepting": intake.is_accepting(opening),
-            "states": intake.STATES, "categories": intake.CATEGORIES,
-        }, status_code=422)
+        session.rollback()
+        return _back_to(f"/apply/{opening_id}", f"apply:{opening_id}", form=form)
+    # To a page of its own, so that refreshing it does not send the application a second time. The page is found
+    # by part of the resume file's fingerprint, which no one else can guess; it shows the reference and no more.
+    return RedirectResponse(f"/apply/{opening_id}/received/{application.resume_sha256[:24]}", status_code=303)
+
+
+@router.get("/apply/{opening_id}/received/{key}", response_class=HTMLResponse)
+def apply_received(request: Request, opening_id: int, key: str, session: Session = Depends(get_session)):
+    opening = _opening_or_404(session, opening_id)
+    application = session.scalars(select(Application).where(
+        Application.opening_id == opening_id, Application.resume_sha256.startswith(key, autoescape=True))
+        .order_by(Application.application_id.desc())).first() if len(key) == 24 else None
+    if application is None:
+        raise HTTPException(status_code=404, detail="application not found")
+    ack = emails.active_draft(session, application.application_id, emails.ACKNOWLEDGEMENT)
     return templates.TemplateResponse(request, "apply_done.html", {
-        "o": opening, "a": application, "acknowledged": ack is not None and emails.mail_is_configured(),
-    }, status_code=201)
+        "o": opening, "a": application, "acknowledged": ack is not None and emails.mail_is_configured()})

@@ -547,7 +547,7 @@ def test_saving_from_the_page_finishes_the_check_and_shows_the_changes(client, e
     app_id = _uploaded(client, engine)
     client.post(f"/hr/applications/{app_id}/reopen", data={"fields": ["category", "state", "differently_abled", "study_leave_taken"]})
     bad = client.post(f"/hr/applications/{app_id}/review", data={"f_category": "SC", "f_state": "Goa"})
-    assert bad.status_code == 422 and "Enter a value, or tick the box" in bad.text
+    assert bad.history[0].status_code == 303 and "Enter a value, or tick the box" in bad.text
     assert '<option value="SC" selected>' in bad.text  # what was typed is kept
 
     ok = client.post(
@@ -560,7 +560,7 @@ def test_saving_from_the_page_finishes_the_check_and_shows_the_changes(client, e
     assert "Fields to check" not in page.text
     assert client.get(f"/applications/{app_id}").json()["status"] == "EXTRACTED"
     again = client.post(f"/hr/applications/{app_id}/review", data={"f_category": "ST"})
-    assert again.status_code == 422  # a finished check cannot be reopened by posting to it
+    assert again.history[0].status_code == 303  # a finished check cannot be reopened by posting to it
 
 
 def test_the_resume_is_served_under_its_reference_not_its_filename(client, engine):

@@ -188,9 +188,9 @@ def test_with_no_account_every_hr_page_leads_to_setup_and_setup_works_once(web, 
         assert (user.user_type, user.must_change_password) == ("UNIVERSITY_ADMIN", False) and PASSWORD not in user.password_hash
     # Once there is an account, setup is closed to everyone.
     web.cookies.clear()
-    assert web.get("/setup", follow_redirects=False).headers["location"] == "/login"
+    assert web.get("/setup", follow_redirects=False).headers["location"].startswith("/login")
     again = web.post("/setup", data={**form, "email": "intruder@example.org"}, follow_redirects=False)
-    assert again.headers["location"] == "/login"
+    assert again.headers["location"].startswith("/login")
     with Session(engine) as s:
         assert len(s.scalars(select(User)).all()) == 1
 
@@ -200,9 +200,9 @@ def test_signing_in_and_out_through_the_pages(web, engine):
         admin = _account(s, "Asha Admin", "UNIVERSITY_ADMIN")
     asked = web.get("/hr/inbox?msg=hello", follow_redirects=False)
     assert asked.status_code == 303 and asked.headers["location"] == "/login?next=%2Fhr%2Finbox%3Fmsg%3Dhello"
-    assert web.post("/hr/queue/run", follow_redirects=False).headers["location"] == "/login"  # nothing is done for no one
+    assert web.post("/hr/queue/run", follow_redirects=False).headers["location"].startswith("/login")  # nothing is done for no one
     wrong = web.post("/login", data={"email": admin.email, "password": "wrong-password-0"})
-    assert wrong.status_code == 401 and "The email address or the password is not right." in wrong.text and "Sign out" not in wrong.text
+    assert wrong.history[0].status_code == 303 and "The email address or the password is not right." in wrong.text and "Sign out" not in wrong.text
     r = web.post("/login", data={"email": admin.email, "password": PASSWORD, "next": "/hr/inbox"}, follow_redirects=False)
     assert r.headers["location"] == "/hr/inbox"
     for elsewhere in ("https://example.org/", "//example.org", "inbox"):  # never sent off to another site after signing in
@@ -227,7 +227,7 @@ def test_the_application_form_and_the_health_check_need_no_account(web, engine):
     assert web.get("/health").json()["status"] == "ok" and web.get("/static/app.css").status_code == 200
     # The direct API to candidates' records is not public.
     assert web.get("/applications/1", follow_redirects=False).status_code == 303
-    assert web.post("/applications", data={}, follow_redirects=False).headers["location"] == "/login"
+    assert web.post("/applications", data={}, follow_redirects=False).headers["location"].startswith("/login")
 
 
 def test_a_form_posted_from_another_site_is_refused(web, engine):
@@ -247,7 +247,7 @@ def test_a_temporary_password_has_to_be_changed_before_anything_else(web, engine
     page = web.get("/").text
     assert "Your password was set by an administrator" in page and 'href="/"' not in page.split("<main>")[1]
     bad = web.post("/account/password", data={"current": PASSWORD, "new": OTHER_PASSWORD, "again": "not-the-same-thing"})
-    assert bad.status_code == 422 and "The two new passwords are not the same." in bad.text
+    assert bad.history[0].status_code == 303 and "The two new passwords are not the same." in bad.text
     done = web.post("/account/password", data={"current": PASSWORD, "new": OTHER_PASSWORD, "again": OTHER_PASSWORD})
     assert "Your password is changed." in done.text and "Openings" in done.text
     _sign_in(web, hr, OTHER_PASSWORD)
@@ -342,7 +342,7 @@ def test_a_department_account_sees_its_department_and_a_school_account_may_open_
     assert "MIT School of Computing" in form and form.count("<option value=\"SCH-") == 1
     post = {"designation": "ASSISTANT_PROFESSOR", "discipline_group": "GENERAL"}
     refused = web.post("/hr/openings", data={**post, "school_id": SCIENCE})
-    assert refused.status_code == 422 and "Choose a school from the list." in refused.text
+    assert refused.history[0].status_code == 303 and "Choose a school from the list." in refused.text
     assert "Opening created." in web.post("/hr/openings", data={**post, "school_id": COMPUTING}).text
 
 
@@ -399,7 +399,7 @@ def test_closing_an_account_signs_it_out_at_once(web, engine):
         access.set_active(s, s.get(User, hr_id), False)
         s.commit()
     assert web.get("/", follow_redirects=False).headers["location"].startswith("/login")
-    assert web.post("/login", data={"email": hr.email, "password": PASSWORD}).status_code == 401
+    assert web.post("/login", data={"email": hr.email, "password": PASSWORD}).history[0].status_code == 303
 
 
 # --- reopening a decision ----------------------------------------------------
