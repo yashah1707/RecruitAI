@@ -1,0 +1,55 @@
+{% extends "base.html" %}
+{% block title %}Dashboard · RecruitAI{% endblock %}
+{% block area %}HR{% endblock %}
+{% block nav %}<a href="/hr/openings">Openings</a> <a href="/hr/inbox">Inbox{% if inbox_waiting %} ({{ inbox_waiting }}){% endif %}</a> <a href="/hr/policy">University criteria</a> <a href="/interview">Panel view</a>{% endblock %}
+{% macro cells(r) %}<td>{{ r.applications }}</td><td>{{ r.to_read }}</td><td>{{ r.to_check }}</td><td>{{ r.to_assess }}</td><td>{{ r.to_decide }}</td>
+  <td>{{ r.shortlisted }}</td><td>{{ r.not_eligible }}</td><td>{{ r.unreadable }}</td><td>{{ r.withdrawn }}</td>{% endmacro %}
+{% macro heads() %}<th>Applications</th><th>To read</th><th>To check</th><th>To assess</th><th>To decide</th><th>Short-listed</th><th>Not eligible</th><th>Unreadable</th><th>Withdrawn</th>{% endmacro %}
+{% block content %}
+<h1>University dashboard</h1>
+{% if due or letters or inbox_waiting %}
+<p class="notice" role="status"><strong>Waiting for someone:</strong>
+  {% if due %}<a href="/hr/openings">{{ due }} application(s) to be read</a>{{ "; " if letters or inbox_waiting }}{% endif %}
+  {% if letters %}<a href="/hr/openings">{{ letters }} email(s) to approve</a>{{ "; " if inbox_waiting }}{% endif %}
+  {% if inbox_waiting %}<a href="/hr/inbox">{{ inbox_waiting }} message(s) in the inbox</a>{% endif %}.</p>
+{% endif %}
+<p class="hint">As on {{ today|ddmmyyyy }}. Counts only: no candidate is named and nothing is ranked. "Short-listed" and "Not eligible"
+  are HR's recorded decisions, not the engine's findings. Use your browser's Print to keep a copy.</p>
+
+<h2>By school</h2>
+{% if d.schools %}
+<table>
+  <thead><tr><th>School</th><th>Openings</th>{{ heads() }}</tr></thead>
+  <tbody>
+    {% for r in d.schools %}<tr><td>{{ r.school.name }}</td><td>{{ r.openings }}</td>{{ cells(r) }}</tr>{% endfor %}
+    <tr><td><strong>All schools</strong></td><td>{{ d.openings|length }}</td>{{ cells(d.totals) }}</tr>
+  </tbody>
+</table>
+{% else %}<p>No openings yet.</p>{% endif %}
+
+<h2>By opening and advertisement</h2>
+{% if d.openings %}
+<table>
+  <thead><tr><th>Opening</th><th>Post</th><th>School</th><th>Advertisement</th><th>Closes</th>{{ heads() }}</tr></thead>
+  <tbody>
+    {% for r in d.openings %}
+    <tr>
+      <td class="nowrap"><a href="/hr/openings/{{ r.o.opening_id }}">{{ r.o.reference }}</a></td><td>{{ DESIGNATIONS[r.o.designation] }}</td>
+      <td>{{ r.o.school.name }}</td>
+      <td>{% if r.o.drive %}{{ r.o.drive.advertisement_ref }}<br><span class="hint">{{ r.o.drive.advertisement_date|ddmmyyyy }}</span>{% else %}<span class="hint">None recorded</span>{% endif %}</td>
+      <td class="nowrap">{{ r.o.closing_date|ddmmyyyy or "Open-ended" }}</td>{{ cells(r) }}
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+<p class="hint">Give an opening its advertisement reference when creating it, and openings of one advertisement can be compared here.</p>
+{% endif %}
+
+<h2>By channel</h2>
+{% if d.channels %}
+<table>
+  <thead><tr><th>How the application arrived</th><th>Applications</th></tr></thead>
+  <tbody>{% for code, n in d.channels|dictsort %}<tr><td>{{ {"WEB_FORM": "Application form", "MANUAL_UPLOAD": "HR upload", "EMAIL": "Email", "GOOGLE_FORM": "Google Form"}.get(code, code) }}</td><td>{{ n }}</td></tr>{% endfor %}</tbody>
+</table>
+{% else %}<p>No applications yet.</p>{% endif %}
+{% endblock %}

@@ -607,6 +607,7 @@ class HrDecision(Base):
     OVERRIDDEN  HR's own decision in place of it, with the justification
     DECIDED     HR's decision where the engine could not settle the matter
     RETURNED    sent back for correction or re-assessment; no final decision
+    REOPENED    a decision not yet sent to the candidate taken back, with the reason
     """
 
     __tablename__ = "hr_decisions"
@@ -706,3 +707,130 @@ class EvaluationResult(Base):
     # person must settle; the score bounds. Candidate data, so it lives here
     # and never in a log or in `state_transitions.note`.
     details: Mapped[dict | None] = mapped_column(JSON)
+
+
+# --- accounts (Section 17.6) --------------------------------------------------
+
+
+class User(Base):
+    """A login account. What it may see and do is in `user_type` and its grants (backend.access)."""
+
+    __tablename__ = "users"
+
+    user_id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    name: Mapped[str] = mapped_column(String(200))
+    email: Mapped[str] = mapped_column(String(254), unique=True, index=True)
+    password_hash: Mapped[str] = mapped_column(String(300))  # scrypt; the password itself is never stored
+    user_type: Mapped[str] = mapped_column(String(30))
+    is_active: Mapped[bool] = mapped_column(Boolean, default=True)
+    # Set when someone else chose the password: the person must choose their own before anything else.
+    must_change_password: Mapped[bool] = mapped_column(Boolean, default=False)
+    failed_logins: Mapped[int] = mapped_column(Integer, default=0)
+    locked_until: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
+    last_login_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+    grants: Mapped[list["UserSchoolAccess"]] = relationship(cascade="all, delete-orphan", order_by="UserSchoolAccess.id")
+
+
+class UserSchoolAccess(Base):
+    """One grant: a level over a school, or over one department of it when `department_id` is set."""
+
+    __tablename__ = "user_school_access"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.user_id"), index=True)
+    school_id: Mapped[str] = mapped_column(ForeignKey("schools.school_id"))
+    department_id: Mapped[int | None] = mapped_column(ForeignKey("departments.department_id"))
+    access_level: Mapped[str] = mapped_column(String(10))  # VIEW / VIEW_EDIT / APPROVE
+
+    school: Mapped[School] = relationship()
+    department: Mapped[Department | None] = relationship()
+
+
+class UserSession(Base):
+    """A signed-in browser. Holds the hash of the cookie's token, never the token."""
+
+    __tablename__ = "user_sessions"
+
+    session_id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    token_hash: Mapped[str] = mapped_column(String(64), unique=True, index=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.user_id"), index=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
+    last_seen_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+
+
+class PasswordReset(Base):
+    """A one-time link emailed to an account's own address so its owner can choose a new password."""
+
+    __tablename__ = "password_resets"
+
+    reset_id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    token_hash: Mapped[str] = mapped_column(String(64), unique=True, index=True)  # the link's token is never stored
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.user_id"), index=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    used_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+
+# --- views, policy and highlights (Sections 17.4, 17.5, 17.7) ------------------
+
+
+class ViewDefinition(Base):
+    """A named view of the same data: what HR sees, what the interview panel sees."""
+
+    __tablename__ = "view_definitions"
+
+    view_id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    view_name: Mapped[str] = mapped_column(String(40), unique=True)  # HR_VIEW / INTERVIEWER_VIEW
+    description: Mapped[str | None] = mapped_column(String(300))
+
+
+class ViewFieldVisibility(Base):
+    """Whether one part of the record is shown in one view. Data, so the university can change it without a release."""
+
+    __tablename__ = "view_field_visibility"
+    __table_args__ = (UniqueConstraint("view_id", "entity_name", "field_name"),)
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    view_id: Mapped[int] = mapped_column(ForeignKey("view_definitions.view_id"), index=True)
+    entity_name: Mapped[str] = mapped_column(String(60))
+    field_name: Mapped[str] = mapped_column(String(60))  # "*" for the whole entity
+    is_visible: Mapped[bool] = mapped_column(Boolean, default=True)
+
+
+class UniversityPolicyRule(Base):
+    """A criterion of the university's own, on top of the statutory minimum (Section 17.7).
+
+    It can only add to what the Regulations require. Its result is shown
+    beside the statutory finding and never changes that finding: a candidate
+    the statutory rules find not eligible stays not eligible whatever is here.
+    """
+
+    __tablename__ = "university_policy_rules"
+
+    policy_id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    school_id: Mapped[str | None] = mapped_column(ForeignKey("schools.school_id"))  # None = every school
+    designation: Mapped[str] = mapped_column(String(40))
+    criterion_name: Mapped[str] = mapped_column(String(40))
+    criterion_value: Mapped[str] = mapped_column(String(40))
+    rule_version_id: Mapped[int | None] = mapped_column(ForeignKey("rule_versions.rule_version_id"))
+    created_by: Mapped[str] = mapped_column(String(80))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
+
+    school: Mapped[School | None] = relationship()
+
+
+class HighlightNorm(Base):
+    """The figures above which a research record is pointed out to HR (Section 17.4). Set by the university, not built in."""
+
+    __tablename__ = "highlight_norms"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    school_id: Mapped[str | None] = mapped_column(ForeignKey("schools.school_id"), unique=True)  # None = every school
+    min_h_index: Mapped[int | None] = mapped_column(Integer)
+    min_citations: Mapped[int | None] = mapped_column(Integer)
+    min_impact_factor: Mapped[float | None] = mapped_column(Float)
+
+    school: Mapped[School | None] = relationship()

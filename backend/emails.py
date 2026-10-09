@@ -78,6 +78,25 @@ def mail_is_configured() -> bool:
     return bool(settings.SMTP_HOST and settings.SMTP_FROM)
 
 
+def send_to_staff(to_address: str, subject: str, body: str, transport: Transport | None = None) -> bool:
+    """A message to a member of staff about their own account (a password reset). Returns whether it went.
+
+    Not a candidate email: it is no part of Gate 3 and has no draft. It is
+    also not redirected by EMAIL_REDIRECT_TO, which exists to keep test mail
+    away from candidates; a reset link must reach its owner's mailbox and no other.
+    """
+    if transport is None:
+        if not mail_is_configured():
+            return False
+        transport = SmtpTransport()
+    try:
+        transport.send(to_address, subject, body)
+    except Exception as exc:
+        logger.warning("staff_email_failed kind=%s", type(exc).__name__)
+        return False
+    return True
+
+
 # --- drafting ----------------------------------------------------------------
 
 

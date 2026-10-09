@@ -1,7 +1,7 @@
 {% extends "base.html" %}
 {% block title %}{{ a.reference }} · RecruitAI{% endblock %}
 {% block area %}HR{% endblock %}
-{% block nav %}<a href="/">Openings</a>{% if o %} <a href="/hr/openings/{{ o.opening_id }}">{{ o.reference }}</a>{% endif %}{% endblock %}
+{% block nav %}<a href="/hr/openings">Openings</a>{% if o %} <a href="/hr/openings/{{ o.opening_id }}">{{ o.reference }}</a>{% endif %}{% endblock %}
 {% block content %}
 <h1>{{ a.reference }}: {{ a.applicant_name or (personal.full_name if personal else None) or "Name not yet known" }}</h1>
 <dl class="facts">
@@ -54,6 +54,19 @@
     </tbody>
   </table>
   {% endfor %}
+  {% if v.policy %}
+  <h3>The university's own criteria, for {{ DESIGNATIONS.get(v.policy[0].post, "") }}</h3>
+  <table>
+    <thead><tr><th>Criterion</th><th>Result</th><th>What was compared</th><th>Set for</th></tr></thead>
+    <tbody>
+      {% for c in v.policy %}
+      <tr><td>{{ c.label }}</td><td class="nowrap">{{ {"PASS": "Met", "FAIL": "Not met", "UNKNOWN": "Open"}[c.result] }}</td><td>{{ c.detail }}</td><td>{{ c.scope }}</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  <p class="hint">In addition to the statutory minimum, and not part of the finding above: a criterion here cannot make eligible
+    a candidate the Regulations find not eligible. It is for you to weigh when you decide.</p>
+  {% endif %}
   {% macro span(b, unit="") %}{% if b.high is none %}at least {{ "%g"|format(b.low) }}{% elif b.low == b.high %}{{ "%g"|format(b.low) }}{% else %}between {{ "%g"|format(b.low) }} and {{ "%g"|format(b.high) }}{% endif %}{{ unit }}{% endmacro %}
   <dl class="facts">
     {% if v.experience_years %}<dt>Experience counted</dt><dd>{{ span(v.experience_years, " years") }}{% if v.experience_kinds %} ({{ v.experience_kinds|map("lower")|join(", ") }}){% endif %}</dd>{% endif %}
@@ -75,12 +88,24 @@
     Recorded {{ decided.decided_at|ddmmyyyy }}.</p>
   {% if decided.justification %}<p>Justification: {{ decided.justification }}</p>{% endif %}
   <p class="hint">Short-listing is for interview only. Selection is made by the Selection Committee.</p>
+  {% if a.status == "HR_APPROVED" and can_approve %}
+  <details>
+    <summary>Decided wrongly? Reopen this decision</summary>
+    <form method="post" action="/hr/applications/{{ a.application_id }}/reopen-decision" class="stack">
+      <span class="hint">Possible because the candidate has not been informed yet. The decision stays on record as reopened, its letter is
+        dropped, and the application is assessed and decided again. Needs an account that may approve.</span>
+      <label>Why it is reopened
+        <textarea name="reason" rows="2" maxlength="1000" required></textarea></label>
+      <button type="submit" class="quiet">Reopen the decision</button>
+    </form>
+  </details>
+  {% endif %}
 </section>
 
 <section class="panel" id="email">
   <h2>Email to the candidate</h2>
   {% if email and email.status == "SENT" %}
-  <p><strong>Sent {{ email.sent_at|ddmmyyyy }}</strong> to {{ email.to_address }}. Approved by {{ "HR" if email.approved_by == "user:hr" else email.approved_by }}.</p>
+  <p><strong>Sent {{ email.sent_at|ddmmyyyy }}</strong> to {{ email.to_address }}. Approved by {{ people.get(email.approved_by, email.approved_by) }}.</p>
   <p><strong>{{ email.subject }}</strong></p>
   <pre class="letter">{{ email.body }}</pre>
   {% elif email %}
@@ -98,6 +123,11 @@
   {% endif %}
   {% if PLACEHOLDER in email.body %}<p class="error">This decision was HR's own, so the reason is yours to write: replace the part marked [HR: ...] before approving.</p>{% endif %}
   {% if email.error %}<p class="error">The last attempt to send it failed ({{ email.error }}).</p>{% endif %}
+  {% if not can_approve %}
+  <p><strong>{{ email.subject }}</strong></p>
+  <pre class="letter">{{ email.body }}</pre>
+  <p class="hint">Your account may read this letter but not change or approve it.</p>
+  {% else %}
   <form method="post" action="/hr/applications/{{ a.application_id }}/email" class="stack">
     <label>To <input type="email" name="to_address" value="{{ email.to_address or "" }}" maxlength="254">
       {% if not email.to_address %}<span class="error">No email address was found on the resume. Type the applicant's address and save before approving.</span>{% endif %}</label>
@@ -112,10 +142,13 @@
     <span class="hint">Rewording uses one request to the language model. The candidate's name is not sent, and the result is kept
       only if it changed no post, clause, reference or figure. You still read and approve it.</span>
   </form>
+  {% endif %}
   {% else %}
   <p>No email is drafted for this decision.</p>
   {% endif %}
 </section>
+{% elif awaiting_hr and not can_approve %}
+<p class="notice">This assessment is waiting for a decision by an account that may approve. Your account may not decide it.</p>
 {% elif awaiting_hr %}
 <section class="panel">
   <h2>Your decision</h2>
@@ -168,14 +201,14 @@
   <p>This resume came without an application form, so these are not on record:
     {% for name in missing_answers %}<strong>{{ field_labels[name] }}</strong>{{ ", " if not loop.last }}{% endfor %}.
     The application can be assessed without them. If one would change the outcome, the assessment will say so.</p>
-  <form method="post" action="/hr/applications/{{ a.application_id }}/reopen" class="inline">
+  {% if can_edit %}<form method="post" action="/hr/applications/{{ a.application_id }}/reopen" class="inline">
     {% for name in missing_answers %}<input type="hidden" name="fields" value="{{ name }}">{% endfor %}
     <button type="submit" class="quiet">Enter them now</button>
-  </form>
+  </form>{% endif %}
 </section>
 {% endif %}
 
-{% if a.status == "EXTRACTED" %}
+{% if a.status == "EXTRACTED" and can_edit %}
 <details class="panel">
   <summary>Something read wrongly? Correct a field before assessment</summary>
   <form method="post" action="/hr/applications/{{ a.application_id }}/reopen" class="stack">
@@ -204,10 +237,10 @@
     <strong>{{ duplicate.name or "a candidate whose name is not yet known" }}</strong> ({{ duplicate.email }}), who has
     {% for d in duplicate.applications %}<a href="/hr/applications/{{ d.application_id }}">{{ d.reference }}</a>{{ ", " if not loop.last }}{% endfor %}.
     Nothing has been joined.</p>
-  <form method="post" action="/hr/applications/{{ a.application_id }}/duplicate" class="inline">
+  {% if can_edit %}<form method="post" action="/hr/applications/{{ a.application_id }}/duplicate" class="inline">
     <button type="submit" name="same" value="yes">Same person: join the records</button>
     <button type="submit" name="same" value="no" class="quiet">Different person: keep apart</button>
-  </form>
+  </form>{% endif %}
 </section>
 {% endif %}
 
@@ -242,7 +275,8 @@
       {% if errors.get(f.name) %}<span class="error" role="alert">{{ errors[f.name] }}</span>{% endif %}
     </div>
     {% endfor %}
-    <button type="submit">Save and finish the check</button>
+    {% if can_edit %}<button type="submit">Save and finish the check</button>
+    {% else %}<p class="hint">Your account may view these fields but not save changes to them.</p>{% endif %}
   </form>
   <script>
     // A field takes a value or the "leave empty" tick, never both. The server refuses both together;
@@ -263,6 +297,26 @@
 {% endif %}
 
 {% if e %}
+<h2 id="highlights">Highlights</h2>
+{% if highlights %}
+<ul>
+  {% for h in highlights %}
+  <li>{{ h.description }}
+    {% if not h.automatic %}<span class="hint">(added by HR)</span>
+    {% if can_edit %}<form method="post" action="/hr/applications/{{ a.application_id }}/highlights/{{ h.highlight_id }}/remove" class="signout"><button type="submit">Remove</button></form>{% endif %}{% endif %}</li>
+  {% endfor %}
+</ul>
+{% else %}
+<p class="hint">None. One is pointed out for a Ph.D. from a premier institute, or a research record above the norms the university has set.</p>
+{% endif %}
+{% if can_edit %}
+<form method="post" action="/hr/applications/{{ a.application_id }}/highlights" class="inline">
+  <label>Add a highlight <input name="description" maxlength="400" size="50" required></label>
+  <button type="submit" class="quiet">Add</button>
+  <span class="hint">Shown to HR and the interview panel. A pointer only: no rule or score reads it.</span>
+</form>
+{% endif %}
+
 <h2>What the reader found</h2>
 <dl class="facts">
   <dt>Highest qualification</dt><dd>{{ e.highest_degree or "Not stated" }}</dd>
@@ -449,9 +503,9 @@
     {% for d in decisions %}
     <tr>
       <td class="nowrap">{{ d.decided_at|ddmmyyyy }}</td>
-      <td>{{ {"APPROVED": "Approved as assessed", "OVERRIDDEN": "Overridden", "DECIDED": "Decided by HR", "RETURNED": "Sent back"}[d.action] }}</td>
+      <td>{{ {"APPROVED": "Approved as assessed", "OVERRIDDEN": "Overridden", "DECIDED": "Decided by HR", "RETURNED": "Sent back", "REOPENED": "Decision reopened"}[d.action] }}</td>
       <td>{% if d.final_outcome == "SHORTLISTED" %}Short-listed, {{ DESIGNATIONS.get(d.final_designation, "") }}{% elif d.final_outcome %}Does not meet the minimum qualifications{% endif %}</td>
-      <td>{{ d.justification or "" }}</td><td>{{ "HR" if d.actor == "user:hr" else d.actor }}</td>
+      <td>{{ d.justification or "" }}</td><td>{{ people.get(d.actor, d.actor) }}</td>
     </tr>
     {% endfor %}
   </tbody>
@@ -467,7 +521,7 @@
     <tr>
       <td class="nowrap">{{ d.edited_at|ddmmyyyy }}</td><td>{{ field_labels.get(d.field, d.field) }}</td>
       <td>{{ ACTION_LABELS.get(d.action, d.action) }}</td><td>{{ {"yes": "Yes", "no": "No"}.get(d.old_value, d.old_value) or "Empty" }}</td><td>{{ {"yes": "Yes", "no": "No"}.get(d.new_value, d.new_value) or "Empty" }}</td>
-      <td>{{ "HR" if d.actor == "user:hr" else d.actor }}</td>
+      <td>{{ people.get(d.actor, d.actor) }}</td>
     </tr>
     {% endfor %}
   </tbody>

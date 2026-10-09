@@ -11,12 +11,36 @@
   <header class="top">
     <a class="brand" href="{% block home %}/{% endblock %}">RecruitAI</a>
     <span class="sub">{% block area %}Faculty recruitment{% endblock %}</span>
-    <nav>{% block nav %}{% endblock %}</nav>
+    {% set me = request.state.user|default(None) %}
+    <nav>{% block nav %}{% endblock %}
+      {% if me %}
+      <span class="who">{{ me.name }}</span>
+      {% if me.manages_accounts %}<a href="/admin/users">Accounts</a>{% endif %}
+      {% if me.user_id %}<a href="/account/password">Password</a>
+      <form method="post" action="/logout" class="signout"><button type="submit">Sign out</button></form>{% endif %}
+      {% endif %}
+    </nav>
   </header>
   <main>
     {% if msg %}<p class="notice" role="status">{{ msg }}</p>{% endif %}
     {% block content %}{% endblock %}
   </main>
+  <script>
+    // "Show password": one tick per form that has password boxes, added only when scripts run.
+    // It changes what is displayed on this screen and nothing else.
+    document.querySelectorAll("form").forEach(function (form) {
+      var boxes = form.querySelectorAll("input[type=password]");
+      if (!boxes.length) { return; }
+      var label = document.createElement("label");
+      label.className = "choice";
+      label.innerHTML = '<input type="checkbox"> Show password' + (boxes.length > 1 ? "s" : "");
+      label.firstChild.addEventListener("change", function (e) {
+        boxes.forEach(function (b) { b.type = e.target.checked ? "text" : "password"; });
+      });
+      form.addEventListener("submit", function () { boxes.forEach(function (b) { b.type = "password"; }); });
+      boxes[boxes.length - 1].closest("label").after(label);
+    });
+  </script>
   <footer>
     A short-listing aid. Selection is made by the Selection Committee at interview
     (UGC Regulations, 2018, clause 4.1 Note).

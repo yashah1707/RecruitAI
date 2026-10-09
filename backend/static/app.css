@@ -67,3 +67,7 @@ pre.letter { white-space: pre-wrap; font: inherit; background: #f6f7f9; border: 
 @media print { header.top nav, form, button { display: none !important; } body { background: #fff; } }
 details.panel { padding: 12px 18px; }
 details.panel summary { cursor: pointer; font-weight: 600; color: var(--accent); }
+header.top nav .who { color: var(--muted, #555); margin-left: 12px; }
+form.signout { display: inline; margin: 0; }
+form.signout button { background: none; border: 0; padding: 0; color: var(--accent); text-decoration: underline; cursor: pointer; font: inherit; }
+form.narrow { max-width: 420px; }

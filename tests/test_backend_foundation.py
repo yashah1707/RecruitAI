@@ -12,6 +12,7 @@ import os
 import pymupdf
 import pytest
 from docx import Document
+from fastapi import Request
 from fastapi.testclient import TestClient
 from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
@@ -19,7 +20,9 @@ from sqlalchemy.orm import Session, sessionmaker
 
 from backend import states
 from backend.db import Base, get_session, get_session_factory, make_engine
+from backend.access import Principal
 from backend.main import app, get_cache, get_provider
+from backend.web import current_user
 from backend.models import (
     Application,
     Candidate,
@@ -326,6 +329,9 @@ def test_unacceptable_uploads_are_rejected(tmp_path, name, data):
 # --- API ---------------------------------------------------------------------
 
 
+TEST_ADMINISTRATOR = Principal(user_id=None, name="HR", user_type="UNIVERSITY_ADMIN", actor="user:hr")
+
+
 @pytest.fixture
 def client(engine, tmp_path, monkeypatch):
     from backend import settings
@@ -348,6 +354,14 @@ def client(engine, tmp_path, monkeypatch):
     app.dependency_overrides[get_session] = _session
     app.dependency_overrides[get_session_factory] = lambda: factory
     app.dependency_overrides[get_provider] = lambda: provider
+
+    def _administrator(request: Request):
+        # Stands in for a signed-in university administrator, written into the audit trail as "user:hr".
+        # Signing in itself, and what narrower accounts may do, are in tests/test_backend_access.py.
+        request.state.user = TEST_ADMINISTRATOR
+        return TEST_ADMINISTRATOR
+
+    app.dependency_overrides[current_user] = _administrator
     app.dependency_overrides[get_cache] = lambda: None
     yield TestClient(app)
     app.dependency_overrides.clear()

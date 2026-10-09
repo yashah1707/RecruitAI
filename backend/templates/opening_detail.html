@@ -1,7 +1,7 @@
 {% extends "base.html" %}
 {% block title %}{{ o.reference }} · RecruitAI{% endblock %}
 {% block area %}HR{% endblock %}
-{% block nav %}<a href="/">Openings</a> <a href="/apply/{{ o.opening_id }}">Application form</a>{% endblock %}
+{% block nav %}<a href="/hr/openings">Openings</a> <a href="/apply/{{ o.opening_id }}">Application form</a>{% endblock %}
 {% block content %}
 <h1>{{ o.reference }}: {{ DESIGNATIONS[o.designation] }}</h1>
 <dl class="facts">
@@ -17,6 +17,7 @@
     <span class="hint">Works only on this computer until the application is hosted. Applicants can also email a resume quoting {{ o.reference }}.</span></dd>
 </dl>
 
+{% if can_edit %}
 <form method="post" action="/hr/openings/{{ o.opening_id }}/{{ "close" if o.status == "OPEN" else "reopen" }}" class="inline">
   <a class="button" href="/hr/openings/{{ o.opening_id }}/edit">Edit this opening</a>
   <button type="submit" class="quiet">{{ "Close this opening" if o.status == "OPEN" else "Reopen this opening" }}</button>
@@ -40,6 +41,10 @@
   {% endif %}
 </section>
 
+{% else %}
+<p class="hint">Your account may view this opening but not change it.</p>
+{% endif %}
+
 <h2>Applications ({{ rows|length }})</h2>
 {% if letters %}
 <p class="notice" role="status"><strong>{{ letters }} waiting for your approval.</strong> Nothing is sent until you approve it.
@@ -47,7 +52,7 @@
 {% endif %}
 {% if reading %}
 <p class="notice" role="status"><strong>Reading in progress.</strong> This page refreshes every few seconds.</p>
-{% elif due %}
+{% elif due and can_edit %}
 <form method="post" action="/hr/queue/run" class="inline">
   <input type="hidden" name="back" value="/hr/openings/{{ o.opening_id }}">
   <input type="hidden" name="limit" value="12">
@@ -59,13 +64,13 @@
 <p class="hint">A short-listing aid. Applications are listed in order of receipt, not ranked; every outcome needs an HR decision.
   {% if rows %}<a href="/hr/openings/{{ o.opening_id }}/digest">Digest</a> · <a href="/hr/openings/{{ o.opening_id }}/emails">Emails to candidates</a> · <a href="/hr/openings/{{ o.opening_id }}/export.xlsx">Download as Excel</a>{% endif %}</p>
 {% set to_assess = rows|selectattr("a.status", "equalto", "EXTRACTED")|list|length %}
-{% if to_assess %}
+{% if to_assess and can_edit %}
 <form method="post" action="/hr/openings/{{ o.opening_id }}/assess" class="inline">
   <button type="submit">Assess {{ to_assess }} read application(s)</button>
   <span class="hint">Checks each against the rules chosen for this opening. No language model is used.</span>
 </form>
 {% endif %}
-{% if out_of_date %}
+{% if out_of_date and can_edit %}
 <form method="post" action="/hr/openings/{{ o.opening_id }}/reassess" class="inline">
   <button type="submit">Assess {{ out_of_date }} application(s) again as on {{ counted_on[0]|ddmmyyyy }}</button>
   <span class="hint">These were assessed counting to another date. Eligibility for this opening is counted as on
@@ -89,6 +94,7 @@
         {% if r.failed_note %}<br><span class="error">{{ r.failed_note|why_unreadable }}</span>{% endif %}
         {% if r.a.possible_duplicate_candidate_id %}<br><span class="error">Possible duplicate of an existing candidate</span>{% endif %}
         {% if r.v and r.v.eligible_designation and r.v.outcome == "RE_CATEGORISED" %}<br><span class="hint">Meets {{ DESIGNATIONS[r.v.eligible_designation] }}</span>{% endif %}
+        {% if r.v and r.policy %}<br><span class="{{ "error" if "not met" in r.policy else "hint" }}">{{ r.policy }}</span>{% endif %}
       </td>
       <td>
         {% if r.v %}
@@ -101,7 +107,7 @@
         {% if r.decided %}
           {{ {"APPROVED": "Approved", "OVERRIDDEN": "Overridden", "DECIDED": "Decided"}[r.decided.action] }}:
           {% if r.decided.final_outcome == "SHORTLISTED" %}short-listed, {{ DESIGNATIONS.get(r.decided.final_designation, "") }}{% else %}not eligible{% endif %}
-        {% elif r.v %}<a href="/hr/applications/{{ r.a.application_id }}">Decide</a>{% endif %}
+        {% elif r.v %}<a href="/hr/applications/{{ r.a.application_id }}">{{ "Decide" if can_approve else "Waiting for a decision" }}</a>{% endif %}
       </td>
     </tr>
     {% endfor %}

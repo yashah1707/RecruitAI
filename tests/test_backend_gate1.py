@@ -582,7 +582,7 @@ def test_the_opening_page_links_to_the_check_and_home_offers_a_retry(client, eng
         s.commit()
         job_id = job.job_id
     assert f'/hr/applications/{app_id}"' in client.get(f"/hr/openings/{opening_id}").text
-    assert f"/hr/jobs/{job_id}/requeue" in client.get("/").text
+    assert f"/hr/jobs/{job_id}/requeue" in client.get("/hr/openings").text
     r = client.post(f"/hr/jobs/{job_id}/requeue", follow_redirects=False)
     assert r.status_code == 303 and "Put%20back" in r.headers["location"]
     assert client.post("/hr/jobs/999999/requeue").status_code == 404

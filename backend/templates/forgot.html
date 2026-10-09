@@ -1,0 +1,21 @@
+{% extends "base.html" %}
+{% block title %}Forgotten password · RecruitAI{% endblock %}
+{% block home %}/login{% endblock %}
+{% block nav %}<a href="/login">Sign in</a>{% endblock %}
+{% block content %}
+<h1>Forgotten your password?</h1>
+{% if not available %}
+<p class="panel warn">Resetting a password by email is not set up on this system. Ask a university administrator to set a
+  temporary password for you.</p>
+{% elif sent %}
+<p class="notice" role="status">{{ sent }}</p>
+<p class="hint">Nothing arrived? Check the address, look in spam, or ask a university administrator to set a temporary password.
+  A second link can be asked for after five minutes.</p>
+{% else %}
+<form method="post" action="/forgot" class="stack narrow">
+  <label>The email address of your account <input type="email" name="email" autocomplete="username" required autofocus></label>
+  <button type="submit">Email me a link</button>
+  <span class="hint">The link goes only to that address, works once, and lasts 30 minutes.</span>
+</form>
+{% endif %}
+{% endblock %}

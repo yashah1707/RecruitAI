@@ -1,7 +1,7 @@
 {% extends "base.html" %}
 {% block title %}Emails · {{ o.reference }} · RecruitAI{% endblock %}
 {% block area %}HR{% endblock %}
-{% block nav %}<a href="/">Openings</a> <a href="/hr/openings/{{ o.opening_id }}">{{ o.reference }}</a>{% endblock %}
+{% block nav %}<a href="/hr/openings">Openings</a> <a href="/hr/openings/{{ o.opening_id }}">{{ o.reference }}</a>{% endblock %}
 {% block content %}
 <h1>Emails to candidates: {{ o.reference }}, {{ DESIGNATIONS[o.designation] }}</h1>
 
@@ -14,6 +14,7 @@
 <p class="panel warn"><strong>Live.</strong> Every ticked email is delivered to the candidate's address shown in its row.</p>
 {% endif %}
 
+{% if rows and not can_approve %}<p class="hint">Your account may read these letters but not approve them.</p>{% endif %}
 {% if rows %}
 <form method="post" action="/hr/openings/{{ o.opening_id }}/emails">
   <p class="hint">A decision letter was drafted from the decision recorded for that application. Open a letter to read it; to change one,

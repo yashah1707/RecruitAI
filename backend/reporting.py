@@ -110,3 +110,50 @@ def digest(session: Session, opening: JobOpening) -> dict:
             "email": email.status if email else None,
         })
     return {"sections": [sections[key] for key, _, _ in _SECTIONS if sections[key]["rows"]], "totals": totals}
+
+
+# --- the university dashboard (Section 17.8) ------------------------------------
+
+_STAGES = (
+    ("to_read", (states.RECEIVED, states.PARSING, states.NEEDS_JOB_MATCH)), ("to_check", (states.PENDING_REVIEW,)),
+    ("to_assess", (states.EXTRACTED,)), ("to_decide", tuple(gate2.AWAITING_HR)), ("unreadable", (states.FAILED,)),
+    ("withdrawn", (states.WITHDRAWN,)),
+)
+_STAGE_OF = {state: key for key, group in _STAGES for state in group}
+
+
+def _blank() -> dict[str, int]:
+    return {"applications": 0, "shortlisted": 0, "not_eligible": 0, **{key: 0 for key, _ in _STAGES}}
+
+
+def dashboard(session: Session) -> dict:
+    """Counts across the university: by school, by opening (with its advertisement), and by the channel applications came through.
+
+    Counts only. No candidate is named and nothing is ranked.
+    """
+    by_school: dict[str, dict] = {}
+    by_opening: dict[int, dict] = {}
+    by_channel: dict[str, int] = {}
+    openings = session.scalars(select(JobOpening).order_by(JobOpening.opening_id.desc())).all()
+    for o in openings:
+        school = by_school.setdefault(o.school_id, {"school": o.school, "openings": 0, **_blank()})
+        school["openings"] += 1
+        by_opening[o.opening_id] = {"o": o, **_blank()}
+    for a in session.scalars(select(Application).order_by(Application.application_id)):
+        buckets = [by_school.setdefault(a.school_id, {"school": a.school, "openings": 0, **_blank()})]
+        if a.opening_id in by_opening:
+            buckets.append(by_opening[a.opening_id])
+        decided = gate2.final_decision(session, a)
+        for bucket in buckets:
+            bucket["applications"] += 1
+            if decided is not None:
+                bucket["shortlisted" if decided.final_outcome == "SHORTLISTED" else "not_eligible"] += 1
+            elif a.status in _STAGE_OF:
+                bucket[_STAGE_OF[a.status]] += 1
+        by_channel[a.resume_source] = by_channel.get(a.resume_source, 0) + 1
+    totals = _blank()
+    for row in by_school.values():
+        for key in totals:
+            totals[key] += row[key]
+    return {"schools": sorted(by_school.values(), key=lambda row: row["school"].name), "openings": list(by_opening.values()),
+            "channels": by_channel, "totals": totals}

@@ -39,6 +39,10 @@ EMAIL_REDIRECT_TO: str = os.environ.get("EMAIL_REDIRECT_TO", "").strip()
 # Whether an applicant is sent an acknowledgement of receipt. Set to "false" to turn it off.
 ACKNOWLEDGE_APPLICATIONS: bool = os.environ.get("ACKNOWLEDGE_APPLICATIONS", "true").strip().lower() not in ("0", "false", "no")
 
+# The address people reach this application at, used in links that are emailed (a password reset).
+# Empty means the address of the request that asked for the link, which is right on one computer.
+PUBLIC_BASE_URL: str = os.environ.get("PUBLIC_BASE_URL", "").strip().rstrip("/")
+
 # Incoming mail (the inbox channel). Read over IMAP, read-only, and only when a person asks.
 # The login defaults to the sending account, since one mailbox often does both.
 IMAP_HOST: str = os.environ.get("IMAP_HOST", "").strip()

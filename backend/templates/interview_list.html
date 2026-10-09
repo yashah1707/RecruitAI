@@ -1,0 +1,29 @@
+{% extends "base.html" %}
+{% block title %}Short-listed candidates · RecruitAI{% endblock %}
+{% block home %}/interview{% endblock %}
+{% block area %}Interview panel{% endblock %}
+{% block nav %}{% if request.state.user.user_type != "INTERVIEWER" %}<a href="/hr/openings">Openings</a>{% endif %}{% endblock %}
+{% block content %}
+<h1>Short-listed candidates</h1>
+<p class="hint">Candidates HR has short-listed for interview, in the schools you are granted. Listed by opening and in order of
+  receipt: they are not ranked. Selection is made by the Selection Committee on the interview.</p>
+{% if rows %}
+<table>
+  <thead><tr><th>Reference</th><th>Name</th><th>Short-listed for</th><th>Opening</th><th>School</th><th>Highlights</th></tr></thead>
+  <tbody>
+    {% for r in rows %}
+    <tr>
+      <td class="nowrap"><a href="/interview/applications/{{ r.a.application_id }}">{{ r.a.reference }}</a></td>
+      <td>{{ r.name or "Not known" }}</td>
+      <td>{{ DESIGNATIONS.get(r.post, "") }}</td>
+      <td>{{ r.o.reference }}{% if r.o.title %}<br><span class="hint">{{ r.o.title }}</span>{% endif %}</td>
+      <td>{{ r.o.school.name }}{% if r.o.department %}<br><span class="hint">{{ r.o.department.name }}</span>{% endif %}</td>
+      <td>{{ r.highlights or "" }}</td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+{% else %}
+<p>No candidate has been short-listed yet in the schools you are granted.</p>
+{% endif %}
+{% endblock %}

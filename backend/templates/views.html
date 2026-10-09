@@ -1,0 +1,19 @@
+{% extends "base.html" %}
+{% block title %}Interview panel's view · RecruitAI{% endblock %}
+{% block area %}Accounts{% endblock %}
+{% block nav %}<a href="/hr/openings">Openings</a> <a href="/admin/users">Accounts</a>{% endblock %}
+{% block content %}
+<h1>What the interview panel sees</h1>
+<p>An interviewer account sees only candidates HR has short-listed, in the schools it is granted, and only the parts of the
+  record ticked here. HR sees everything throughout. The candidate's name, the post and the school are always shown.</p>
+<p class="hint">Whether the panel sees contact details and reserved-category status is the university's decision. Until it is taken
+  they are withheld, with the two things that would give them away: the resume file and the assessment's working.</p>
+<form method="post" action="/admin/views" class="stack">
+  {% for entity, field, label, default in parts %}
+  <label class="choice"><input type="checkbox" name="shown" value="{{ entity }}.{{ field }}"{% if show[entity ~ "." ~ field] %} checked{% endif %}>
+    {{ label }} <span class="hint">({{ "shown" if default else "withheld" }} unless changed)</span></label>
+  {% endfor %}
+  <button type="submit">Save</button>
+  <span class="hint">Takes effect at once. <a href="/interview">See the panel's view as it now is.</a></span>
+</form>
+{% endblock %}

@@ -1,7 +1,7 @@
 {% extends "base.html" %}
 {% block title %}Openings · RecruitAI{% endblock %}
 {% block area %}HR{% endblock %}
-{% block nav %}<a href="/hr/openings/new">New opening</a> <a href="/hr/inbox">Inbox{% if inbox_waiting %} ({{ inbox_waiting }}){% endif %}</a> <a href="/apply">Applicant view</a>{% endblock %}
+{% block nav %}{% if can_open %}<a href="/hr/openings/new">New opening</a> {% endif %}{% if request.state.user.is_admin %}<a href="/hr/inbox">Inbox{% if inbox_waiting %} ({{ inbox_waiting }}){% endif %}</a> <a href="/hr/dashboard">Dashboard</a> <a href="/hr/policy">University criteria</a> {% endif %}<a href="/interview">Panel view</a> <a href="/apply">Applicant view</a>{% endblock %}
 {% block content %}
 <h1>Openings</h1>
 
@@ -18,9 +18,9 @@
   {% if last_run.get("summary") and not reading %}
   <p class="hint">Last run, finished {{ last_run.finished }}: {{ last_run.summary }}</p>
   {% endif %}
-  {% if due and not reading %}
+  {% if due and not reading and can_read %}
   <form method="post" action="/hr/queue/run" class="inline">
-    <input type="hidden" name="back" value="/">
+    <input type="hidden" name="back" value="/hr/openings">
     <label>Read up to
       <select name="limit"><option>1</option><option selected>5</option><option>12</option><option>25</option></select>
       now

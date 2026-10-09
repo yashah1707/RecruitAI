@@ -1,7 +1,7 @@
 {% extends "base.html" %}
 {% block title %}Digest · {{ o.reference }} · RecruitAI{% endblock %}
 {% block area %}HR{% endblock %}
-{% block nav %}<a href="/">Openings</a> <a href="/hr/openings/{{ o.opening_id }}">{{ o.reference }}</a>{% endblock %}
+{% block nav %}<a href="/hr/openings">Openings</a> <a href="/hr/openings/{{ o.opening_id }}">{{ o.reference }}</a>{% endblock %}
 {% block content %}
 <h1>Digest: {{ o.reference }}, {{ DESIGNATIONS[o.designation] }}</h1>
 <dl class="facts">

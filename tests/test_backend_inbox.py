@@ -329,7 +329,7 @@ def test_the_inbox_page_lists_what_waits_and_files_a_held_application(client, en
         held = _take(s, _mail(subject="Application for faculty post"))
         _take(s, _mail(subject="Faculty requirement in Design", attach=None, sender="dean@example.org"))
         opening_id, held_id = o.opening_id, held.inbox_id
-    assert "Inbox (2)" in client.get("/").text
+    assert "Inbox (2)" in client.get("/hr/openings").text
     page = client.get("/hr/inbox").text
     assert "Waiting for you (2)" in page and "File under this opening" in page and "No mailbox is configured" in page
     assert "Opening announcement" in page and "rule: resume attached" in page

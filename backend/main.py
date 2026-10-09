@@ -39,7 +39,7 @@ from backend.models import (
 )
 from backend.reader_service import read_application
 from backend.storage import RejectedUpload, save_resume
-from backend.web import router as web_router
+from backend.web import current_user, install as install_access_handlers, router as web_router
 from llm.interface import LLMProvider
 
 logger = logging.getLogger("recruitai.api")
@@ -52,6 +52,7 @@ app = FastAPI(title="RecruitAI", version="0.1.0")
 
 app.mount("/static", StaticFiles(directory=str(Path(__file__).resolve().parent / "static")), name="static")
 app.include_router(web_router)
+install_access_handlers(app)
 
 
 @app.get("/health")
@@ -143,7 +144,7 @@ def _application_summary(a: Application) -> dict[str, Any]:
     }
 
 
-@app.post("/applications", status_code=201)
+@app.post("/applications", status_code=201, dependencies=[Depends(current_user)])
 async def create_application(
     school_id: str = Form(...),
     applied_designation: str = Form(...),
@@ -213,7 +214,7 @@ def _get_application(session: Session, application_id: int, lock: bool = False) 
     return application
 
 
-@app.post("/applications/{application_id}/read")
+@app.post("/applications/{application_id}/read", dependencies=[Depends(current_user)])
 def run_reader(
     application_id: int,
     session: Session = Depends(get_session),
@@ -228,7 +229,7 @@ def run_reader(
     return _application_summary(application)
 
 
-@app.get("/applications/{application_id}")
+@app.get("/applications/{application_id}", dependencies=[Depends(current_user)])
 def get_application(application_id: int, session: Session = Depends(get_session)) -> dict[str, Any]:
     a = _get_application(session, application_id)
     out = _application_summary(a)
@@ -261,7 +262,7 @@ def get_application(application_id: int, session: Session = Depends(get_session)
     return out
 
 
-@app.get("/applications/{application_id}/transitions")
+@app.get("/applications/{application_id}/transitions", dependencies=[Depends(current_user)])
 def get_transitions(application_id: int, session: Session = Depends(get_session)) -> list[dict[str, Any]]:
     a = _get_application(session, application_id)
     return [

@@ -1,0 +1,162 @@
+{% extends "base.html" %}
+{% block title %}{{ a.reference }} · Interview panel · RecruitAI{% endblock %}
+{% block home %}/interview{% endblock %}
+{% block area %}Interview panel{% endblock %}
+{% block nav %}<a href="/interview">Short-listed candidates</a>{% endblock %}
+{% macro span(b, unit="") %}{% if b.high is none %}at least {{ "%g"|format(b.low) }}{% elif b.low == b.high %}{{ "%g"|format(b.low) }}{% else %}between {{ "%g"|format(b.low) }} and {{ "%g"|format(b.high) }}{% endif %}{{ unit }}{% endmacro %}
+{% block content %}
+<h1>{{ a.reference }}: {{ name or "Name not known" }}</h1>
+<dl class="facts">
+  <dt>Short-listed for</dt><dd>{{ DESIGNATIONS.get(post, "") }}, {{ a.school.name }}{% if o %} ({{ o.reference }}){% endif %}</dd>
+  {% if post != a.applied_designation %}<dt>Applied for</dt><dd>{{ DESIGNATIONS.get(a.applied_designation, a.applied_designation) }}</dd>{% endif %}
+  {% if contact is defined %}
+  <dt>Email</dt><dd>{{ contact.email or "Not on record" }}</dd>
+  <dt>Phone</dt><dd>{{ contact.phone or "Not on record" }}</dd>
+  {% if contact.address %}<dt>Address</dt><dd>{{ contact.address }}</dd>{% endif %}
+  {% endif %}
+  {% if state is defined %}<dt>State</dt><dd>{{ state or "Not given" }}</dd>{% endif %}
+  {% if category is defined %}
+  <dt>Category</dt><dd>{{ category.category or "Not given" }}</dd>
+  <dt>Differently abled</dt><dd>{{ {true: "Yes", false: "No"}.get(category.differently_abled, "Not given") }}</dd>
+  {% endif %}
+  {% if show["application.resume"] %}<dt>Resume</dt><dd><a href="/interview/applications/{{ a.application_id }}/resume" target="_blank" rel="noopener">Open the resume in a new tab</a></dd>{% endif %}
+</dl>
+<p class="hint">Read from the candidate's resume and checked by HR. Short-listing is for interview only; it is not a ranking.
+  Some parts of the record are not shown to the interview panel, by the university's decision.</p>
+
+{% if highlights is defined and highlights %}
+<section class="panel">
+  <h2>Highlights</h2>
+  <ul>{% for h in highlights %}<li>{{ h.description }}{% if not h.automatic %} <span class="hint">(noted by HR)</span>{% endif %}</li>{% endfor %}</ul>
+  <p class="hint">Taken from what the resume states. Not verified.</p>
+</section>
+{% endif %}
+
+{% if scores is defined and (scores.experience_years or scores.research_score or scores.shortlist_score) %}
+<dl class="facts">
+  {% if scores.experience_years %}<dt>Experience counted</dt><dd>{{ span(scores.experience_years, " years") }}{% if scores.experience_kinds %} ({{ scores.experience_kinds|map("lower")|join(", ") }}){% endif %}</dd>{% endif %}
+  {% if scores.research_score %}<dt>Research Score claimed (Table 2)</dt><dd>{{ span(scores.research_score) }}</dd>{% endif %}
+  {% if scores.shortlist_score %}<dt>Short-listing score (Table 3A)</dt><dd>{{ span(scores.shortlist_score) }} out of 100. An aid for calling candidates to interview; selection is on the interview alone.</dd>{% endif %}
+</dl>
+{% endif %}
+
+{% if policy is defined and policy %}
+<h2>The university's own criteria</h2>
+<table>
+  <thead><tr><th>Criterion</th><th>Result</th><th>What was compared</th></tr></thead>
+  <tbody>{% for c in policy %}<tr><td>{{ c.label }}</td><td class="nowrap">{{ {"PASS": "Met", "FAIL": "Not met", "UNKNOWN": "Open"}[c.result] }}</td><td>{{ c.detail }}</td></tr>{% endfor %}</tbody>
+</table>
+{% endif %}
+
+{% if ranks is defined %}
+<h2>Assessment against the minimum qualifications</h2>
+<p>{{ plain_finding }}</p>
+{% for rank in ranks %}
+<h3>{{ DESIGNATIONS.get(rank.designation, rank.designation) }}: {{ {"PASS": "met", "FAIL": "not met", "UNKNOWN": "cannot be settled from the record"}[rank.result] }}</h3>
+<table>
+  <thead><tr><th>Requirement</th><th>Result</th><th>What was compared</th><th>Clause</th><th>Page</th></tr></thead>
+  <tbody>{% for c in rank.checks %}<tr><td>{{ c.label }}</td><td class="nowrap">{{ {"PASS": "Met", "FAIL": "Not met", "UNKNOWN": "Open"}[c.result] }}</td><td>{{ c.detail }}</td><td>{{ c.clause }}</td><td>{{ c.page }}</td></tr>{% endfor %}</tbody>
+</table>
+{% endfor %}
+{% endif %}
+
+{% if qualifications is defined %}
+<h2>Qualifications</h2>
+{% if e %}<p>Ph.D.: {{ {"NOT_APPLICABLE": "no doctoral study", "REGISTERED": "registered", "PURSUING": "pursuing", "THESIS_SUBMITTED": "thesis submitted", "COMPLETED": "completed"}.get(e.phd_status, "not stated") }}.
+  NET / SET: {{ "none" if e.net_set_status == "NONE" else (e.net_set_status or "not stated") }}{% if e.set_state %} ({{ e.set_state }}){% endif %}.</p>{% endif %}
+{% if qualifications %}
+<table>
+  <thead><tr><th>Level</th><th>Degree</th><th>Course</th><th>College or university</th><th>Completed</th><th>Marks</th></tr></thead>
+  <tbody>
+    {% for q in qualifications %}
+    <tr><td>{{ q.degree_level }}</td><td>{{ q.degree or "" }}</td><td>{{ q.discipline or "" }}</td>
+      <td>{{ q.college_name or q.university_name or "" }}{% if q.college_name and q.university_name %}<br><span class="hint">{{ q.university_name }}</span>{% endif %}</td>
+      <td class="nowrap">{{ q.completion_stated or "" }}</td>
+      <td class="nowrap">{% if q.marks_pct is not none %}{{ "%g"|format(q.marks_pct) }}%{% elif q.cgpa is not none %}CGPA {{ "%g"|format(q.cgpa) }}{% endif %} {{ q.division or "" }}</td></tr>
+    {% endfor %}
+  </tbody>
+</table>
+{% else %}<p>None on record.</p>{% endif %}
+{% endif %}
+
+{% if experience is defined %}
+<h2>Posts held</h2>
+{% if experience %}
+<table>
+  <thead><tr><th>Post</th><th>Employer</th><th>Type</th><th>From</th><th>To</th></tr></thead>
+  <tbody>
+    {% for x in experience %}
+    <tr><td>{{ x.designation_held or "" }}</td><td>{{ x.employer_name or "" }}</td><td>{{ x.experience_type|capitalize }}</td>
+      <td class="nowrap">{{ x.start_stated or "" }}</td><td class="nowrap">{{ "Present" if x.is_current else (x.end_stated or "") }}</td></tr>
+    {% endfor %}
+  </tbody>
+</table>
+{% else %}<p>None on record.</p>{% endif %}
+{% endif %}
+
+{% if research is defined and research %}
+<h2>Research profile, as stated</h2>
+<dl class="facts">
+  {% if research.orcid_id %}<dt>ORCID</dt><dd>{{ research.orcid_id }}</dd>{% endif %}
+  {% if research.scopus_author_id %}<dt>Scopus author ID</dt><dd>{{ research.scopus_author_id }}</dd>{% endif %}
+  {% if research.google_scholar_id %}<dt>Google Scholar</dt><dd>{{ research.google_scholar_id }}</dd>{% endif %}
+  {% if research.total_citations is not none %}<dt>Citations</dt><dd>{{ research.total_citations }}</dd>{% endif %}
+  {% if research.h_index is not none %}<dt>h-index</dt><dd>{{ research.h_index }}</dd>{% endif %}
+  {% if research.i10_index is not none %}<dt>i10-index</dt><dd>{{ research.i10_index }}</dd>{% endif %}
+</dl>
+{% endif %}
+
+{% if publications is defined and publications %}
+<h2>Publications ({{ publications|length }})</h2>
+<table>
+  <thead><tr><th>Title</th><th>Type</th><th>Where</th><th>Year</th><th>Status</th><th>Authors</th><th>Indexing</th></tr></thead>
+  <tbody>
+    {% for p in publications %}
+    <tr><td>{{ p.title }}</td><td>{{ p.publication_type|replace("_", " ")|capitalize }}</td><td>{{ p.venue_name or "" }}</td><td>{{ p.year or "" }}</td>
+      <td>{{ p.status|replace("_", " ")|capitalize }}</td>
+      <td>{% if p.author_count %}{{ p.author_count }}{% if p.is_first_author %}, first{% endif %}{% endif %}</td>
+      <td>{{ p.indexing or "" }}{% if p.impact_factor is not none %} IF {{ "%g"|format(p.impact_factor) }}{% endif %}</td></tr>
+    {% endfor %}
+  </tbody>
+</table>
+{% endif %}
+
+{% if achievements is defined and (achievements or guidance) %}
+<h2>Patents, awards, projects and guidance</h2>
+<table>
+  <thead><tr><th>Kind</th><th>What</th><th>Details</th><th>Year</th><th>Status</th></tr></thead>
+  <tbody>
+    {% for x in achievements %}
+    <tr><td>{{ x.kind|replace("_", " ")|capitalize }}</td><td>{{ x.title }}</td>
+      <td>{{ x.details or "" }}{% if x.amount_stated %} {{ x.amount_stated }}{% endif %}{% if x.level %} ({{ x.level|capitalize }}){% endif %}</td>
+      <td>{{ x.year or "" }}</td><td>{{ x.status or "" }}</td></tr>
+    {% endfor %}
+    {% for g in guidance %}
+    <tr><td>Guidance ({{ {"PHD": "Ph.D.", "PG": "Master's", "UG": "Bachelor's"}.get(g.level, "other") }})</td><td>{{ g.description }}</td>
+      <td>{% if g.student_count is not none %}{{ g.student_count }} student(s){% endif %}</td><td></td><td></td></tr>
+    {% endfor %}
+  </tbody>
+</table>
+{% endif %}
+
+{% if events is defined and events %}
+<h2>Seminars, workshops and courses ({{ events|length }})</h2>
+<table>
+  <thead><tr><th>Kind</th><th>Title</th><th>Role</th><th>Organiser</th><th>Year</th></tr></thead>
+  <tbody>
+    {% for v in events %}
+    <tr><td>{{ v.kind|capitalize }}</td><td>{{ v.title }}</td><td>{{ v.role|replace("_", " ")|capitalize }}</td><td>{{ v.organiser or "" }}</td><td>{{ v.year or "" }}</td></tr>
+    {% endfor %}
+  </tbody>
+</table>
+{% endif %}
+
+{% if subjects is defined and (subjects or skills or memberships) %}
+<h2>Teaching and skills</h2>
+<dl class="facts">
+  {% if subjects %}<dt>Subjects taught</dt><dd>{% for s in subjects %}{{ s.subject_name }}{% if s.course_level %} ({{ s.course_level }}){% endif %}{{ ", " if not loop.last }}{% endfor %}</dd>{% endif %}
+  {% if skills %}<dt>Skills</dt><dd>{% for s in skills %}{{ s.skill_name }}{{ ", " if not loop.last }}{% endfor %}</dd>{% endif %}
+  {% if memberships %}<dt>Memberships</dt><dd>{% for m in memberships %}{{ m.membership }}{{ ", " if not loop.last }}{% endfor %}</dd>{% endif %}
+</dl>
+{% endif %}
+{% endblock %}

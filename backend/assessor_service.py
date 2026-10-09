@@ -22,7 +22,7 @@ from datetime import date
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from backend import states
+from backend import policy, states
 from backend.engine.decision import MANUAL_REVIEW, Decision, decide
 from backend.engine.facts import build_facts
 from backend.engine.rules import load_rules
@@ -59,6 +59,11 @@ def assess_application(session: Session, application: Application, as_of: date |
     facts = build_facts(session, application, as_of)
     decision = decide(facts, load_rules(session, facts.discipline_group))
 
+    details = _details(decision)
+    # The university's own criteria, checked after the statutory decision and stored beside it.
+    # They are shown to the person deciding; they never alter the outcome above (backend/policy.py).
+    details["policy"] = policy.evaluate(session, application, facts, decision)
+
     failing = decision.failing
     exact = lambda b: None if b is None else b.exact  # noqa: E731
     session.add(EvaluationResult(
@@ -72,7 +77,7 @@ def assess_application(session: Session, application: Application, as_of: date |
         # A single figure only when it is known exactly; the bounds are in `details`.
         research_score=exact(decision.research_score),
         adjusted_experience_years=exact(decision.experience_years),
-        details=_details(decision),
+        details=details,
     ))
 
     # The audit trail names the clause, never the candidate's figures.

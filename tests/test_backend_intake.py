@@ -310,7 +310,7 @@ def _create_opening_via_page(client, **kw) -> int:
 
 
 def test_hr_creates_an_opening_and_an_applicant_applies_through_the_pages(client, engine):
-    assert "No openings yet" in client.get("/").text
+    assert "No openings yet" in client.get("/hr/openings").text
     opening_id = _create_opening_via_page(client)
 
     listing = client.get("/apply").text
@@ -323,7 +323,7 @@ def test_hr_creates_an_opening_and_an_applicant_applies_through_the_pages(client
     done = client.post(f"/apply/{opening_id}", data=_data(), files={"resume": ("cv.docx", _docx(), DOCX)})
     assert done.status_code == 201 and "Application received" in done.text and "APP-000001" in done.text
 
-    home = client.get("/").text
+    home = client.get("/hr/openings").text
     assert "1</strong> application(s) waiting to be read" in home and f"OPN-{opening_id:05d}" in home
 
     detail = client.get(f"/hr/openings/{opening_id}").text
@@ -378,7 +378,7 @@ def test_hr_uploads_several_files_and_processes_the_queue(client, engine):
     detail = client.get(f"/hr/openings/{opening_id}").text
     assert "Could not be read" in detail and "Scanned or image-only, review manually" in detail
     assert "pymupdf" not in detail  # the library detail is for the audit trail, not for HR's screen
-    home = client.get("/").text
+    home = client.get("/hr/openings").text
     assert "Needs attention" in home and "the resume could not be read" in home
 
 
@@ -438,12 +438,12 @@ def test_a_second_press_while_reading_does_not_start_a_second_run(client):
     try:
         r = client.post("/hr/queue/run", data={"back": "/"}, follow_redirects=False)
         assert "already in progress" in unquote(r.headers["location"])
-        home = client.get("/").text
+        home = client.get("/hr/openings").text
         assert "Reading in progress" in home and 'http-equiv="refresh"' in home
         assert "Process queue" not in home  # the button is not offered while a run is under way
     finally:
         web._run_lock.release()
-    assert 'http-equiv="refresh"' not in client.get("/").text
+    assert 'http-equiv="refresh"' not in client.get("/hr/openings").text
 
 
 def test_the_queue_button_says_so_when_nothing_is_waiting(client):

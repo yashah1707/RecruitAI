@@ -688,7 +688,7 @@ For the user to decide (not built):
 1. (Built; see above.)
 2. (Built; see above.)
 3. (Built; see above.) Reading a resume again.
-4. **A recorded HR decision cannot be reopened** from the screen (already noted; planned with the Phase 9 roles).
+4. (Built in Phase 9, part 1.) Reopening an HR decision not yet sent to the candidate.
 5. (Built; see above.) The date eligibility is counted on. The default awaits the mentor's or HR's confirmation.
 6. (Built; see above.) Acknowledgement of receipt. A page where an applicant looks up their status is not built.
 7. (Built; see above.) Entering and correcting post dates.
@@ -698,10 +698,94 @@ For the user to decide (not built):
 
 ## Phase 9 — Access control and the Section 17 extensions
 
-- [ ] Users, password hashing, sessions; roles from §17.6.
-- [ ] School- and department-scoped filtering enforced server-side on every query.
-- [ ] HR and interviewer views driven by `view_field_visibility`.
-- [ ] Highlights (§17.4), university policy layer (§17.7), drives dashboard (§17.8).
+Built in two parts, both on 2026-10-09. Neither is committed yet.
+
+### Part 1: accounts and access (built 2026-10-09; not yet committed)
+
+- [x] Users, password hashing, sessions; roles from §17.6 (`backend/access.py`; `users`, `user_school_access`,
+      `user_sessions`; migration 0012).
+- [x] School- and department-scoped access enforced server-side on every request.
+- [x] Every action recorded against the person who took it.
+- [x] Reopening an HR decision (gap-review item 4).
+
+How it works:
+
+- **Accounts.** Five kinds, as in §17.6: university administrator, HR administrator, school HR, department HR,
+  interviewer. Administrators see every school. A school or department HR account sees only what it is granted:
+  a school, or one department of it, at one of three levels: view; view and edit (correct the record, add
+  resumes, read, assess); or also approve (Gate 2 decisions and Gate 3 emails). Only a university administrator
+  manages accounts (`/admin/users`). The inbox and stopped reading jobs are for administrators, being tied to no
+  one school. A school HR account with a whole school to edit may create openings in that school only.
+- **One place decides.** Every HR page and the JSON API to applications pass through `current_user`, which calls
+  `access.authorise` with the address asked for. Something outside an account's schools is answered as "not
+  found", so its existence is not given away; something in scope but above the account's level is refused with a
+  page that says so. The home page lists only the account's openings. An application cannot be moved into an
+  opening the account may not change.
+- **Passwords and sessions.** Passwords are stored only as scrypt hashes (standard library; no new dependency).
+  A session is a random token in an HttpOnly, SameSite=Lax cookie; the database holds only its hash; it ends
+  after eight idle hours, on sign-out, when the account is closed, and (for other browsers) when the password
+  changes. Five wrong passwords close sign-in for fifteen minutes. A wrong address and a wrong password get the
+  same answer. A form posted from another site is refused.
+- **First account.** With no account at all, every HR page leads to `/setup`, where the first university
+  administrator is created; the page then closes for good. Other accounts are created by that administrator
+  with a temporary password, which the person must change at first sign-in. Nothing is emailed.
+- **Who did it.** Actions are written to the audit trail as `user:<id>` and shown on pages by name. What was
+  done before accounts existed stays as `user:hr` and reads "HR".
+- **Reopening a decision.** A decision the candidate has not yet been informed of can be reopened by an account
+  that may approve, with a reason of at least 15 characters. The decision stays on record as REOPENED, its
+  letter is dropped, and the application is assessed and decided again. After the candidate has been informed
+  it cannot be reopened.
+- The public pages are the application form (`/apply`), sign-in, and the health check.
+
+Three gaps left by the first build of part 1 were then closed, at the user's request:
+
+- **A page offers only what the account may do.** Buttons and forms an account's level does not allow are not
+  shown; a line says what the account may do instead. `access.authorise` is still what refuses the action.
+- **Forgotten password.** `/forgot` emails a one-time link (30 minutes, single use; `password_resets`, token
+  stored only as a hash) to the account's own address. The page answers alike for any address. The link is not
+  sent to `EMAIL_REDIRECT_TO`: that setting keeps test mail from candidates, and a reset link must reach its
+  owner only. With no mail server the page says so and points to an administrator. `PUBLIC_BASE_URL` sets the
+  address used in the link once the application is deployed.
+- **The interviewer's pages**: part 2 below.
+
+Left for Phase 10: the app still listens only on 127.0.0.1, and HTTPS comes with deployment.
+
+### Part 2: the Section 17 extensions (built 2026-10-09; not yet committed)
+
+- [x] The interview panel's view, driven by `view_field_visibility` (§17.5).
+- [x] Highlights (§17.4).
+- [x] The university policy layer (§17.7).
+- [x] The university dashboard (§17.8).
+
+Migration 0013: `password_resets`, `view_definitions`, `view_field_visibility`, `university_policy_rules`,
+`highlight_norms`.
+
+- **The panel's view** (`/interview`, `backend/views.py`). An interviewer account sees only candidates HR has
+  short-listed, in the schools it is granted, read-only, and none of the HR pages; its home page is this list.
+  Which parts of the record it sees is data, changed by a university administrator at `/admin/views`. **Until
+  the university decides (the open question of §17.5), contact details, category and disability status and
+  State are withheld, together with the resume file (which carries the contact details) and the assessment's
+  check-by-check working (which can name a category relaxation).** What is withheld is not handed to the page
+  at all. HR's own view shows everything and is not restricted by the table.
+- **Highlights** (`backend/highlights.py`). Worked out each time the record is shown, so never stale: a Ph.D.
+  from an institution the reference list marks PREMIER; an h-index or citation count above the norm; a
+  first-author paper with an impact factor above the norm. The norms are the university's figures
+  (`highlight_norms`, per school or for all), entered at `/hr/policy`; none is built in, so with no norm nothing
+  is pointed out. HR may add its own (stored in `candidate_highlights`). A highlight is a pointer from what the
+  resume states; no rule or score reads it. Departure from §17.4: automatic highlights are computed, not stored.
+- **The university's own criteria** (`backend/policy.py`, `/hr/policy`). Six kinds, each a figure the university
+  enters for a post, for one school or all: Master's marks, experience, publications, h-index, citations, and
+  "a Ph.D. is required". They are checked by fixed code after the statutory decision, against the post that
+  decision places the candidate at, stored in the assessment's `details["policy"]`, and shown beside the
+  statutory finding to HR and the panel. **The standing instruction of §17.7 is kept by construction: nothing
+  here can change the statutory outcome or the application's state, and nothing is reported for a candidate
+  the Regulations find not eligible.** A criterion applies to assessments made after it is added.
+- **The dashboard** (`/hr/dashboard`, administrators). Counts by school, by opening with its advertisement, and
+  by channel. No candidate is named and nothing is ranked.
+
+Not built: a refresh of the research profile from Scopus or ORCID (§17.3); the HR view is not made configurable
+(it shows everything, as §17.5 says it does by default); comparing drives over time needs openings to be given
+their advertisement reference, which the dashboard shows but does not chart.
 
 ## Phase 10 — Hardening and delivery
 
@@ -739,7 +823,7 @@ For the user to decide (not built):
 |---|---|
 | HR-confirmed school list and which schools have departments (§7.4) | Before go-live (seeded with the document's 21) |
 | Regulator for School of Education (NCTE?) and Allied Healthcare (§7.4) | Phase 5 |
-| Are category and contact details hidden from the interview panel? (§17.5) | Phase 9 |
+| Are category and contact details hidden from the interview panel? (§17.5) Built hidden by default; a university administrator can change it at `/admin/views`. | The university to decide |
 | Which college mailbox, and who grants access (a development mailbox is in use for now) | Before go-live |
 | Which mail server and sender address candidate emails go out from | Before any email is sent |
 | Where the system will be hosted | Phase 10 |
@@ -799,3 +883,6 @@ For the user to decide (not built):
 | 2026-10-08 | Built at the user's choice: the date eligibility is counted on (per opening; the closing date unless HR names another; migration 0010), reading a resume again, and correcting or adding the posts held. The closing-date default is provisional until the mentor or HR confirms it. The Excel download does not yet show the counting date. |
 | 2026-10-09 | Acknowledgement of receipt built. The user agreed that this one letter, which carries no finding, may be sent without a person's approval where the applicant typed their own address; for an emailed resume it is a draft a person approves. Migration 0011 (`email_drafts.kind`). A shared test fixture keeps every test away from a real mail server. |
 | 2026-10-09 | From the user's live test of the acknowledgement: the home page and each opening's page now say how many letters (acknowledgements and decision letters) are drafts waiting for approval, with a link, since a waiting draft was easy to miss. Emailed resumes keep the tick; automatic sending for them was considered and left out because the address is read from the resume. Inbox: a duplicate the system refused is shown in the same red style as one waiting for a choice; promotional mailings (a noreply sender anywhere in the address, an unsubscribe header, or marked bulk) with no resume are no longer shown to HR. |
+| 2026-10-09 | Phase 9 part 1 built: accounts, sign-in, sessions, the five kinds of account and three levels of grant from §17.6, access decided in one place for every HR page, each action recorded against the person, and reopening an HR decision not yet sent. Migration 0012. The first administrator is created by the user on a one-time setup page. Part 2 (interviewer view, highlights, policy layer, dashboard) is not started. |
+| 2026-10-09 | Phase 9 completed in build: pages now offer only what an account may do; a forgotten-password email; and part 2: the interview panel's view driven by `view_field_visibility`, highlights with norms the university sets, the university's own criteria layered on the statutory finding without ever changing it, and the dashboard. Migration 0013. Contact details and category are withheld from the panel until the university decides otherwise. |
+| 2026-10-09 | At the user's request the dashboard is the first page for administrators (the bare address takes them there, with what is waiting shown at its top); the openings list is at /hr/openings. An account tied to schools still starts on its openings, having no university-wide dashboard. |

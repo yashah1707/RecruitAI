@@ -164,6 +164,33 @@ def reassess_out_of_date(session: Session, opening, today=None, actor: str = ACT
     return counts
 
 
+def reopen_decision(session: Session, application: Application, reason: str, actor: str = ACTOR) -> None:
+    """Take back a decision the candidate has not yet been told of, with the reason for doing so.
+
+    The decision and its reason stay on record; the letter drafted from it is
+    dropped; and the application goes back to be assessed and decided again.
+    Once the candidate has been informed it is too late for this: what was
+    sent cannot be unsent, and a change then is a new letter, written by a person.
+    """
+    if application.status != states.HR_APPROVED:
+        raise DecisionError({"": "Only a decision the candidate has not yet been informed of can be reopened "
+                                 f"(this application is {application.status})."})
+    reason = " ".join((reason or "").split())
+    if len(reason) < MIN_JUSTIFICATION:
+        raise DecisionError({"reason": f"Say why the decision is reopened, in at least {MIN_JUSTIFICATION} characters; it is kept on record."})
+    if len(reason) > 1000:
+        raise DecisionError({"reason": "Keep the reason under 1000 characters."})
+    _record(session, application, "REOPENED", None, None, reason, actor)
+    from backend.models import EmailDraft
+
+    for draft in session.scalars(select(EmailDraft).where(
+            EmailDraft.application_id == application.application_id, EmailDraft.kind == "DECISION",
+            EmailDraft.status.in_(("DRAFT", "APPROVED")))):
+        draft.status = "DISCARDED"
+    states.transition(session, application, states.EXTRACTED, actor, note="gate2: decision reopened with a recorded reason")
+    session.flush()
+
+
 def fields_that_would_settle(evaluation) -> list[str]:
     """The Gate 1 fields behind the points the engine left open, so "send back" can offer them ready-ticked.
 
@@ -219,4 +246,4 @@ def final_decision(session: Session, application: Application) -> HrDecision | N
     """The decision in force for an HR_APPROVED application."""
     if application.status not in DECIDED:
         return None
-    return next((d for d in reversed(decisions(session, application.application_id)) if d.action != "RETURNED"), None)
+    return next((d for d in reversed(decisions(session, application.application_id)) if d.action not in ("RETURNED", "REOPENED")), None)

@@ -1,0 +1,9 @@
+{% extends "base.html" %}
+{% block title %}Not allowed · RecruitAI{% endblock %}
+{% block area %}HR{% endblock %}
+{% block content %}
+<h1>Your account does not allow this</h1>
+<p class="panel warn">{{ message }}</p>
+<p>Nothing was changed. If you need this, ask a university administrator to change what your account is granted.
+  <a href="/hr/openings">Back to the openings</a></p>
+{% endblock %}

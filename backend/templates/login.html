@@ -1,0 +1,16 @@
+{% extends "base.html" %}
+{% block title %}Sign in · RecruitAI{% endblock %}
+{% block home %}/login{% endblock %}
+{% block content %}
+<h1>Sign in</h1>
+<form method="post" action="/login" class="stack narrow">
+  <input type="hidden" name="next" value="{{ next }}">
+  {% if error %}<p class="error" role="alert">{{ error }}</p>{% endif %}
+  <label>Email address <input type="email" name="email" value="{{ email }}" autocomplete="username" required autofocus></label>
+  <label>Password <input type="password" name="password" autocomplete="current-password" required></label>
+  <button type="submit">Sign in</button>
+  {% if can_reset %}<span class="hint"><a href="/forgot">Forgotten your password?</a></span>
+  {% else %}<span class="hint">Forgotten your password? Ask a university administrator to set a temporary one.</span>{% endif %}
+</form>
+<p class="hint">Applying for a post? You do not need an account: <a href="/apply">see the openings</a>.</p>
+{% endblock %}

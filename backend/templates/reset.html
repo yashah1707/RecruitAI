@@ -1,0 +1,20 @@
+{% extends "base.html" %}
+{% block title %}Choose a new password · RecruitAI{% endblock %}
+{% block home %}/login{% endblock %}
+{% block nav %}<a href="/login">Sign in</a>{% endblock %}
+{% block content %}
+<h1>Choose a new password</h1>
+{% if not live %}
+<p class="panel warn">This link is no longer valid: it has been used, or more than 30 minutes have passed.
+  <a href="/forgot">Ask for a new one.</a></p>
+{% else %}
+<form method="post" action="/reset/{{ token }}" class="stack narrow">
+  {% if error %}<p class="error" role="alert">{{ error }}</p>{% endif %}
+  <label>New password <input type="password" name="new" autocomplete="new-password" minlength="{{ min }}" required autofocus>
+    <span class="hint">At least {{ min }} characters.</span></label>
+  <label>The new password again <input type="password" name="again" autocomplete="new-password" required></label>
+  <button type="submit">Set the password</button>
+  <span class="hint">Every browser signed in to this account is signed out.</span>
+</form>
+{% endif %}
+{% endblock %}

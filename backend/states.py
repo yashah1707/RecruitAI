@@ -55,7 +55,8 @@ ALLOWED: dict[str, frozenset[str]] = {
     RE_CATEGORISED: frozenset({HR_APPROVED, PENDING_REVIEW, EXTRACTED, RECEIVED, WITHDRAWN}),
     NOT_ELIGIBLE: frozenset({HR_APPROVED, PENDING_REVIEW, EXTRACTED, RECEIVED, WITHDRAWN}),
     MANUAL_REVIEW: frozenset({HR_APPROVED, PENDING_REVIEW, EXTRACTED, RECEIVED, WITHDRAWN}),
-    HR_APPROVED: frozenset({CONTACTED, WITHDRAWN}),
+    # Back to EXTRACTED when a decision not yet sent to the candidate is reopened (backend.gate2.reopen_decision).
+    HR_APPROVED: frozenset({CONTACTED, EXTRACTED, WITHDRAWN}),
     CONTACTED: frozenset({INTERVIEW_SCHEDULED, WITHDRAWN}),
     INTERVIEW_SCHEDULED: frozenset(),
     WITHDRAWN: frozenset(),

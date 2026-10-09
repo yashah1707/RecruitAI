@@ -207,12 +207,12 @@ def test_the_home_page_and_the_opening_page_say_that_letters_wait_and_link_to_th
         a = _assessed(s, tmp_path)
         opening_id, app_id = a.opening_id, a.application_id
         s.commit()
-    assert "Emails waiting for your approval" not in client.get("/").text
+    assert "Emails waiting for your approval" not in client.get("/hr/openings").text
     assert "waiting for your approval" not in client.get(f"/hr/openings/{opening_id}").text
     with _Session(engine) as s:
         emails.acknowledge(s, s.get(Application, app_id))
         s.commit()
-    home = client.get("/").text
+    home = client.get("/hr/openings").text
     assert "Emails waiting for your approval" in home and f'<a href="/hr/openings/{opening_id}/emails">' in home
     assert "1 acknowledgement</li>" in home
     page = client.get(f"/hr/openings/{opening_id}").text
