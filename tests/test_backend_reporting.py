@@ -334,6 +334,37 @@ def test_the_email_is_edited_and_approved_from_the_application_page_and_waits_wi
     assert "Enter a valid email address." in bad
 
 
+def test_words_changed_on_an_approved_letter_are_the_words_that_approve_then_approves(client, engine, tmp_path):
+    """Seen in use: a letter already approved was corrected in the box and Approve pressed; the old words went out."""
+    from sqlalchemy.orm import Session as _Session
+
+    app_id, _ = _assessed_on_server(engine, tmp_path)
+    client.post(f"/hr/applications/{app_id}/approve")
+    with _Session(engine) as s:
+        draft = s.scalars(select(EmailDraft)).one()
+        form = {"to_address": "sample.exampleton@example.org", "subject": draft.subject, "body": draft.body}
+    client.post(f"/hr/applications/{app_id}/email", data={**form, "do": "approve"})
+    with _Session(engine) as s:
+        first = s.scalars(select(EmailDraft)).one()
+        assert first.status == "APPROVED" and first.drafted_by == "template"  # approved as the system wrote it
+        approved_at = first.approved_at
+
+    # Approve again with nothing changed: the letter stays as approved, and is not turned into someone's own writing.
+    client.post(f"/hr/applications/{app_id}/email", data={**form, "do": "approve"})
+    with _Session(engine) as s:
+        same = s.scalars(select(EmailDraft)).one()
+        assert same.status == "APPROVED" and same.drafted_by == "template" and same.approved_at == approved_at
+
+    changed = form["body"].replace("Thank you for applying", "Thank you very much for applying")
+    assert changed != form["body"]
+    page = client.post(f"/hr/applications/{app_id}/email", data={**form, "body": changed, "do": "approve"}).text
+    assert "Thank you very much for applying" in page
+    with _Session(engine) as s:
+        now = s.scalars(select(EmailDraft)).one()
+        assert "Thank you very much for applying" in now.body and now.status == "APPROVED" and now.drafted_by == "person"
+        assert now.approved_at > approved_at  # approved afresh, with the words it now has
+
+
 def test_rewording_and_discarding_from_the_page(client, engine, tmp_path):
     from sqlalchemy.orm import Session as _Session
 

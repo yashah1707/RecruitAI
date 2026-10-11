@@ -955,9 +955,12 @@ def email_update(
         if do == "discard":
             emails.discard(session, draft)
             return "Draft discarded. Nothing was sent."
-        if draft.status == "DRAFT" or do in ("save", "reword"):
-            emails.edit(session, draft, to_address, subject, body)
-            session.commit()
+        # What is in the boxes is what is saved, reworded, or approved and sent: whichever button is pressed, the
+        # boxes are taken first. A letter already approved whose words were changed goes back to being a draft in
+        # `edit`, and is then approved again by this same press of Approve. (It used to keep its old words when
+        # Approve was pressed, and send those.) Unchanged words leave an approved letter as it is.
+        emails.edit(session, draft, to_address, subject, body)
+        session.commit()
         if do == "reword":
             emails.reword(session, draft, provider)
             return "Reworded by the language model. Read it before approving."
