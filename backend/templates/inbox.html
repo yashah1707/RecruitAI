@@ -6,6 +6,7 @@
 {% call ui.page_head("Inbox", "Applications and other messages that arrived by email.") %}
   {% if configured %}
   <form method="post" action="/hr/inbox/check" class="inline">
+    <span class="hint">{% if last_checked %}Last checked {{ ui.when(last_checked) }}{% else %}Not checked since the application was started{% endif %}</span>
     <button type="submit">{{ ui.icon("inbox") }} Check inbox</button>
   </form>
   {% endif %}

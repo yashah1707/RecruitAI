@@ -347,6 +347,25 @@ def test_the_inbox_page_lists_what_waits_and_files_a_held_application(client, en
     assert "Email sent by" in page and "sample.exampleton@example.org" in page
 
 
+def test_the_inbox_page_says_when_the_mailbox_was_last_checked_and_a_failed_check_does_not_count(client, engine, monkeypatch):
+    from backend import web
+
+    for name, value in (("IMAP_HOST", "imap.example.org"), ("IMAP_USER", "recruitment@example.org"), ("IMAP_PASSWORD", "made-up")):
+        monkeypatch.setattr(settings, name, value)
+    monkeypatch.setattr(web, "last_inbox_check", {})
+    assert "Not checked since the application was started" in client.get("/hr/inbox").text
+
+    def refuse(*a, **kw):
+        raise ConnectionRefusedError("made-up refusal")
+
+    monkeypatch.setattr(inbox.imaplib, "IMAP4_SSL", refuse)
+    assert "Not checked since the application was started" in client.post("/hr/inbox/check").text  # it did not get through
+    monkeypatch.setattr(inbox, "check_inbox", lambda session: {})
+    page = client.post("/hr/inbox/check").text
+    assert "Last checked " in page and "Not checked since" not in page
+    assert date.today().strftime("%d-%m-%Y") in page.split("Last checked ")[1][:80]  # in the house order, DD-MM-YYYY
+
+
 def test_a_mailbox_that_cannot_be_read_says_so_without_the_servers_words(client, engine, monkeypatch):
     def refuse(*a, **kw):
         raise ConnectionRefusedError("535 bad credentials for recruitment@example.org")

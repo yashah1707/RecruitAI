@@ -755,8 +755,13 @@ def inbox_page(request: Request, msg: str = "", user: Principal = Depends(curren
                                "openings": first + [o for o in openings if o not in first]}
     return templates.TemplateResponse(request, "inbox.html", {
         "rows": rows, "recent": recent, "openings": openings, "msg": msg, "choices": choices,
-        "configured": inbox.inbox_is_configured(), "mailbox": settings.IMAP_USER,
+        "configured": inbox.inbox_is_configured(), "mailbox": settings.IMAP_USER, "last_checked": last_inbox_check.get("at"),
     })
+
+
+# When the mailbox was last read through, for the inbox page. Kept in memory, like `last_run`: it is a convenience
+# for whoever is looking at the page, not a record, and starts empty each time the application is started.
+last_inbox_check: dict[str, datetime] = {}
 
 
 @router.post("/hr/inbox/check")
@@ -764,6 +769,7 @@ def inbox_check(user: Principal = Depends(current_user), session: Session = Depe
     """Look at new mail. Started by a person; reads the mailbox without changing it."""
     try:
         text = inbox.summarise(inbox.check_inbox(session))
+        last_inbox_check["at"] = datetime.now(timezone.utc)  # only a check that got through counts
     except RuntimeError as exc:
         text = str(exc)
     except Exception as exc:  # a wrong password, the server unreachable: say so, without the server's own words

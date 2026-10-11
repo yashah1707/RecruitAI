@@ -228,7 +228,12 @@ def test_an_application_cannot_be_moved_once_decided_or_onto_itself_or_a_closed_
     here, there = a.opening, _opening(session, school_id="SCH-008")
     with pytest.raises(intake.IntakeError, match="already under"):
         intake.move_application(session, a, here)
-    twin = _application(session, tmp_path, category="General")  # the same resume file, already under the target
+    # The same resume file, already under the target: byte for byte the file `a` holds. A second made-up DOCX would
+    # be the same file only when it happened to be built within the same second (a DOCX carries its time of writing).
+    from pathlib import Path
+
+    twin = _application(session, tmp_path, data=Path(a.resume_path).read_bytes(), category="General")
+    assert twin.resume_sha256 == a.resume_sha256 and twin.candidate_id != a.candidate_id
     twin.opening_id = there.opening_id
     session.flush()
     with pytest.raises(intake.IntakeError, match="already has this candidate or this resume"):
