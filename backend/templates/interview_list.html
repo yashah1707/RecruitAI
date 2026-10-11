@@ -2,26 +2,43 @@
 {% block title %}Short-listed candidates · RecruitAI{% endblock %}
 {% block home %}/interview{% endblock %}
 {% block content %}
-<h1>Short-listed candidates</h1>
-<p class="hint">Candidates HR has short-listed for interview, in the schools you are granted. Listed by opening and in order of
+{{ ui.page_head("Short-listed candidates", "Candidates HR has short-listed for interview, in the schools you are granted.") }}
+<p class="hint">Listed by opening and in order of
   receipt: they are not ranked. Selection is made by the Selection Committee on the interview.</p>
 {% if rows %}
-<table>
-  <thead><tr><th>Reference</th><th>Name</th><th>Short-listed for</th><th>Opening</th><th>School</th><th>Highlights</th></tr></thead>
-  <tbody>
-    {% for r in rows %}
-    <tr>
-      <td class="nowrap"><a href="/interview/applications/{{ r.a.application_id }}">{{ r.a.reference }}</a></td>
-      <td>{{ r.name or "Not known" }}</td>
-      <td>{{ DESIGNATIONS.get(r.post, "") }}</td>
-      <td>{{ r.o.reference }}{% if r.o.title %}<br><span class="hint">{{ r.o.title }}</span>{% endif %}</td>
-      <td>{{ r.o.school.name }}{% if r.o.department %}<br><span class="hint">{{ r.o.department.name }}</span>{% endif %}</td>
-      <td>{{ r.highlights or "" }}</td>
-    </tr>
-    {% endfor %}
-  </tbody>
-</table>
+<div class="toolbar">
+  <label class="search">{{ ui.icon("search") }}<span class="sr">Search the candidates</span>
+    <input type="search" placeholder="Search by name or reference" data-filter=".panel-list"></label>
+  <span class="grow"></span>
+  <span class="hint">{{ rows|length }} candidate(s)</span>
+</div>
+{% for opening, group in rows|groupby("o.opening_id")|reverse %}
+{% set o = group[0].o %}
+<details class="group" open data-group-of="candidates">
+  <summary><h2>{{ o.reference }} · {{ DESIGNATIONS.get(o.designation, "") }}</h2>
+    <span class="hint">{{ o.school.name }}{% if o.department %}, {{ o.department.name }}{% endif %}{% if o.title %} · {{ o.title }}{% endif %}</span>
+    <span class="grow"></span>{{ ui.badge(group|length ~ " short-listed", "green", plain=True) }}</summary>
+  <table class="table cards panel-list" data-sortable>
+    <thead><tr><th data-sort="text">Reference</th><th data-sort="text">Name</th><th>Short-listed for</th><th>Opening</th><th>School</th><th>Highlights</th></tr></thead>
+    <tbody>
+      {% for r in group %}
+      <tr>
+        <td class="nowrap head" data-label="Reference"><a class="ref" href="/interview/applications/{{ r.a.application_id }}">{{ r.a.reference }}</a></td>
+        <td class="w-m" data-label="Name">{{ r.name or "Not known" }}</td>
+        <td data-label="Short-listed for">{{ DESIGNATIONS.get(r.post, "") }}</td>
+        <td data-label="Opening">{{ r.o.reference }}{% if r.o.title %}<span class="sub">{{ r.o.title }}</span>{% endif %}</td>
+        <td data-label="School">{{ r.o.school.name }}{% if r.o.department %}<span class="sub">{{ r.o.department.name }}</span>{% endif %}</td>
+        <td data-label="Highlights">{% if r.highlights %}<span class="chip" title="Open the record to read them">{{ r.highlights }} highlight{{ "" if r.highlights == 1 else "s" }}</span>{% endif %}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</details>
+{% endfor %}
+<p class="hint" data-none-for=".panel-list" hidden>No candidate matches. Clear the search to see them all.</p>
 {% else %}
-<p>No candidate has been short-listed yet in the schools you are granted.</p>
+{% call ui.empty("No candidate has been short-listed yet in the schools you are granted.", "users") %}
+  <p>A candidate appears here once HR has recorded a decision to short-list.</p>
+{% endcall %}
 {% endif %}
 {% endblock %}

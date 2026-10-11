@@ -1,0 +1,122 @@
+{# The parts every page is built from. Use: {% import "_ui.html" as ui %}, then {{ ui.badge("Met", "green") }} or
+   {% call ui.alert("warning", "Already in the system") %}...{% endcall %}. They only draw; none of them decides anything. #}
+
+{% macro icon(name) %}<svg class="icon" aria-hidden="true" focusable="false"><use href="#i-{{ name }}"></use></svg>{% endmacro %}
+
+{# --- page header: title, one line under it, actions on the right (the body of the call) --- #}
+{% macro page_head(title, lede=None, eyebrow=None) %}
+<div class="page-head">
+  <div>
+    {% if eyebrow %}<p class="eyebrow">{{ eyebrow }}</p>{% endif %}
+    <h1>{{ title }}</h1>
+    {% if lede %}<p class="lede">{{ lede }}</p>{% endif %}
+  </div>
+  {% if caller %}<div class="actions">{{ caller() }}</div>{% endif %}
+</div>
+{% endmacro %}
+
+{# --- badge: a short status in colour and words. tone: green | amber | red | purple | "" (grey) --- #}
+{% macro badge(text, tone="", title=None, plain=False) %}<span class="badge{{ " " ~ tone if tone }}{{ " plain" if plain }}"{% if title %} title="{{ title }}"{% endif %}>{{ text }}</span>{% endmacro %}
+
+{# One mapping from an application's state to its badge, used on every page. The full sentence is the tooltip.
+   green = met / short-listed / done, amber = waiting for a person, red = not eligible / failed, purple = moving through, grey = closed. #}
+{% set STATUS_SHORT = {
+  "RECEIVED": "To read", "PARSING": "Being read", "PENDING_REVIEW": "Fields to check", "EXTRACTED": "To assess", "ASSESSED": "Being assessed",
+  "FAILED": "Unreadable", "NEEDS_JOB_MATCH": "No opening", "WITHDRAWN": "Withdrawn",
+  "SHORTLISTED": "Meets the post", "RE_CATEGORISED": "Meets a lower post", "NOT_ELIGIBLE": "Not eligible", "MANUAL_REVIEW": "Needs a decision",
+  "HR_APPROVED": "Decided", "CONTACTED": "Candidate informed", "INTERVIEW_SCHEDULED": "Interview scheduled"} %}
+{% set STATUS_TONE = {
+  "RECEIVED": "purple", "PARSING": "purple", "PENDING_REVIEW": "amber", "EXTRACTED": "purple", "ASSESSED": "purple",
+  "FAILED": "red", "NEEDS_JOB_MATCH": "amber", "WITHDRAWN": "",
+  "SHORTLISTED": "green", "RE_CATEGORISED": "amber", "NOT_ELIGIBLE": "red", "MANUAL_REVIEW": "amber",
+  "HR_APPROVED": "green", "CONTACTED": "green", "INTERVIEW_SCHEDULED": "green"} %}
+{% macro status_badge(status) %}{{ badge(STATUS_SHORT.get(status, status), STATUS_TONE.get(status, ""), STATE_LABELS.get(status, status)) }}{% endmacro %}
+
+{# The outcome of an assessment or of one requirement in it. #}
+{% set RESULT_TEXT = {"PASS": "Met", "FAIL": "Not met", "UNKNOWN": "Open", "SHORTLISTED": "Meets the post", "RE_CATEGORISED": "Meets a lower post",
+                      "NOT_ELIGIBLE": "Not eligible", "MANUAL_REVIEW": "Needs a decision"} %}
+{% set RESULT_TONE = {"PASS": "green", "FAIL": "red", "UNKNOWN": "amber", "SHORTLISTED": "green", "RE_CATEGORISED": "amber",
+                      "NOT_ELIGIBLE": "red", "MANUAL_REVIEW": "amber"} %}
+{% macro result_badge(code, title=None) %}{{ badge(RESULT_TEXT.get(code, code), RESULT_TONE.get(code, ""), title) }}{% endmacro %}
+
+{# --- callout: an icon, a short heading, the detail below. kind: info | success | warning | danger --- #}
+{% macro alert(kind="info", title=None, role=None) %}
+<div class="alert {{ kind }}"{% if role %} role="{{ role }}"{% endif %}>
+  {{ icon({"info": "info", "success": "check-circle", "warning": "alert", "danger": "x-circle"}[kind]) }}
+  {% if title %}<strong>{{ title }}</strong>{% endif %}
+  <div>{{ caller() }}</div>
+</div>
+{% endmacro %}
+
+{# --- the long explanation of a page, one click away --- #}
+{% macro about(summary="About this page") %}
+<details class="about"><summary>{{ icon("info") }} {{ summary }}</summary><div>{{ caller() }}</div></details>
+{% endmacro %}
+
+{# --- empty state: an icon, one line, and (in the body of the call) what to do about it --- #}
+{% macro empty(title, icon_name="inbox") %}
+<div class="empty">{{ icon(icon_name) }}<p><strong>{{ title }}</strong></p>{% if caller %}{{ caller() }}{% endif %}</div>
+{% endmacro %}
+
+{# --- a label and its value(s), in columns --- #}
+{% macro fact(label, wide=False) %}<div{% if wide %} class="wide"{% endif %}><dt>{{ label }}</dt><dd>{{ caller() }}</dd></div>{% endmacro %}
+
+{# --- form field: label above, help below, error under that. extra = other attributes, e.g. {"required": true, "maxlength": 200} --- #}
+{% macro field(label, name, type="text", value="", help=None, error=None, extra={}) %}
+<div class="field">
+  <label for="f-{{ name }}">{{ label }}</label>
+  <input id="f-{{ name }}" type="{{ type }}" name="{{ name }}"{% if type != "password" %} value="{{ value }}"{% endif %}{% if help %} aria-describedby="h-{{ name }}"{% endif %}{% if error %} aria-invalid="true"{% endif %} {{ extra|xmlattr }}>
+  {% if help %}<span class="hint" id="h-{{ name }}">{{ help }}</span>{% endif %}
+  {% if error %}<span class="error">{{ error }}</span>{% endif %}
+</div>
+{% endmacro %}
+
+{# --- file drop zone: the same <input type="file"> and field name, easier to hit --- #}
+{% macro dropzone(name, title="Drop files here, or click to choose", hint=None, accept=None, multiple=False, required=False) %}
+<label class="dropzone">
+  {{ icon("upload") }}
+  <strong>{{ title }}</strong>
+  {% if hint %}<span class="hint">{{ hint }}</span>{% endif %}
+  <span data-files aria-live="polite"></span>
+  <input type="file" name="{{ name }}"{% if accept %} accept="{{ accept }}"{% endif %}{% if multiple %} multiple{% endif %}{% if required %} required{% endif %}>
+</label>
+{% endmacro %}
+
+{# --- a value to copy, with its button --- #}
+{% macro copy_field(id, value, label) %}
+<div class="copy-field">
+  <input id="{{ id }}" type="text" value="{{ value }}" readonly aria-label="{{ label }}" onfocus="this.select()">
+  <button type="button" class="secondary sm" data-copy="#{{ id }}">{{ icon("copy") }}<span>Copy</span></button>
+</div>
+{% endmacro %}
+
+{# --- collapsible section --- #}
+{% macro collapsible(summary, open=False) %}
+<details class="more"{% if open %} open{% endif %}><summary>{{ summary }}</summary>{{ caller() }}</details>
+{% endmacro %}
+
+{# --- tabs over sections of one page: items = [("assessment", "Assessment"), ...]; each section is
+       <section id="assessment" role="tabpanel" aria-labelledby="tab-assessment">. Without scripts all sections show. --- #}
+{% macro tabs(items, label="Sections") %}
+<div class="tabs" role="tablist" aria-label="{{ label }}">
+  {% for id, text in items %}<button type="button" role="tab" id="tab-{{ id }}" aria-controls="{{ id }}" aria-selected="{{ "true" if loop.first else "false" }}">{{ text }}</button>{% endfor %}
+</div>
+{% endmacro %}
+
+{# --- confirmation: attributes for a form or a submit button. The dialog states the consequence and, on yes,
+       sends the same form with the same button. --- #}
+{% macro confirm(text, title="Are you sure?", action=None, tone="danger") %}data-confirm="{{ text }}" data-confirm-title="{{ title }}"{% if action %} data-confirm-action="{{ action }}"{% endif %} data-confirm-tone="{{ tone }}"{% endmacro %}
+
+{# --- a person's initials in a circle --- #}
+{% macro avatar(name) %}{% set parts = (name or "?").split() %}<span class="avatar" aria-hidden="true">{{ (parts[0][:1] ~ (parts[-1][:1] if parts|length > 1 else ""))|upper }}</span>{% endmacro %}
+
+{# --- a number that is muted when it is nothing --- #}
+{% macro num(n) %}<span{% if not n %} class="zero"{% endif %}>{{ n }}</span>{% endmacro %}
+
+{# --- a row of small counts: cells = [(label, n, tone)]. A count of nothing is muted; "total" is the plain first cell. --- #}
+{% macro pipe(cells) %}
+<span class="pipe">{% for label, n, tone in cells %}<span class="pipe-cell{{ " " ~ tone if n or tone == "total" }}{{ " zero" if not n }}" title="{{ label }}: {{ n }}"><span class="pipe-n">{{ n }}</span><span class="pipe-l">{{ label }}</span></span>{% endfor %}</span>
+{% endmacro %}
+
+{# --- a date, with its time (when it has one) muted after it: DD-MM-YYYY everywhere --- #}
+{% macro when(value) %}{% set t = (value|ddmmyyyy).split(" ") %}{{ t[0] }}{% if t|length > 1 %} <span class="time">{{ t[1] }}</span>{% endif %}{% endmacro %}

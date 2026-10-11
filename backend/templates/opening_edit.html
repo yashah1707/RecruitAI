@@ -3,13 +3,13 @@
 {% block trail %}<a href="/hr/openings">Openings</a> › <a href="/hr/openings/{{ o.opening_id }}">{{ o.reference }}</a> › Edit{% endblock %}
 {% macro err(name) %}{% if errors.get(name) %}<span class="error">{{ errors[name] }}</span>{% endif %}{% endmacro %}
 {% block content %}
-<h1>Edit {{ o.reference }}</h1>
+{{ ui.page_head("Edit " ~ o.reference, DESIGNATIONS[o.designation] ~ ", " ~ o.school.name) }}
 <dl class="facts">
   <dt>School</dt><dd>{{ o.school.name }}</dd>
   <dt>Post</dt><dd>{{ DESIGNATIONS[o.designation] }}</dd>
 </dl>
-<p class="hint">The school and the post cannot be changed here: they are what applicants applied for. If applications were
-  filed under the wrong post, create the right opening and use "Move all" on this opening's page.</p>
+{% call ui.alert("info", "The school and the post cannot be changed here") %}They are what applicants applied for. If applications were
+  filed under the wrong post, create the right opening and use "Move all" on this opening's page.{% endcall %}
 
 <form method="post" action="/hr/openings/{{ o.opening_id }}/edit" class="stack">
   <label>Rules that apply to this post
@@ -45,6 +45,6 @@
       {% if assessed %}If a change here moves the date in force, the {{ assessed }} assessed application(s) not yet decided are set aside to be assessed again.{% endif %}</span>
   </label>
 
-  <button type="submit">Save changes</button>
+  <div class="inline"><button type="submit">Save changes</button> <a class="button ghost" href="/hr/openings/{{ o.opening_id }}">Cancel</a></div>
 </form>
 {% endblock %}

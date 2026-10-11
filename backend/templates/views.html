@@ -2,16 +2,22 @@
 {% block title %}Interview panel's view · RecruitAI{% endblock %}
 {% block trail %}<a href="/admin/users">Accounts</a> › What the interview panel sees{% endblock %}
 {% block content %}
-<h1>What the interview panel sees</h1>
-<p>An interviewer account sees only candidates HR has short-listed, in the schools it is granted, and only the parts of the
-  record ticked here. HR sees everything throughout. The candidate's name, the post and the school are always shown.</p>
+{% call ui.page_head("What the interview panel sees", "The parts of a short-listed candidate's record an interviewer account is shown.") %}
+  <a class="button secondary" href="/interview">{{ ui.icon("eye") }} See the panel's view</a>
+{% endcall %}
+{% call ui.alert("info", "HR sees everything throughout.") %}
+  An interviewer account sees only candidates HR has short-listed, in the schools it is granted, and only the parts of the
+  record ticked here. The candidate's name, the post and the school are always shown.
+{% endcall %}
 <p class="hint">Whether the panel sees contact details and reserved-category status is the university's decision. Until it is taken
   they are withheld, with the two things that would give them away: the resume file and the assessment's working.</p>
 <form method="post" action="/admin/views" class="stack">
+  <div class="settings">
   {% for entity, field, label, default in parts %}
   <label class="choice"><input type="checkbox" name="shown" value="{{ entity }}.{{ field }}"{% if show[entity ~ "." ~ field] %} checked{% endif %}>
-    {{ label }} <span class="hint">({{ "shown" if default else "withheld" }} unless changed)</span></label>
+    <span>{{ label }} <span class="hint">({{ "shown" if default else "withheld" }} unless changed)</span></span></label>
   {% endfor %}
+  </div>
   <button type="submit">Save</button>
   <span class="hint">Takes effect at once. <a href="/interview">See the panel's view as it now is.</a></span>
 </form>

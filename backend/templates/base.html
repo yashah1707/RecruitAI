@@ -3,105 +3,93 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#3D1165">
   <title>{% block title %}RecruitAI{% endblock %}</title>
   {% if reading %}<noscript><meta http-equiv="refresh" content="5"></noscript>{% endif %}
-  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='6' fill='%231f4e8c'/%3E%3Ctext x='16' y='23' font-family='system-ui,sans-serif' font-size='19' font-weight='700' text-anchor='middle' fill='%23fff'%3ER%3C/text%3E%3C/svg%3E">
-  <link rel="stylesheet" href="{{ asset("app.css") }}">
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%233D1165'/%3E%3Crect x='7' y='25' width='18' height='3' rx='1.5' fill='%23DD7228'/%3E%3Ctext x='16' y='21' font-family='system-ui,sans-serif' font-size='18' font-weight='800' text-anchor='middle' fill='%23fff'%3ER%3C/text%3E%3C/svg%3E">
+  <link rel="preload" href="/static/fonts/metropolis-400.woff2" as="font" type="font/woff2" crossorigin>
+  <link rel="preload" href="/static/fonts/metropolis-600.woff2" as="font" type="font/woff2" crossorigin>
+  <link rel="stylesheet" href="{{ asset("css/tokens.css") }}">
+  <link rel="stylesheet" href="{{ asset("css/app.css") }}">
+  <script>document.documentElement.className += " js";</script>
 </head>
-<body>
-  {% set me = request.state.user|default(None) %}
-  {% set forced = request.state.forced|default(False) %}
-  {% set at = request.url.path %}
-  {% set waiting_mail = inbox_waiting if inbox_waiting is defined else request.state.inbox_waiting|default(0) %}
-  {% macro item(href, text, here) %}<a href="{{ href }}"{% if here %} aria-current="page"{% endif %}>{{ text }}</a>{% endmacro %}
+{% import "_ui.html" as ui %}
+{% set me = request.state.user|default(None) %}
+{% set forced = request.state.forced|default(False) %}
+{% set at = request.url.path %}
+{% set waiting_mail = inbox_waiting if inbox_waiting is defined else request.state.inbox_waiting|default(0) %}
+{% set role_words = {"UNIVERSITY_ADMIN": "University administrator", "HR_ADMIN": "HR administrator", "SCHOOL_HR": "School HR",
+                     "DEPARTMENT_HR": "Department HR", "INTERVIEWER": "Interview panel"} %}
+{% macro item(href, text, here, count=0) %}<a href="{{ href }}"{% if here %} aria-current="page"{% endif %}>{{ text }}{% if count %}<span class="count" title="{{ count }} waiting for you"><span class="sr">(</span>{{ count }}<span class="sr">)</span></span>{% endif %}</a>{% endmacro %}
+<body{% if me %} data-signed-in{% endif %}{% if reading %} data-reading{% endif %}>
+  {% include "_icons.html" %}
   <a class="skip" href="#content">Skip to the content</a>
-  <header class="top">
-    <a class="brand" href="{% block home %}/{% endblock %}">RecruitAI</a>
-    {% if me %}
-    {# The same menu on every page a signed-in person sees; what is in it depends only on the kind of account. #}
-    <nav aria-label="Main">
-      {% if not forced %}
-      {% if me.user_type == "INTERVIEWER" %}
-      {{ item("/interview", "Short-listed candidates", at.startswith("/interview")) }}
+  {% block shell %}
+  <header class="top{% if not me %} public{% endif %}">
+    <div class="top-in">
+      <a class="brand" href="{% block home %}/{% endblock %}">
+        <img src="{{ asset("img/mitadt-logo-light.png") }}" alt="MIT-ADT University" width="1289" height="500">
+        <span class="brand-words"><span class="brand-name">RecruitAI</span>
+          <span class="brand-sub">{% if me %}Faculty Recruitment{% else %}{% block area %}Faculty Recruitment{% endblock %}{% endif %}</span></span>
+      </a>
+      {% if me %}
+      {# The same menu on every page a signed-in person sees; what is in it depends only on the kind of account. #}
+      <button type="button" class="navtoggle" aria-controls="mainnav" aria-expanded="false" aria-label="Menu">{{ ui.icon("menu") }}</button>
+      <nav class="main" id="mainnav" aria-label="Main">
+        {% if not forced %}
+        {% if me.user_type == "INTERVIEWER" %}
+        {{ item("/interview", "Short-listed candidates", at.startswith("/interview")) }}
+        {% else %}
+        {% if me.is_admin %}{{ item("/hr/dashboard", "Dashboard", at.startswith("/hr/dashboard")) }}{% endif %}
+        {{ item("/hr/openings", "Openings", at == "/" or at.startswith("/hr/openings") or at.startswith("/hr/applications")) }}
+        {% if me.is_admin %}
+        {{ item("/hr/inbox", "Inbox", at.startswith("/hr/inbox"), waiting_mail) }}
+        {{ item("/hr/policy", "University criteria", at.startswith("/hr/policy")) }}
+        {% endif %}
+        {{ item("/interview", "Panel view", at.startswith("/interview")) }}
+        {% if me.manages_accounts %}{{ item("/admin/users", "Accounts", at.startswith("/admin")) }}{% endif %}
+        {% endif %}
+        {% endif %}
+      </nav>
+      <div class="top-end">
+        <details class="menu usermenu">
+          <summary aria-label="Your account: {{ me.name }}">{{ ui.avatar(me.name) }}<span class="who">{{ me.name }}</span>{{ ui.icon("chevron-down") }}</summary>
+          <div class="menu-panel">
+            <p class="menu-who"><strong>{{ me.name }}</strong><span class="hint">{{ role_words.get(me.user_type, me.user_type) }}</span></p>
+            {% if me.user_id %}
+            <a href="/account/password"{% if at.startswith("/account") %} aria-current="page"{% endif %}>{{ ui.icon("key") }} Change password</a>
+            <form method="post" action="/logout" class="signout"><button type="submit">{{ ui.icon("logout") }} Sign out</button></form>
+            {% endif %}
+          </div>
+        </details>
+      </div>
       {% else %}
-      {% if me.is_admin %}{{ item("/hr/dashboard", "Dashboard", at.startswith("/hr/dashboard")) }}{% endif %}
-      {{ item("/hr/openings", "Openings", at == "/" or at.startswith("/hr/openings") or at.startswith("/hr/applications")) }}
-      {% if me.is_admin %}
-      {{ item("/hr/inbox", "Inbox" ~ (" (" ~ waiting_mail ~ ")" if waiting_mail else ""), at.startswith("/hr/inbox")) }}
-      {{ item("/hr/policy", "University criteria", at.startswith("/hr/policy")) }}
+      <nav class="main" aria-label="Main">{% block nav %}{% endblock %}</nav>
       {% endif %}
-      {{ item("/interview", "Panel view", at.startswith("/interview")) }}
-      {% if me.manages_accounts %}{{ item("/admin/users", "Accounts", at.startswith("/admin")) }}{% endif %}
-      {% endif %}
-      {% endif %}
-    </nav>
-    <nav class="account" aria-label="Your account">
-      <span class="who">{{ me.name }}</span>
-      {% if me.user_id %}{{ item("/account/password", "Password", at.startswith("/account")) }}
-      <form method="post" action="/logout" class="signout"><button type="submit">Sign out</button></form>{% endif %}
-    </nav>
-    {% else %}
-    <span class="sub">{% block area %}Faculty recruitment{% endblock %}</span>
-    <nav aria-label="Main">{% block nav %}{% endblock %}</nav>
-    {% endif %}
+    </div>
   </header>
   {% if me %}{% set trail %}{% block trail %}{% endblock %}{% endset %}{% if trail|trim %}<p class="trail">{{ trail }}</p>{% endif %}{% endif %}
   <main id="content">
-    {% if msg %}<p class="notice" role="status">{{ msg }}</p>{% endif %}
+    {% if msg %}<p class="notice" role="status" data-toast>{{ msg }}</p>{% endif %}
     {% block content %}{% endblock %}
   </main>
-  <script>
-    // A form is sent once. A second click while the first is on its way does nothing.
-    document.addEventListener("submit", function (e) {
-      var form = e.target;
-      if (form.dataset.sent) { e.preventDefault(); return; }
-      form.dataset.sent = "1";
-      form.setAttribute("aria-busy", "true");
-    });
-    window.addEventListener("pageshow", function (e) {
-      {% if me %}
-      // Back and Forward can bring a page back exactly as it was, from the browser's memory, without asking the
-      // server (some browsers do this even for pages sent "no-store"). A page shown to someone signed in must
-      // never come back that way: they may have signed out since. So it is hidden and asked for again, and the
-      // server answers with the page if they are still signed in and with the sign-in page if they are not.
-      if (e.persisted) { document.documentElement.style.visibility = "hidden"; location.reload(); return; }
-      {% endif %}
-      document.querySelectorAll("form[data-sent]").forEach(function (f) { delete f.dataset.sent; f.removeAttribute("aria-busy"); });
-    });
-    // A message shown once belongs to the action just taken, not to the address: refreshing or sharing the
-    // page must not show it again.
-    (function () {
-      var here = new URL(location.href), had = false;
-      ["msg", "sent", "expired", "said"].forEach(function (k) { if (here.searchParams.has(k)) { here.searchParams.delete(k); had = true; } });
-      if (had) { history.replaceState(null, "", here.pathname + here.search + here.hash); }
-    })();
-    {% if reading %}
-    // While resumes are being read the page keeps itself up to date, but never under someone who is typing.
-    setInterval(function () {
-      var at = document.activeElement;
-      if (!at || !/^(INPUT|TEXTAREA|SELECT)$/.test(at.tagName)) { location.reload(); }
-    }, 5000);
-    {% endif %}
-  </script>
-  <script>
-    // "Show password": one tick per form that has password boxes, added only when scripts run.
-    // It changes what is displayed on this screen and nothing else.
-    document.querySelectorAll("form").forEach(function (form) {
-      var boxes = form.querySelectorAll("input[type=password]");
-      if (!boxes.length) { return; }
-      var label = document.createElement("label");
-      label.className = "choice";
-      label.innerHTML = '<input type="checkbox"> Show password' + (boxes.length > 1 ? "s" : "");
-      label.firstChild.addEventListener("change", function (e) {
-        boxes.forEach(function (b) { b.type = e.target.checked ? "text" : "password"; });
-      });
-      form.addEventListener("submit", function () { boxes.forEach(function (b) { b.type = "password"; }); });
-      boxes[boxes.length - 1].closest("label").after(label);
-    });
-  </script>
-  <footer>
-    A short-listing aid. Selection is made by the Selection Committee at interview
-    (UGC Regulations, 2018, clause 4.1 Note).
+  <footer class="foot">
+    <div class="foot-in">
+      <p>A short-listing aid. Selection is made by the Selection Committee at interview
+        (UGC Regulations, 2018, clause 4.1 Note).</p>
+      <p>MIT ADT University, Pune · RecruitAI {{ request.app.version }}</p>
+    </div>
   </footer>
+  {% endblock %}
+  {# What the last action did, shown in the corner. Without scripts the message stays where it was written, at the top of the page. #}
+  <div class="toasts" id="toasts" aria-live="polite"></div>
+  {# The one question the pages ask before something that cannot be undone. app.js fills it in and sends the same form on "yes". #}
+  <dialog id="confirm" aria-labelledby="confirm-title">
+    <form method="dialog">
+      <div class="dialog-body"><h2 id="confirm-title" data-title>Are you sure?</h2><p data-text></p></div>
+      <div class="dialog-actions"><button type="submit" value="no" class="secondary" data-no>Cancel</button><button type="submit" value="yes" data-yes>Yes, go ahead</button></div>
+    </form>
+  </dialog>
+  <script src="{{ asset("js/app.js") }}"></script>
 </body>
 </html>

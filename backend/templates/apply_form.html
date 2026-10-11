@@ -5,21 +5,27 @@
 {% block nav %}<a href="/apply">All openings</a>{% endblock %}
 {% macro err(name) %}{% if f.errors.get(name) %}<span class="error">{{ f.errors[name] }}</span>{% endif %}{% endmacro %}
 {% block content %}
-<h1>Apply: {{ DESIGNATIONS[o.designation] }}</h1>
-<dl class="facts">
-  <dt>School</dt><dd>{{ o.school.name }}</dd>
-  {% if o.department %}<dt>Department</dt><dd>{{ o.department.name }}</dd>{% endif %}
-  {% if o.title %}<dt>Post</dt><dd>{{ o.title }}</dd>{% endif %}
-  <dt>Reference</dt><dd>{{ o.reference }}</dd>
-  <dt>Closing date</dt><dd>{{ o.closing_date|ddmmyyyy or "Open-ended" }}</dd>
+<div class="apply-page">
+{{ ui.page_head("Apply: " ~ DESIGNATIONS[o.designation], o.title or None, o.school.name ~ (" · " ~ o.department.name if o.department else "")) }}
+<section class="panel">
+<dl class="facts cols">
+  <div><dt>School</dt><dd>{{ o.school.name }}</dd></div>
+  {% if o.department %}<div><dt>Department</dt><dd>{{ o.department.name }}</dd></div>{% endif %}
+  {% if o.title %}<div><dt>Post</dt><dd>{{ o.title }}</dd></div>{% endif %}
+  <div><dt>Reference</dt><dd>{{ o.reference }}</dd></div>
+  <div><dt>Closing date</dt><dd>{{ o.closing_date|ddmmyyyy or "Open-ended" }}</dd></div>
 </dl>
+</section>
 
 {% if not accepting %}
-<p class="notice">This opening is no longer accepting applications.</p>
+{% call ui.alert("warning", "This opening is no longer accepting applications.") %}
+  <a href="/apply">See the openings that are.</a>
+{% endcall %}
 {% else %}
 {% if f.errors %}<p class="error" role="alert">Please correct the highlighted fields. Nothing has been submitted yet.</p>{% endif %}
 {{ err("opening") }}
 <form method="post" action="/apply/{{ o.opening_id }}" enctype="multipart/form-data" class="stack" novalidate>
+  <strong class="form-title">About you</strong>
   <label>Full name
     <input name="full_name" value="{{ f.full_name }}" maxlength="200" autocomplete="name" required>
     {{ err("full_name") }}
@@ -61,17 +67,25 @@
     {{ err("study_leave_taken") }}
     <span class="hint">This affects how your teaching experience is counted, so it is asked here and not read from your resume.</span>
   </fieldset>
-  <label>Resume (PDF or DOCX, up to 15 MB)
-    <input type="file" name="resume" accept=".pdf,.docx" required>
+  <strong class="form-title">Your resume</strong>
+  <div class="field">
+    <span id="resume-label">Resume (PDF or DOCX, up to 15 MB)</span>
+    <label class="dropzone" aria-labelledby="resume-label">
+      {{ ui.icon("upload") }}
+      <strong>Drop your resume here, or click to choose it</strong>
+      <span data-files aria-live="polite"></span>
+      <input type="file" name="resume" accept=".pdf,.docx" required>
+    </label>
     {{ err("resume") }}
     <span class="hint">A scanned or photographed resume cannot be read. Please upload one exported from a word processor.</span>
-  </label>
+  </div>
   <label class="choice">
     <input type="checkbox" name="declaration" value="yes" {{ "checked" if f.declaration }}>
     I confirm that the information given here and in my resume is true.
   </label>
   {{ err("declaration") }}
-  <button type="submit">Submit application</button>
+  <button type="submit" class="accent">Submit application</button>
 </form>
 {% endif %}
+</div>
 {% endblock %}

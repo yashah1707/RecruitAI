@@ -4,15 +4,24 @@
 {% block area %}Faculty openings{% endblock %}
 {% block nav %}<a href="/apply">All openings</a>{% endblock %}
 {% block content %}
-<h1>Application received</h1>
-<p class="notice">Your application reference is <strong>{{ a.reference }}</strong>. Please keep it.
-  {% if acknowledged %}An acknowledgement is being sent to the email address you gave.{% endif %}</p>
-<dl class="facts">
-  <dt>Post</dt><dd>{{ DESIGNATIONS[o.designation] }}{% if o.title %}, {{ o.title }}{% endif %}</dd>
-  <dt>School</dt><dd>{{ o.school.name }}</dd>
-  <dt>Opening</dt><dd>{{ o.reference }}</dd>
-  <dt>Received</dt><dd>{{ a.created_at|ddmmyyyy }}</dd>
+<div class="apply-page">
+<section class="panel done">
+  {{ ui.icon("check-circle") }}
+  <h1>Application received</h1>
+  <p class="notice">Your application reference is <strong>{{ a.reference }}</strong>. Please keep it.
+    {% if acknowledged %}An acknowledgement is being sent to the email address you gave.{% endif %}</p>
+  <p class="reference" aria-hidden="true">{{ a.reference }}</p>
+</section>
+<section class="panel">
+<dl class="facts cols">
+  <div><dt>Post</dt><dd>{{ DESIGNATIONS[o.designation] }}{% if o.title %}, {{ o.title }}{% endif %}</dd></div>
+  <div><dt>School</dt><dd>{{ o.school.name }}</dd></div>
+  <div><dt>Opening</dt><dd>{{ o.reference }}</dd></div>
+  <div><dt>Received</dt><dd>{{ a.created_at|ddmmyyyy }}</dd></div>
 </dl>
 <p>Your application will be checked against the minimum qualifications and reviewed by the university.
   Selection is made by the Selection Committee at interview.</p>
+<p class="actions"><a class="button secondary" href="/apply">See all openings</a></p>
+</section>
+</div>
 {% endblock %}

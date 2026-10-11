@@ -1,17 +1,20 @@
-{% extends "base.html" %}
+{% extends "_auth.html" %}
 {% block title %}Set up · RecruitAI{% endblock %}
-{% block home %}/setup{% endblock %}
-{% block content %}
-<h1>Set up RecruitAI</h1>
-<p>No account exists yet. Create the first one: the university administrator, who can see every school and creates
-  everyone else's account. This page works only this once.</p>
-<form method="post" action="/setup" class="stack narrow">
-  {% if error %}<p class="error" role="alert">{{ error }}</p>{% endif %}
-  <label>Your name <input name="name" value="{{ name }}" maxlength="200" required autofocus></label>
-  <label>Email address <input type="email" name="email" value="{{ email }}" autocomplete="username" required></label>
-  <label>Password <input type="password" name="password" autocomplete="new-password" minlength="{{ min }}" required>
-    <span class="hint">At least {{ min }} characters. It is stored only in a scrambled form that cannot be read back.</span></label>
-  <label>The password again <input type="password" name="again" autocomplete="new-password" required></label>
-  <button type="submit">Create the administrator account</button>
-</form>
+{% block card %}
+      <h1>Set up RecruitAI</h1>
+      <p class="lede">No account exists yet. Create the first one: the university administrator, who can see every school and creates
+        everyone else's account. This page works only this once.</p>
+      <form method="post" action="/setup">
+        {% if error %}<p class="error" role="alert">{{ error }}</p>{% endif %}
+        <div class="field"><label for="f-name">Your name</label>
+          <input id="f-name" name="name" value="{{ name }}" maxlength="200" required autofocus></div>
+        <div class="field"><label for="f-email">Email address</label>
+          <input id="f-email" type="email" name="email" value="{{ email }}" autocomplete="username" required></div>
+        <div class="field"><label for="f-password">Password</label>
+          <input id="f-password" type="password" name="password" autocomplete="new-password" minlength="{{ min }}" required aria-describedby="h-password" data-min-length="{{ min }}">
+          <span class="hint" id="h-password">At least {{ min }} characters. It is stored only in a scrambled form that cannot be read back.</span></div>
+        <div class="field"><label for="f-again">The password again</label>
+          <input id="f-again" type="password" name="again" autocomplete="new-password" required></div>
+        <button type="submit" class="block">Create the administrator account</button>
+      </form>
 {% endblock %}

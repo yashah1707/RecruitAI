@@ -1,17 +1,19 @@
 {% extends "base.html" %}
 {% block title %}Openings · RecruitAI{% endblock %}
 {% block content %}
-<h1>Openings</h1>
-<p class="inline">{% if can_open %}<a class="button" href="/hr/openings/new">New opening</a>{% endif %}
-  <a href="/apply">See the openings as an applicant does</a></p>
+{% call ui.page_head("Openings", "Each opening, and where its applications stand.") %}
+  <a class="button secondary" href="/apply">{{ ui.icon("external") }} View public openings page</a>
+  {% if can_open %}<a class="button" href="/hr/openings/new">{{ ui.icon("plus") }} New opening</a>{% endif %}
+{% endcall %}
 
+<div class="grid-auto">
 <section class="panel">
-  <h2>Reading queue</h2>
+  <div class="card-head"><h2>Reading queue</h2>{% if reading %}{{ ui.badge("Reading now", "purple") }}{% endif %}</div>
   {% if reading %}
   <p class="notice" role="status"><strong>Reading in progress.</strong> {{ due + queue.RUNNING }} application(s) still to go.
     This page refreshes every few seconds.</p>
   {% endif %}
-  <p>
+  <p class="stat{% if not due %} none{% endif %}">
     <strong>{{ due }}</strong> application(s) waiting to be read now
     {%- if queue.PENDING > due %}, {{ queue.PENDING - due }} scheduled for a later retry{% endif %}.
   </p>
@@ -34,34 +36,37 @@
 
 {% if letters %}
 <section class="panel">
-  <h2>Emails waiting for your approval</h2>
-  <ul>
+  <div class="card-head"><h2>Emails waiting for your approval</h2></div>
+  <ul class="rows">
     {% for o in openings if letters.get(o.opening_id) %}
-    <li><a href="/hr/openings/{{ o.opening_id }}/emails">{{ o.reference }}</a>: {{ letters[o.opening_id] }}</li>
+    <li><span><a class="ref" href="/hr/openings/{{ o.opening_id }}/emails">{{ o.reference }}</a>: {{ letters[o.opening_id] }}</span>
+      <a class="button secondary sm" href="/hr/openings/{{ o.opening_id }}/emails">Read and approve</a></li>
     {% endfor %}
   </ul>
   <p class="hint">Nothing is sent until you approve it. An acknowledgement for a resume that came by email waits here
     because its address was read from the resume.</p>
 </section>
 {% endif %}
+</div>
 
 {% if attention or stuck %}
 <section class="panel warn">
   <h2>Needs attention</h2>
-  <ul>
+  <ul class="rows">
     {% for a in attention %}
-    <li>
-      <a href="/hr/applications/{{ a.application_id }}">{{ a.reference }}</a>:
+    <li><span>
+      <a class="ref" href="/hr/applications/{{ a.application_id }}">{{ a.reference }}</a>:
       {% if a.status == "FAILED" %}the resume could not be read. {{ (a.transitions[-1].note if a.transitions else "")|why_unreadable }}.
-      {% else %}the email on this resume already belongs to another candidate; check whether it is the same person.{% endif %}
+      {% else %}the email on this resume already belongs to another candidate; check whether it is the same person.{% endif %}</span>
+      <a class="button secondary sm" href="/hr/applications/{{ a.application_id }}">Open</a>
     </li>
     {% endfor %}
     {% for j in stuck %}
     <li>
       <form method="post" action="/hr/jobs/{{ j.job_id }}/requeue" class="inline">
-        <span>Application <a href="/hr/applications/{{ j.application_id }}">{{ "APP-%06d"|format(j.application_id) }}</a>
+        <span>Application <a class="ref" href="/hr/applications/{{ j.application_id }}">{{ "APP-%06d"|format(j.application_id) }}</a>
           could not be read after {{ j.attempts }} attempts ({{ j.note }}).</span>
-        <button type="submit" class="quiet">Try again</button>
+        <button type="submit" class="quiet sm">Try again</button>
       </form>
     </li>
     {% endfor %}
@@ -70,32 +75,64 @@
 {% endif %}
 
 {% if openings %}
-<table>
+<div class="toolbar">
+  <label class="search">{{ ui.icon("search") }}<span class="sr">Search the openings</span>
+    <input type="search" placeholder="Search by reference, post or school" data-filter="#openings"></label>
+  <div class="segments" data-filter-tabs="#openings" role="group" aria-label="Show">
+    <button type="button" aria-pressed="true" data-group="">All</button>
+    <button type="button" aria-pressed="false" data-group="accepting">Accepting</button>
+    <button type="button" aria-pressed="false" data-group="closed">Closed</button>
+  </div>
+  <span class="grow"></span>
+  <span class="hint"><span data-count-for="#openings">{{ openings|length }}</span> opening(s)</span>
+</div>
+<table class="table cards sticky" id="openings" data-sortable>
   <thead>
-    <tr><th>Reference</th><th>Post</th><th>School</th><th>Rules</th><th>Closes</th><th>Status</th>
-        <th class="num">Applications</th><th class="num">To check</th><th class="num">To assess</th><th class="num">To decide</th><th class="num">Decided</th><th class="num">Unreadable</th></tr>
+    <tr><th data-sort="text">Reference</th><th data-sort="text">Post</th><th data-sort="text">School</th><th data-sort="date">Closes</th>
+        <th data-sort="text">Status</th><th>Applications</th><th class="act"><span class="sr">More</span></th></tr>
   </thead>
   <tbody>
     {% for o in openings %}
     {% set c = counts.get(o.opening_id, {}) %}
-    <tr>
-      <td class="nowrap"><a href="/hr/openings/{{ o.opening_id }}">{{ o.reference }}</a></td>
-      <td>{{ DESIGNATIONS[o.designation] }}{% if o.title %}<br><span class="hint">{{ o.title }}</span>{% endif %}</td>
-      <td>{{ o.school.name }}{% if o.department %}<br><span class="hint">{{ o.department.name }}</span>{% endif %}</td>
-      <td>{{ "UGC" if o.discipline_group == "GENERAL" or o.discipline_group.startswith("UGC_") else "AICTE" }}</td>
-      <td class="nowrap">{{ o.closing_date|ddmmyyyy or "Open-ended" }}</td>
-      <td>{{ "Accepting" if accepting[o.opening_id] else "Closed" }}</td>
-      <td class="num">{{ c.get("total", 0) }}</td>
-      <td class="num">{{ c.get("PENDING_REVIEW", 0) }}</td>
-      <td class="num">{{ c.get("EXTRACTED", 0) }}</td>
-      <td class="num">{{ c.get("SHORTLISTED", 0) + c.get("RE_CATEGORISED", 0) + c.get("NOT_ELIGIBLE", 0) + c.get("MANUAL_REVIEW", 0) }}</td>
-      <td class="num">{{ c.get("HR_APPROVED", 0) }}</td>
-      <td class="num">{{ c.get("FAILED", 0) }}</td>
+    {% set ugc = o.discipline_group == "GENERAL" or o.discipline_group.startswith("UGC_") %}
+    <tr data-group="{{ "accepting" if accepting[o.opening_id] else "closed" }}">
+      <td class="nowrap head" data-label="Reference"><a class="ref" href="/hr/openings/{{ o.opening_id }}">{{ o.reference }}</a></td>
+      <td data-label="Post">{{ DESIGNATIONS[o.designation] }}
+        {{ ui.badge("UGC" if ugc else "AICTE", "purple", "Rules that apply: " ~ DISCIPLINE_GROUPS[o.discipline_group], plain=True) }}
+        {% if o.title %}<span class="sub">{{ o.title }}</span>{% endif %}</td>
+      <td data-label="School">{{ o.school.name }}{% if o.department %}<span class="sub">{{ o.department.name }}</span>{% endif %}</td>
+      <td class="nowrap" data-label="Closes">{{ o.closing_date|ddmmyyyy or "Open-ended" }}</td>
+      <td data-label="Status">{% if accepting[o.opening_id] %}{{ ui.badge("Accepting", "green", "Accepting applications") }}{% else %}{{ ui.badge("Closed", "", "Not accepting applications") }}{% endif %}</td>
+      <td data-label="Applications">{{ ui.pipe([
+        ("Total", c.get("total", 0), "total"),
+        ("To check", c.get("PENDING_REVIEW", 0), "amber"),
+        ("To assess", c.get("EXTRACTED", 0), "purple"),
+        ("To decide", c.get("SHORTLISTED", 0) + c.get("RE_CATEGORISED", 0) + c.get("NOT_ELIGIBLE", 0) + c.get("MANUAL_REVIEW", 0), "amber"),
+        ("Decided", c.get("HR_APPROVED", 0), "green"),
+        ("Unreadable", c.get("FAILED", 0), "red")]) }}</td>
+      <td class="act">
+        <details class="menu rowmenu">
+          <summary aria-label="More for {{ o.reference }}" title="More">{{ ui.icon("more") }}</summary>
+          <div class="menu-panel">
+            <a href="/hr/openings/{{ o.opening_id }}">{{ ui.icon("briefcase") }} Open {{ o.reference }}</a>
+            {% if c.get("total", 0) %}
+            <a href="/hr/openings/{{ o.opening_id }}/emails">{{ ui.icon("mail") }} Emails to candidates</a>
+            <a href="/hr/openings/{{ o.opening_id }}/digest">{{ ui.icon("file") }} Digest</a>
+            <a href="/hr/openings/{{ o.opening_id }}/export.xlsx">{{ ui.icon("download") }} Download as Excel</a>
+            {% endif %}
+            <a href="/apply/{{ o.opening_id }}">{{ ui.icon("external") }} Its application form</a>
+          </div>
+        </details>
+      </td>
     </tr>
     {% endfor %}
+    <tr class="no-match" hidden><td colspan="7">No opening matches. Clear the search or choose "All".</td></tr>
   </tbody>
 </table>
 {% else %}
-<p>No openings yet. <a href="/hr/openings/new">Create the first one</a>.</p>
+{% call ui.empty("No openings yet.", "briefcase") %}
+  <p>An opening is a post in a school that applications are filed under.</p>
+  {% if can_open %}<a class="button" href="/hr/openings/new">Create the first one</a>{% endif %}
+{% endcall %}
 {% endif %}
 {% endblock %}

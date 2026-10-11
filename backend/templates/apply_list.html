@@ -3,22 +3,26 @@
 {% block home %}/apply{% endblock %}
 {% block area %}Faculty openings{% endblock %}
 {% block content %}
-<h1>Faculty openings</h1>
+<div class="apply-page">
+{{ ui.page_head("Faculty openings", "Posts at MIT ADT University, Pune that are open for applications. Choose one to apply; you do not need an account.") }}
 {% if openings %}
-<table>
-  <thead><tr><th>Post</th><th>School</th><th>Closes</th><th></th></tr></thead>
-  <tbody>
-    {% for o in openings %}
-    <tr>
-      <td>{{ DESIGNATIONS[o.designation] }}{% if o.title %}<br><span class="hint">{{ o.title }}</span>{% endif %}</td>
-      <td>{{ o.school.name }}{% if o.department %}<br><span class="hint">{{ o.department.name }}</span>{% endif %}</td>
-      <td class="nowrap">{{ o.closing_date|ddmmyyyy or "Open-ended" }}</td>
-      <td><a class="button" href="/apply/{{ o.opening_id }}">Apply</a></td>
-    </tr>
-    {% endfor %}
-  </tbody>
-</table>
+<ul class="jobs">
+  {% for o in openings %}
+  <li class="job">
+    <div>
+      <h2>{{ DESIGNATIONS[o.designation] }}</h2>
+      {% if o.title %}<p>{{ o.title }}</p>{% endif %}
+      <p class="meta"><span>{{ ui.icon("briefcase") }} {{ o.school.name }}{% if o.department %}, {{ o.department.name }}{% endif %}</span>
+        <span>{{ ui.icon("clock") }} Closes: {{ o.closing_date|ddmmyyyy or "Open-ended" }}</span></p>
+    </div>
+    <a class="button accent" href="/apply/{{ o.opening_id }}" aria-label="Apply for {{ DESIGNATIONS[o.designation] }}, {{ o.school.name }}">Apply {{ ui.icon("arrow-right") }}</a>
+  </li>
+  {% endfor %}
+</ul>
 {% else %}
-<p>There are no openings accepting applications at the moment.</p>
+{% call ui.empty("There are no openings accepting applications at the moment.", "briefcase") %}
+  <p>Please look again later.</p>
+{% endcall %}
 {% endif %}
+</div>
 {% endblock %}

@@ -32,10 +32,13 @@ def test_no_page_may_be_kept_by_the_browser_so_back_after_signing_out_shows_noth
         headers = web.get(address, follow_redirects=False).headers
         assert headers["cache-control"] == "no-store", address
         assert headers["x-frame-options"] == "DENY" and headers["x-content-type-options"] == "nosniff", address
-    assert "no-store" not in web.get("/static/app.css").headers.get("cache-control", "")  # the stylesheet holds no one's data
+    assert "no-store" not in web.get("/static/css/app.css").headers.get("cache-control", "")  # the stylesheet holds no one's data
     # A page shown to someone signed in asks for itself again if the browser brings it back from memory (Back twice
     # reaches pages that are restored without asking the server at all); a public page has no need to.
-    assert "e.persisted" in web.get("/hr/dashboard").text and "e.persisted" not in web.get("/apply").text
+    # The check lives in the shared script and looks for the mark only a signed-in page carries.
+    assert "<body data-signed-in" in web.get("/hr/dashboard").text and "data-signed-in" not in web.get("/apply").text
+    script = web.get("/static/js/app.js").text
+    assert 'e.persisted && body.hasAttribute("data-signed-in")' in script and "location.reload()" in script
     out = web.post("/logout", follow_redirects=False)
     assert out.headers["clear-site-data"] == '"cache"'  # and signing out tells the browser to drop what it holds
     # What Back now does: the browser has no copy, asks again, and is sent to sign in.
@@ -136,7 +139,7 @@ def test_errors_are_pages_a_person_can_read_and_the_api_still_answers_in_json(cl
                                    ("/apply/999999", 404, "Page not found")):
         r = client.get(address)
         assert r.status_code == status and words in r.text and r.headers["content-type"].startswith("text/html"), address
-        assert "<h1>" in r.text and 'href="/' in r.text and "detail" not in r.text  # a way back, and no raw code
+        assert "<h1>" in r.text and 'href="/' in r.text and '"detail"' not in r.text  # a way back, and no raw code
     api = client.get("/applications/999999")
     assert api.status_code == 404 and api.json() == {"detail": "application not found"}
     assert client.post("/applications", data={}).headers["content-type"].startswith("application/json")
@@ -156,8 +159,13 @@ def test_a_view_only_account_is_not_shown_a_form_it_cannot_save(web, engine, tmp
 
 
 def test_every_page_carries_the_send_once_guard_and_drops_a_shown_message_from_its_address(client):
+    import re
+
     page = client.get("/login").text
-    assert "form.dataset.sent" in page and 'searchParams.delete' in page and 'rel="icon"' in page
+    script = re.search(r'<script src="(/static/js/app\.js\?v=\d+)"></script>', page)  # every page loads the one shared script
+    assert script and 'rel="icon"' in page
+    code = client.get(script.group(1)).text
+    assert "form.dataset.sent" in code and "searchParams.delete" in code
 
 
 def test_the_sign_in_page_says_only_its_own_messages_never_words_from_the_address(web, engine):
@@ -180,14 +188,14 @@ def test_each_change_to_an_account_is_its_own_form_so_enter_does_what_the_box_sa
 
 def test_the_stylesheet_keeps_wide_things_inside_the_screen(client):
     """The layout itself was checked in a browser at widths from 320 to 1920 pixels; this keeps the rules it rests on."""
-    css = client.get("/static/app.css").text
+    css = client.get("/static/css/app.css").text
     import re
 
-    link = re.search(r'<link rel="stylesheet" href="(/static/app\.css\?v=\d+)">', client.get("/login").text)
+    link = re.search(r'<link rel="stylesheet" href="(/static/css/app\.css\?v=\d+)">', client.get("/login").text)
     assert link and client.get(link.group(1)).status_code == 200  # the address changes with the file: no stale styles
     assert "td { overflow-wrap: anywhere" not in css and "td.long { overflow-wrap: anywhere;" in css  # words are not broken in narrow columns
-    assert "header nav { display: flex; flex-wrap: wrap;" in css  # the menu wraps, it does not push the page wide
-    assert "table { display: block; overflow-x: auto;" in css and ".wide { overflow-x: auto; }" in css  # a wide table scrolls in itself
+    assert "html.js nav.main:not(.open) { display: none; }" in css  # on a small screen the menu folds away, it does not push the page wide
+    assert "table:not(.table) { display: block; overflow-x: auto;" in css and ".wide, .table-wrap { overflow-x: auto; }" in css  # a wide table scrolls in itself
     assert "form.stack { display: grid; grid-template-columns: minmax(0, 1fr);" in css  # a long option cannot widen a form
     from pathlib import Path
 
@@ -199,7 +207,7 @@ def test_the_stylesheet_keeps_wide_things_inside_the_screen(client):
 
 
 def _menu(page: str) -> str:
-    return page.split('<nav aria-label="Main">')[1].split("</nav>")[0]
+    return page.split('<nav class="main" id="mainnav" aria-label="Main">')[1].split("</nav>")[0]
 
 
 def test_every_page_has_the_same_menu_for_its_kind_of_account_and_marks_where_you_are(web, engine, tmp_path):

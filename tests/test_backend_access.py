@@ -224,7 +224,7 @@ def test_the_application_form_and_the_health_check_need_no_account(web, engine):
         _account(s, "Asha Admin", "UNIVERSITY_ADMIN")
         opening_id = _opening(s).opening_id
     assert web.get("/apply").status_code == 200 and web.get(f"/apply/{opening_id}").status_code == 200
-    assert web.get("/health").json()["status"] == "ok" and web.get("/static/app.css").status_code == 200
+    assert web.get("/health").json()["status"] == "ok" and web.get("/static/css/app.css").status_code == 200
     # The direct API to candidates' records is not public.
     assert web.get("/applications/1", follow_redirects=False).status_code == 303
     assert web.post("/applications", data={}, follow_redirects=False).headers["location"].startswith("/login")

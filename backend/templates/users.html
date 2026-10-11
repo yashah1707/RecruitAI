@@ -1,78 +1,118 @@
 {% extends "base.html" %}
 {% block title %}Accounts · RecruitAI{% endblock %}
 {% block content %}
-<h1>Accounts</h1>
-<p><a href="/admin/views">What the interview panel sees</a></p>
-<p class="hint">An administrator sees every school. A school or department HR account sees only what it is granted below, at the
+{% set ROLE_TONE = {"UNIVERSITY_ADMIN": "purple", "HR_ADMIN": "purple", "SCHOOL_HR": "green", "DEPARTMENT_HR": "green", "INTERVIEWER": "amber"} %}
+{% set LEVEL_SHORT = {"VIEW": "View", "VIEW_EDIT": "Edit", "APPROVE": "Approve"} %}
+{% call ui.page_head("Accounts", "Who can sign in, and what each account may see and do.") %}
+  <a class="button secondary" href="/admin/views">{{ ui.icon("eye") }} What the interview panel sees</a>
+  <button type="button" data-open="#add-account" hidden>{{ ui.icon("plus") }} Add an account</button>
+{% endcall %}
+{% call ui.about("How access works") %}
+  <p>An administrator sees every school. A school or department HR account sees only what it is granted below, at the
   level granted: view only; view and edit (correct records, add resumes, read and assess); or also approve (decide at Gate 2 and
   approve emails). What an account is not granted is shown to it as not found. An interviewer account sees only the
   short-listed candidates of the schools it is granted (the level does not matter for it), and none of the HR pages.</p>
+{% endcall %}
 
-<table>
-  <thead><tr><th>Name</th><th>Kind</th><th>What it is granted</th><th>Last signed in</th><th>Change</th></tr></thead>
+<table class="table cards">
+  <thead><tr><th>Name</th><th>Kind</th><th>What it is granted</th><th>Last signed in</th><th class="act">Change</th></tr></thead>
   <tbody>
     {% for u in users %}
+    {% set seen = (u.last_login_at|ddmmyyyy).split(" ") %}
     <tr>
-      <td>{{ u.name }}<br><span class="hint">{{ u.email }}</span>
-        {% if not u.is_active %}<br><span class="error">Closed</span>{% endif %}
-        {% if u.must_change_password %}<br><span class="hint">Has a temporary password</span>{% endif %}</td>
-      <td>{{ USER_TYPES[u.user_type] }}</td>
-      <td>
+      <td class="head" data-label="Name"><span class="person">{{ ui.avatar(u.name) }}<span>{{ u.name }}<span class="hint">{{ u.email }}</span>
+        {% if not u.is_active %}<span class="error">Closed</span>{% endif %}
+        {% if u.must_change_password %}<span class="hint">Has a temporary password</span>{% endif %}</span></span></td>
+      <td data-label="Kind">{{ ui.badge(USER_TYPES[u.user_type], ROLE_TONE.get(u.user_type, ""), plain=True) }}</td>
+      <td data-label="What it is granted">
         {% if u.user_type in ("UNIVERSITY_ADMIN", "HR_ADMIN") %}Every school.
         {% elif not u.grants %}<span class="error">Nothing yet: this account sees no applications.</span>{% endif %}
+        {% if u.grants %}
+        <ul class="chips">
         {% for g in u.grants %}
-        <form method="post" action="/admin/users/{{ u.user_id }}/grants/{{ g.id }}/remove" class="inline">
-          <span>{{ g.school.name }}{% if g.department %}, {{ g.department.name }}{% endif %}: {{ LEVELS[g.access_level] }}</span>
-          <button type="submit" class="quiet">Remove</button>
-        </form>
-        {% endfor %}
-        {% if u.user_type not in ("UNIVERSITY_ADMIN", "HR_ADMIN") %}
-        <details><summary>Grant a school or department</summary>
-          <form method="post" action="/admin/users/{{ u.user_id }}/grants" class="stack">
-            <label>School
-              <select name="school_id" required>
-                <option value="">Choose…</option>
-                {% for s in schools %}<option value="{{ s.school_id }}">{{ s.name }}</option>{% endfor %}
-              </select></label>
-            <label>Department <span class="hint">(leave as "whole school" unless the grant is for one department)</span>
-              <select name="department_id">
-                <option value="">Whole school</option>
-                {% for s in schools %}{% for d in s.departments %}<option value="{{ d.department_id }}" data-school="{{ s.school_id }}">{{ s.name }}: {{ d.name }}</option>{% endfor %}{% endfor %}
-              </select></label>
-            <label>Level
-              <select name="level" required>{% for code, text in LEVELS.items() %}<option value="{{ code }}">{{ text }}</option>{% endfor %}</select></label>
-            <button type="submit" class="quiet">Grant</button>
+        <li class="chip">
+          <form method="post" action="/admin/users/{{ u.user_id }}/grants/{{ g.id }}/remove">
+            <span title="{{ g.school.name }}{% if g.department %}, {{ g.department.name }}{% endif %}: {{ LEVELS[g.access_level] }}">{{ g.school.name }}{% if g.department %}, {{ g.department.name }}{% endif %}</span>
+            {{ ui.badge(LEVEL_SHORT.get(g.access_level, g.access_level), "purple", LEVELS[g.access_level], plain=True) }}
+            <button type="submit" class="x" aria-label="Remove this grant from {{ u.name }}" title="Remove" {{ ui.confirm(u.name ~ " will no longer see " ~ g.school.name ~ (", " ~ g.department.name if g.department else "") ~ " through this grant.", "Remove this access?", "Remove") }}>{{ ui.icon("x") }}</button>
           </form>
-        </details>
+        </li>
+        {% endfor %}
+        </ul>
         {% endif %}
       </td>
-      <td class="nowrap">{{ u.last_login_at|ddmmyyyy or "Never" }}</td>
-      <td>
-        <details><summary>Change</summary>
-          <form method="post" action="/admin/users/{{ u.user_id }}/update" class="stack">
-            <input type="hidden" name="do" value="type">
-            <label>Kind of account
-              <select name="user_type">{% for code, text in USER_TYPES.items() %}<option value="{{ code }}"{% if code == u.user_type %} selected{% endif %}>{{ text }}</option>{% endfor %}</select></label>
-            <button type="submit" class="quiet">Change the kind</button>
-          </form>
-          <form method="post" action="/admin/users/{{ u.user_id }}/update" class="stack">
-            <input type="hidden" name="do" value="password">
-            <label>Temporary password <input type="password" name="password" autocomplete="new-password" minlength="{{ min }}" required>
-              <span class="hint">At least {{ min }} characters. Tell the person yourself; they must choose their own at the next sign-in.</span></label>
-            <button type="submit" class="quiet">Set a temporary password</button>
-          </form>
-          <form method="post" action="/admin/users/{{ u.user_id }}/update" class="stack">
-            <input type="hidden" name="do" value="{{ "close" if u.is_active else "open" }}">
-            <button type="submit" class="quiet">{{ "Close this account" if u.is_active else "Open this account again" }}</button>
-          </form>
-        </details>
+      <td class="nowrap" data-label="Last signed in">{% if u.last_login_at %}{{ seen[0] }} <span class="time">{{ seen[1] if seen|length > 1 }}</span>{% else %}Never{% endif %}</td>
+      <td class="act">
+        <button type="button" class="secondary sm" data-open="#account-{{ u.user_id }}" hidden>{{ ui.icon("edit") }} Change</button>
       </td>
     </tr>
     {% endfor %}
   </tbody>
 </table>
 
-<h2>Add an account</h2>
+{# One sheet an account: the same forms as before, opened by the Change button in its row. Without scripts they are on the page, one under another. #}
+{% for u in users %}
+<dialog class="sheet account" id="account-{{ u.user_id }}" aria-labelledby="account-{{ u.user_id }}-title">
+  <div class="dialog-head"><h2 id="account-{{ u.user_id }}-title">{{ u.name }}</h2>
+    <form method="dialog"><button type="submit" class="ghost sm" aria-label="Close">{{ ui.icon("x") }}</button></form></div>
+  <div class="dialog-main">
+    {% if u.user_type not in ("UNIVERSITY_ADMIN", "HR_ADMIN") %}
+    <section>
+      <h3>Grant a school or department</h3>
+      <form method="post" action="/admin/users/{{ u.user_id }}/grants" class="stack">
+        <label>School
+          <select name="school_id" required>
+            <option value="">Choose…</option>
+            {% for s in schools %}<option value="{{ s.school_id }}">{{ s.name }}</option>{% endfor %}
+          </select></label>
+        <label>Department <span class="hint">(leave as "whole school" unless the grant is for one department)</span>
+          <select name="department_id">
+            <option value="">Whole school</option>
+            {% for s in schools %}{% for d in s.departments %}<option value="{{ d.department_id }}" data-school="{{ s.school_id }}">{{ s.name }}: {{ d.name }}</option>{% endfor %}{% endfor %}
+          </select></label>
+        <label>Level
+          <select name="level" required>{% for code, text in LEVELS.items() %}<option value="{{ code }}">{{ text }}</option>{% endfor %}</select></label>
+        <button type="submit" class="quiet">Grant</button>
+      </form>
+    </section>
+    {% endif %}
+    <section>
+      <h3>Kind of account</h3>
+      <form method="post" action="/admin/users/{{ u.user_id }}/update" class="stack">
+        <input type="hidden" name="do" value="type">
+        <label>Kind of account
+          <select name="user_type">{% for code, text in USER_TYPES.items() %}<option value="{{ code }}"{% if code == u.user_type %} selected{% endif %}>{{ text }}</option>{% endfor %}</select></label>
+        <button type="submit" class="quiet">Change the kind</button>
+      </form>
+    </section>
+    <section>
+      <h3>Password</h3>
+      <form method="post" action="/admin/users/{{ u.user_id }}/update" class="stack">
+        <input type="hidden" name="do" value="password">
+        <label>Temporary password <input type="password" name="password" autocomplete="new-password" minlength="{{ min }}" required>
+          <span class="hint">At least {{ min }} characters. Tell the person yourself; they must choose their own at the next sign-in.</span></label>
+        <button type="submit" class="quiet">Set a temporary password</button>
+      </form>
+    </section>
+    <section>
+      <h3>{{ "Close the account" if u.is_active else "Open the account" }}</h3>
+      <form method="post" action="/admin/users/{{ u.user_id }}/update" class="stack">
+        <input type="hidden" name="do" value="{{ "close" if u.is_active else "open" }}">
+        {% if u.is_active %}
+        <button type="submit" class="danger" {{ ui.confirm(u.name ~ " will no longer be able to sign in. The account and what it did stay on record, and it can be opened again.", "Close this account?", "Close this account") }}>Close this account</button>
+        {% else %}
+        <button type="submit" class="quiet">Open this account again</button>
+        {% endif %}
+      </form>
+    </section>
+  </div>
+</dialog>
+{% endfor %}
+
+<dialog class="sheet drawer" id="add-account" aria-labelledby="add-account-title">
+  <div class="dialog-head"><h2 id="add-account-title">Add an account</h2>
+    <form method="dialog"><button type="submit" class="ghost sm" aria-label="Close">{{ ui.icon("x") }}</button></form></div>
+  <div class="dialog-main">
 <form method="post" action="/admin/users" class="stack">
   <label>Name <input name="name" maxlength="200" required></label>
   <label>Email address <input type="email" name="email" maxlength="254" required autocomplete="off"></label>
@@ -87,6 +127,8 @@
   <button type="submit">Create the account</button>
   <span class="hint">A school or department HR account sees nothing until you grant it a school above.</span>
 </form>
+  </div>
+</dialog>
 <script>
   // The department list offers only the departments of the school chosen. (The server refuses a mismatch either way.)
   document.querySelectorAll("select[name=school_id]").forEach(function (school) {

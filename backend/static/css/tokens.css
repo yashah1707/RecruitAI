@@ -1,0 +1,62 @@
+/* Design tokens for RecruitAI, MIT ADT University.
+   Brand values are the ones used on https://mituniversity.ac.in/. Every other stylesheet reads these; none sets a colour of its own. */
+
+@font-face { font-family: "Metropolis"; font-weight: 400; font-style: normal; font-display: swap; src: url("../fonts/metropolis-400.woff2") format("woff2"); }
+@font-face { font-family: "Metropolis"; font-weight: 600; font-style: normal; font-display: swap; src: url("../fonts/metropolis-600.woff2") format("woff2"); }
+@font-face { font-family: "Metropolis"; font-weight: 800; font-style: normal; font-display: swap; src: url("../fonts/metropolis-800.woff2") format("woff2"); }
+
+:root {
+  /* --- brand --- */
+  --purple-900: #3D1165;   /* header */
+  --purple-800: #431369;   /* headings, links, button hover */
+  --purple-700: #512A74;   /* primary buttons */
+  --purple-600: #602794;   /* gradient end, hover */
+  --lavender: #E8E0ED;     /* soft purple surfaces */
+  --lavender-soft: #F5F1F8;
+  --orange: #DD7228;       /* accent: bars, borders, large text only */
+  --orange-dark: #D15D0E;
+  --orange-text: #B4500C;  /* the orange that passes AA with white, for text and filled buttons */
+  --magenta: #9F2176;
+  --gold: #F3B31D;
+
+  /* --- neutrals --- */
+  --ink: #212529;
+  --muted: #646C79;        /* the site's #6B7280, a touch darker so small text passes AA on the page background too */
+  --faint: #9CA3AF;        /* zeros, placeholders, decoration: never the only carrier of meaning */
+  --line: #E6E3EA;
+  --line-strong: #CEC8D6;
+  --bg: #F7F6F6;
+  --bg-alt: #F8F9FF;
+  --card: #FFFFFF;
+
+  /* --- status: separate from the brand, the same everywhere --- */
+  --ok: #166534;        --ok-bg: #DCFCE7;       --ok-line: #A7E3BC;
+  --warn: #B45309;      --warn-bg: #FEF3C7;     --warn-line: #F5D77A;
+  --danger: #B42318;    --danger-bg: #FEE4E2;   --danger-line: #F9B4AE;
+  --info: #431369;      --info-bg: #EFE8F5;     --info-line: #D5C6E2;
+  --neutral: #4B5563;   --neutral-bg: #F0EFF2;  --neutral-line: #DCD9E1;
+
+  /* --- spacing: 4 8 12 16 24 32 48 --- */
+  --s1: 4px; --s2: 8px; --s3: 12px; --s4: 16px; --s5: 24px; --s6: 32px; --s7: 48px;
+
+  /* --- shape --- */
+  --r1: 6px;      /* inputs, chips in tables */
+  --r2: 12px;     /* cards, dialogs */
+  --pill: 999px;  /* buttons, badges */
+  --shadow-1: 0 1px 2px rgba(33, 18, 51, 0.06), 0 1px 3px rgba(33, 18, 51, 0.05);
+  --shadow-2: 0 10px 30px rgba(33, 18, 51, 0.16), 0 2px 6px rgba(33, 18, 51, 0.08);
+  --ring: 0 0 0 3px rgba(96, 39, 148, 0.32);
+
+  /* --- type: one scale --- */
+  --font-brand: "Metropolis", "Roboto", "Segoe UI", system-ui, sans-serif;
+  --font-body: "Metropolis", "Roboto", "Segoe UI", system-ui, sans-serif;
+  --t-xs: 0.75rem;     /* 12  table headings, badges */
+  --t-sm: 0.8125rem;   /* 13  help text, meta */
+  --t-base: 0.9375rem; /* 15  body, tables */
+  --t-lg: 1.0625rem;   /* 17  section titles */
+  --t-xl: 1.25rem;     /* 20  card titles on big screens */
+  --t-2xl: 1.625rem;   /* 26  page titles */
+
+  --page: 1240px;      /* width of the page's column */
+  --header-h: 60px;
+}

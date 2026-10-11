@@ -2,10 +2,59 @@
 {% block title %}{{ a.reference }} · RecruitAI{% endblock %}
 {% block trail %}<a href="/hr/openings">Openings</a>{% if o %} › <a href="/hr/openings/{{ o.opening_id }}">{{ o.reference }}</a>{% endif %} › {{ a.reference }}{% endblock %}
 {% block content %}
-<h1>{{ a.reference }}: {{ a.applicant_name or (personal.full_name if personal else None) or "Name not yet known" }}</h1>
+{% set received = (a.created_at|ddmmyyyy).split(" ") %}
+{% set RESULT = {"PASS": ("Met", "green"), "FAIL": ("Not met", "red"), "UNKNOWN": ("Open", "amber")} %}
+{# The long page in parts. A part with nothing in it has no tab. #}
+{% set has_profile = e and (qualifications or experience or correctable or research or subjects or skills or memberships) %}
+{% set has_activities = e and (publications or achievements or guidance or events) %}
+{% set has_log = correspondence or decisions or edits %}
+{% set parts = [("assessment", "Assessment")] %}
+{% if has_profile %}{% set parts = parts + [("profile", "Profile")] %}{% endif %}
+{% if has_activities %}{% set parts = parts + [("activities", "Publications and activities")] %}{% endif %}
+{% if has_log %}{% set parts = parts + [("log", "Audit log")] %}{% endif %}
+{% set tabbed = parts|length > 1 %}
+{% set has_side = e or other_openings or correctable or can_withdraw %}
+{% macro part(id) %}id="{{ id }}"{% if tabbed %} role="tabpanel" aria-labelledby="tab-{{ id }}" tabindex="-1"{% endif %}{% endmacro %}
+
+<div class="record sticky">
+  <div>
+    <p class="eyebrow">{{ a.reference }} · {{ DESIGNATIONS.get(a.applied_designation, a.applied_designation) }}, {{ a.school.name }}{% if o %} (<a href="/hr/openings/{{ o.opening_id }}">{{ o.reference }}</a>){% endif %}</p>
+    <h1>{{ a.applicant_name or (personal.full_name if personal else None) or "Name not yet known" }}</h1>
+    <p class="meta">{{ ui.status_badge(a.status) }}
+      <span>Received {{ received[0] }} <span class="time">{{ received[1] if received|length > 1 }}</span>, {{ {"WEB_FORM": "application form", "MANUAL_UPLOAD": "HR upload", "EMAIL": "by email", "GOOGLE_FORM": "Google Form"}.get(a.resume_source, a.resume_source) }}</span></p>
+  </div>
+  <div class="actions">
+    <a class="button secondary" href="/hr/applications/{{ a.application_id }}/resume" target="_blank" rel="noopener">{{ ui.icon("file") }} Open the resume</a>
+    {% if awaiting_hr and can_approve %}<a class="button" href="#decision">Decide</a>{% endif %}
+  </div>
+</div>
+
+{# The one thing to do next, for the person looking at this page. When it is a decision, the button is in the head above. #}
+{% if a.status == "PENDING_REVIEW" and flags and can_edit %}
+<div class="next"><p><strong>{{ flags|length }} field{{ "" if flags|length == 1 else "s" }} to check</strong><span class="hint">The reader was unsure of them. Once they are settled the application can be assessed.</span></p>
+  <a class="button" href="#check">Check the fields</a></div>
+{% elif a.status == "PENDING_REVIEW" and duplicate %}
+<div class="next"><p><strong>Is this the same person as an earlier applicant?</strong><span class="hint">The email address on the resume is already on record.</span></p>
+  <a class="button" href="#duplicate">Decide</a></div>
+{% elif a.status == "EXTRACTED" and o %}
+<div class="next"><p><strong>Ready to be assessed</strong><span class="hint">Assessment is run for the whole opening, against the rules chosen for it.</span></p>
+  <a class="button" href="/hr/openings/{{ o.opening_id }}">Go to {{ o.reference }}</a></div>
+{% elif a.status == "HR_APPROVED" and email and email.status != "SENT" and can_approve %}
+<div class="next"><p><strong>The email to the candidate is waiting</strong><span class="hint">Nothing is sent until you approve it.</span></p>
+  <a class="button" href="#email">Review the email</a></div>
+{% elif a.status == "RECEIVED" and o %}
+<div class="next"><p><strong>Waiting to be read</strong><span class="hint">Reading is started from the opening's page.</span></p>
+  <a class="button" href="/hr/openings/{{ o.opening_id }}">Go to {{ o.reference }}</a></div>
+{% endif %}
+
+{% if tabbed %}{{ ui.tabs(parts, "Parts of this application") }}{% endif %}
+
+<div {{ part("assessment") }}>
+<div class="cols{% if not has_side %} single{% endif %}">
+<div class="cols-main">
+
+<section class="panel">
 <dl class="facts">
-  <dt>Applied for</dt><dd>{{ DESIGNATIONS.get(a.applied_designation, a.applied_designation) }}, {{ a.school.name }}{% if o %} ({{ o.reference }}){% endif %}</dd>
-  <dt>Received</dt><dd>{{ a.created_at|ddmmyyyy }}, {{ {"WEB_FORM": "application form", "MANUAL_UPLOAD": "HR upload", "EMAIL": "by email", "GOOGLE_FORM": "Google Form"}.get(a.resume_source, a.resume_source) }}</dd>
   {% if sent_by %}
   <dt>Email sent by</dt><dd>{{ sent_by.name or "No name given" }} ({{ sent_by.address }}).
     {% if sent_by.same_person is sameas false %}<span class="hint">The sender's name is not the name on the resume, so this was probably forwarded.
@@ -21,17 +70,17 @@
     {% else %}Drafted, to {{ acknowledgement.to_address }}; waiting for approval.{% endif %}
     {% if acknowledgement.status != "SENT" and o %}<a href="/hr/openings/{{ o.opening_id }}/emails">Emails for this opening</a>{% endif %}</dd>
   {% endif %}
-  <dt>Resume</dt><dd><a href="/hr/applications/{{ a.application_id }}/resume" target="_blank" rel="noopener">Open the resume in a new tab</a></dd>
 </dl>
+</section>
 
 {% if evaluation and not (awaiting_hr or decided) %}
 <p class="notice">An earlier assessment was sent back. This application will be assessed again from its opening's page.</p>
 {% endif %}
 {% if evaluation and (awaiting_hr or decided) %}
 {% set v = evaluation.details or {} %}
-<section class="panel{% if evaluation.outcome == "MANUAL_REVIEW" %} warn{% endif %}">
-  <h2>Assessment</h2>
-  <p><strong>
+<section class="panel">
+  <div class="card-head"><h2>Assessment</h2>{{ ui.result_badge(evaluation.outcome) }}</div>
+  <p class="finding"><strong>
     {% if evaluation.outcome == "SHORTLISTED" %}Meets the minimum qualifications for {{ DESIGNATIONS[evaluation.eligible_designation] }}.
     {% elif evaluation.outcome == "RE_CATEGORISED" %}Does not meet {{ DESIGNATIONS.get(a.applied_designation) }}; meets {{ DESIGNATIONS[evaluation.eligible_designation] }}.
     {% elif evaluation.outcome == "NOT_ELIGIBLE" %}Does not meet the minimum qualifications for any post.
@@ -39,27 +88,29 @@
   </strong></p>
   <p>{{ plain_finding }}</p>
   {% for rank in v.ranks or [] %}
-  <h3>{{ DESIGNATIONS.get(rank.designation, rank.designation) }}: {{ {"PASS": "met", "FAIL": "not met", "UNKNOWN": "cannot be settled from the record"}[rank.result] }}</h3>
-  <table>
+  <details class="rank"{% if rank.result != "FAIL" or rank.designation == a.applied_designation or loop.length == 1 %} open{% endif %}>
+  <summary><h3>{{ DESIGNATIONS.get(rank.designation, rank.designation) }}: {{ {"PASS": "met", "FAIL": "not met", "UNKNOWN": "cannot be settled from the record"}[rank.result] }}</h3>{{ ui.badge(RESULT[rank.result][0], RESULT[rank.result][1]) }}</summary>
+  <table class="table cards">
     <thead><tr><th>Requirement</th><th>Result</th><th>What was compared</th><th>Clause</th><th>Page</th></tr></thead>
     <tbody>
       {% for c in rank.checks %}
       <tr>
-        <td>{{ c.label }}</td>
-        <td class="nowrap">{{ {"PASS": "Met", "FAIL": "Not met", "UNKNOWN": "Open"}[c.result] }}</td>
-        <td>{{ c.detail }}</td><td>{{ c.clause }}</td><td>{{ c.page }}</td>
+        <td class="head w-s" data-label="Requirement">{{ c.label }}</td>
+        <td class="nowrap" data-label="Result">{{ ui.badge(RESULT[c.result][0], RESULT[c.result][1]) }}</td>
+        <td data-label="What was compared">{{ c.detail }}</td><td data-label="Clause">{{ c.clause }}</td><td class="nowrap" data-label="Page">{{ c.page }}</td>
       </tr>
       {% endfor %}
     </tbody>
   </table>
+  </details>
   {% endfor %}
   {% if v.policy %}
   <h3>The university's own criteria, for {{ DESIGNATIONS.get(v.policy[0].post, "") }}</h3>
-  <table>
+  <table class="table cards">
     <thead><tr><th>Criterion</th><th>Result</th><th>What was compared</th><th>Set for</th></tr></thead>
     <tbody>
       {% for c in v.policy %}
-      <tr><td>{{ c.label }}</td><td class="nowrap">{{ {"PASS": "Met", "FAIL": "Not met", "UNKNOWN": "Open"}[c.result] }}</td><td>{{ c.detail }}</td><td>{{ c.scope }}</td></tr>
+      <tr><td class="head" data-label="Criterion">{{ c.label }}</td><td class="nowrap" data-label="Result">{{ ui.badge(RESULT[c.result][0], RESULT[c.result][1]) }}</td><td data-label="What was compared">{{ c.detail }}</td><td data-label="Set for">{{ c.scope }}</td></tr>
       {% endfor %}
     </tbody>
   </table>
@@ -67,7 +118,7 @@
     a candidate the Regulations find not eligible. It is for you to weigh when you decide.</p>
   {% endif %}
   {% macro span(b, unit="") %}{% if b.high is none %}at least {{ "%g"|format(b.low) }}{% elif b.low == b.high %}{{ "%g"|format(b.low) }}{% else %}between {{ "%g"|format(b.low) }} and {{ "%g"|format(b.high) }}{% endif %}{{ unit }}{% endmacro %}
-  <dl class="facts">
+  <dl class="facts tight">
     {% if v.experience_years %}<dt>Experience counted</dt><dd>{{ span(v.experience_years, " years") }}{% if v.experience_kinds %} ({{ v.experience_kinds|map("lower")|join(", ") }}){% endif %}</dd>{% endif %}
     {% if v.research_score %}<dt>Research Score claimed (Table 2)</dt><dd>{{ span(v.research_score) }}</dd>{% endif %}
     {% if v.shortlist_score %}<dt>Short-listing score (Table 3A)</dt><dd>{{ span(v.shortlist_score) }} out of 100. An aid for calling candidates to interview; selection is on the interview alone.</dd>{% endif %}
@@ -80,7 +131,8 @@
 
 {% if decided %}
 <section class="panel">
-  <h2>HR decision</h2>
+  <div class="card-head"><h2>HR decision</h2>
+    {% if decided.final_outcome == "SHORTLISTED" %}{{ ui.badge("Short-listed", "green") }}{% else %}{{ ui.badge("Not eligible", "red") }}{% endif %}</div>
   <p><strong>{{ {"APPROVED": "Approved as assessed", "OVERRIDDEN": "Overridden by HR", "DECIDED": "Decided by HR"}[decided.action] }}:</strong>
     {% if decided.final_outcome == "SHORTLISTED" %}short-listed for interview as {{ DESIGNATIONS.get(decided.final_designation, "the post found") }}.
     {% else %}does not meet the minimum qualifications.{% endif %}
@@ -88,7 +140,7 @@
   {% if decided.justification %}<p>Justification: {{ decided.justification }}</p>{% endif %}
   <p class="hint">Short-listing is for interview only. Selection is made by the Selection Committee.</p>
   {% if a.status == "HR_APPROVED" and can_approve %}
-  <details>
+  <details class="more">
     <summary>Decided wrongly? Reopen this decision</summary>
     <form method="post" action="/hr/applications/{{ a.application_id }}/reopen-decision" class="stack">
       <span class="hint">Possible because the candidate has not been informed yet. The decision stays on record as reopened, its letter is
@@ -102,11 +154,14 @@
 </section>
 
 <section class="panel" id="email">
-  <h2>Email to the candidate</h2>
+  <div class="card-head"><h2>Email to the candidate</h2>
+    {% if email and email.status == "SENT" %}{{ ui.badge("Sent", "green") }}{% elif email and email.status == "APPROVED" %}{{ ui.badge("Approved, not yet sent", "amber") }}{% elif email %}{{ ui.badge("Draft", "purple") }}{% endif %}</div>
   {% if email and email.status == "SENT" %}
   <p><strong>Sent {{ email.sent_at|ddmmyyyy }}</strong> to {{ email.to_address }}. Approved by {{ people.get(email.approved_by, email.approved_by) }}.</p>
-  <p><strong>{{ email.subject }}</strong></p>
-  <pre class="letter">{{ email.body }}</pre>
+  <div class="mail">
+    <dl class="mail-head"><dt>To</dt><dd>{{ email.to_address }}</dd><dt>Subject</dt><dd><strong>{{ email.subject }}</strong></dd></dl>
+    <pre class="letter">{{ email.body }}</pre>
+  </div>
   {% elif email %}
   <p>{% if email.status == "APPROVED" %}<strong>Approved, not yet sent to the candidate.</strong>
      {% if email.redirected and email.sent_at %}A test copy went to the redirect address on {{ email.sent_at|ddmmyyyy }}.{% endif %}
@@ -114,29 +169,33 @@
      {% else %}<strong>Draft.</strong> Nothing is sent until you approve it.{% endif %}
      Written by {{ {"template": "the system from the decision above", "person": "HR", "model": "the language model, from the system's draft"}[email.drafted_by] }}.</p>
   {% if mail_configured and redirect_to %}
-  <p class="notice" role="status"><strong>Test mode.</strong> When you press Approve and send, this email goes to
+  {% call ui.alert("warning", "Test mode.", "status") %}When you press Approve and send, this email goes to
     <strong>{{ redirect_to }}</strong>, not to the address in the To box. The candidate receives nothing, and the application
-    is not marked as informed. (Set by EMAIL_REDIRECT_TO.)</p>
+    is not marked as informed. (Set by EMAIL_REDIRECT_TO.){% endcall %}
   {% elif mail_configured %}
-  <p class="panel warn"><strong>Live.</strong> Approve and send delivers this email to the address in the To box.</p>
+  {% call ui.alert("info", "Live.") %}Approve and send delivers this email to the address in the To box.{% endcall %}
   {% endif %}
   {% if PLACEHOLDER in email.body %}<p class="error">This decision was HR's own, so the reason is yours to write: replace the part marked [HR: ...] before approving.</p>{% endif %}
   {% if email.error %}<p class="error">The last attempt to send it failed ({{ email.error }}).</p>{% endif %}
   {% if not can_approve %}
-  <p><strong>{{ email.subject }}</strong></p>
-  <pre class="letter">{{ email.body }}</pre>
+  <div class="mail">
+    <dl class="mail-head"><dt>Subject</dt><dd><strong>{{ email.subject }}</strong></dd></dl>
+    <pre class="letter">{{ email.body }}</pre>
+  </div>
   <p class="hint">Your account may read this letter but not change or approve it.</p>
   {% else %}
-  <form method="post" action="/hr/applications/{{ a.application_id }}/email" class="stack">
-    <label>To <input type="email" name="to_address" value="{{ email.to_address or "" }}" maxlength="254">
+  <form method="post" action="/hr/applications/{{ a.application_id }}/email" class="mail compose">
+    <label class="mail-row"><span>To</span> <input type="email" name="to_address" value="{{ email.to_address or "" }}" maxlength="254">
       {% if not email.to_address %}<span class="error">No email address was found on the resume. Type the applicant's address and save before approving.</span>{% endif %}</label>
-    <label>Subject <input type="text" name="subject" value="{{ email.subject }}" maxlength="250"></label>
-    <label>Message <textarea name="body" rows="16">{{ email.body }}</textarea></label>
-    <div class="inline">
+    <label class="mail-row"><span>Subject</span> <input type="text" name="subject" value="{{ email.subject }}" maxlength="250"></label>
+    <label class="mail-body"><span class="sr">Message</span> <textarea name="body" rows="16">{{ email.body }}</textarea></label>
+    {# The order of these buttons is the order they had: Enter in a box above still means "Save changes", never "send". #}
+    <div class="mail-actions">
       <button type="submit" name="do" value="save" class="quiet">Save changes</button>
       <button type="submit" name="do" value="approve">{{ "Approve and send" if mail_configured else "Approve" }}</button>
-      <button type="submit" name="do" value="reword" class="quiet">Reword with the language model</button>
-      <button type="submit" name="do" value="discard" class="quiet">Discard</button>
+      <button type="submit" name="do" value="reword" class="ghost">Reword with the language model</button>
+      <span class="grow"></span>
+      <button type="submit" name="do" value="discard" class="danger" {{ ui.confirm("This draft is dropped. Nothing is sent to the candidate, and the decision itself stays as recorded.", "Discard this email?", "Discard") }}>Discard</button>
     </div>
     <span class="hint">Rewording uses one request to the language model. The candidate's name is not sent, and the result is kept
       only if it changed no post, clause, reference or figure. You still read and approve it.</span>
@@ -147,18 +206,22 @@
   {% endif %}
 </section>
 {% elif awaiting_hr and not can_approve %}
-<p class="notice">This assessment is waiting for a decision by an account that may approve. Your account may not decide it.</p>
+{% call ui.alert("info") %}This assessment is waiting for a decision by an account that may approve. Your account may not decide it.{% endcall %}
 {% elif awaiting_hr %}
-<section class="panel">
-  <h2>Your decision</h2>
+<section class="panel" id="decision">
+  <div class="card-head"><h2>Your decision</h2></div>
+  <div class="options">
   {% if evaluation.outcome != "MANUAL_REVIEW" %}
-  <form method="post" action="/hr/applications/{{ a.application_id }}/approve" class="inline">
-    <button type="submit">Approve as assessed</button>
-    <span class="hint">Accepts the finding above as it stands.</span>
-  </form>
+  <details class="option" name="decision" open>
+    <summary><span class="option-title">Approve as assessed</span><span class="hint">Accepts the finding above as it stands.</span></summary>
+    <form method="post" action="/hr/applications/{{ a.application_id }}/approve" class="inline">
+      <button type="submit">Approve as assessed</button>
+    </form>
+  </details>
   {% endif %}
+  <details class="option" name="decision"{% if evaluation.outcome == "MANUAL_REVIEW" %} open{% endif %}>
+  <summary><span class="option-title">{{ "Decide it yourself" if evaluation.outcome == "MANUAL_REVIEW" else "Or override it" }}</span><span class="hint">Record your own decision, with what you relied on.</span></summary>
   <form method="post" action="/hr/applications/{{ a.application_id }}/override" class="stack">
-    <strong>{{ "Decide it yourself" if evaluation.outcome == "MANUAL_REVIEW" else "Or override it" }}</strong>
     <label>Decision
       <select name="outcome">
         <option value="">Choose…</option>
@@ -176,10 +239,12 @@
       <textarea name="justification" rows="3" maxlength="1000" required></textarea>
       <span class="hint">Kept with the decision. Say what you relied on, for example a certificate you have seen.</span>
     </label>
-    <button type="submit" class="quiet">Record my decision</button>
+    <button type="submit"{% if evaluation.outcome != "MANUAL_REVIEW" %} class="quiet"{% endif %}>Record my decision</button>
   </form>
+  </details>
+  <details class="option" name="decision">
+  <summary><span class="option-title">Or send it back</span><span class="hint">To have the record corrected first, or assessed again as it stands.</span></summary>
   <form method="post" action="/hr/applications/{{ a.application_id }}/return" class="stack">
-    <strong>Or send it back</strong>
     <label class="choice"><input type="radio" name="how" value="correct" checked> Correct the record first. Tick what needs correcting:</label>
     {% if would_settle %}<span class="hint">Already ticked: the fields that would settle what the assessment left open.</span>{% endif %}
     <div class="ticks">
@@ -190,6 +255,8 @@
     <label class="choice"><input type="radio" name="how" value="reassess"> Assess it again as it stands</label>
     <button type="submit" class="quiet">Send back</button>
   </form>
+  </details>
+  </div>
 </section>
 {% endif %}
 {% endif %}
@@ -230,7 +297,7 @@
 {% endif %}
 
 {% if duplicate %}
-<section class="panel warn">
+<section class="panel warn" id="duplicate">
   <h2>Is this the same person?</h2>
   <p>The email address on this resume already belongs to
     <strong>{{ duplicate.name or "a candidate whose name is not yet known" }}</strong> ({{ duplicate.email }}), who has
@@ -244,7 +311,7 @@
 {% endif %}
 
 {% if flags %}
-<section class="panel">
+<section class="panel" id="check">
   <h2>Fields to check ({{ flags|length }})</h2>
   <p class="hint">Only the fields the reader could not settle are shown. Check each against the resume, then save.
     A value you leave as it is counts as confirmed. Every change is recorded below.</p>
@@ -295,52 +362,107 @@
 <p class="notice">Nothing is left to check on this application.</p>
 {% endif %}
 
+</div>{# /cols-main #}
+
+{% if has_side %}
+<aside class="cols-side" aria-label="Key facts and other actions">
 {% if e %}
-<h2 id="highlights">Highlights</h2>
-{% if highlights %}
-<ul>
-  {% for h in highlights %}
-  <li>{{ h.description }}
-    {% if not h.automatic %}<span class="hint">(added by HR)</span>
-    {% if can_edit %}<form method="post" action="/hr/applications/{{ a.application_id }}/highlights/{{ h.highlight_id }}/remove" class="signout"><button type="submit">Remove</button></form>{% endif %}{% endif %}</li>
-  {% endfor %}
-</ul>
-{% else %}
-<p class="hint">None. One is pointed out for a Ph.D. from a premier institute, or a research record above the norms the university has set.</p>
-{% endif %}
-{% if can_edit %}
-<form method="post" action="/hr/applications/{{ a.application_id }}/highlights" class="inline">
-  <label>Add a highlight <input name="description" maxlength="400" size="50" required></label>
-  <button type="submit" class="quiet">Add</button>
-  <span class="hint">Shown to HR and the interview panel. A pointer only: no rule or score reads it.</span>
-</form>
+<section class="panel">
+  <h2>What the reader found</h2>
+  <dl class="facts stack">
+    <dt>Highest qualification</dt><dd>{{ e.highest_degree or "Not stated" }}</dd>
+    <dt>Master's marks</dt><dd>{% if e.marks_pct is not none %}{{ "%g"|format(e.marks_pct) }}%{% elif e.cgpa is not none %}CGPA {{ "%g"|format(e.cgpa) }}{% else %}Not stated{% endif %}</dd>
+    <dt>Ph.D.</dt><dd>{{ {"NOT_APPLICABLE": "No doctoral study", "REGISTERED": "Registered", "PURSUING": "Pursuing", "THESIS_SUBMITTED": "Thesis submitted", "COMPLETED": "Completed"}.get(e.phd_status, "Not stated") }}{% if e.phd_regulation %} ({{ e.phd_regulation }} Regulations){% endif %}</dd>
+    <dt>NET / SET</dt><dd>{{ "None" if e.net_set_status == "NONE" else (e.net_set_status or "Not stated") }}{% if e.set_state %} ({{ e.set_state }}){% endif %}</dd>
+    <dt>Teaching experience stated</dt><dd>{% if e.teaching_years is not none %}{{ "%g"|format(e.teaching_years) }} years{% else %}No total stated{% endif %}</dd>
+    {% if teaching_from_posts %}{% set t = teaching_from_posts.years %}<dt>Teaching, from the dated posts</dt><dd>{% if t.high is none %}at least {{ "%g"|format(t.low) }}{% elif t.low == t.high %}{{ "%g"|format(t.low) }}{% else %}between {{ "%g"|format(t.low) }} and {{ "%g"|format(t.high) }}{% endif %} years <span class="hint">counted to {{ teaching_from_posts.to }}; this is what the assessment uses</span></dd>{% endif %}
+    <dt>Publications</dt><dd>{{ e.publications_count if e.publications_count is not none else "Not stated" }}{% if e.publications_in_progress_count %}, and {{ e.publications_in_progress_count }} under review{% endif %}</dd>
+    <dt>Category</dt><dd>{{ a.category or "Not given" }}</dd>
+    <dt>State</dt><dd>{{ (personal.state if personal else None) or "Not given" }}</dd>
+  </dl>
+</section>
+
+<section class="panel">
+  <h2 id="highlights">Highlights</h2>
+  {% if highlights %}
+  <ul class="rows">
+    {% for h in highlights %}
+    <li><span>{{ h.description }}
+      {% if not h.automatic %}<span class="hint">(added by HR)</span>{% endif %}</span>
+      {% if not h.automatic and can_edit %}<form method="post" action="/hr/applications/{{ a.application_id }}/highlights/{{ h.highlight_id }}/remove"><button type="submit" class="ghost sm">Remove</button></form>{% endif %}</li>
+    {% endfor %}
+  </ul>
+  {% else %}
+  <p class="hint">None. One is pointed out for a Ph.D. from a premier institute, or a research record above the norms the university has set.</p>
+  {% endif %}
+  {% if can_edit %}
+  <form method="post" action="/hr/applications/{{ a.application_id }}/highlights" class="add-row">
+    <label><span>Add a highlight</span> <input name="description" maxlength="400" size="50" required></label>
+    <button type="submit" class="quiet">Add</button>
+    <span class="hint">Shown to HR and the interview panel. A pointer only: no rule or score reads it.</span>
+  </form>
+  {% endif %}
+</section>
 {% endif %}
 
-<h2>What the reader found</h2>
-<dl class="facts">
-  <dt>Highest qualification</dt><dd>{{ e.highest_degree or "Not stated" }}</dd>
-  <dt>Master's marks</dt><dd>{% if e.marks_pct is not none %}{{ "%g"|format(e.marks_pct) }}%{% elif e.cgpa is not none %}CGPA {{ "%g"|format(e.cgpa) }}{% else %}Not stated{% endif %}</dd>
-  <dt>Ph.D.</dt><dd>{{ {"NOT_APPLICABLE": "No doctoral study", "REGISTERED": "Registered", "PURSUING": "Pursuing", "THESIS_SUBMITTED": "Thesis submitted", "COMPLETED": "Completed"}.get(e.phd_status, "Not stated") }}{% if e.phd_regulation %} ({{ e.phd_regulation }} Regulations){% endif %}</dd>
-  <dt>NET / SET</dt><dd>{{ "None" if e.net_set_status == "NONE" else (e.net_set_status or "Not stated") }}{% if e.set_state %} ({{ e.set_state }}){% endif %}</dd>
-  <dt>Teaching experience stated</dt><dd>{% if e.teaching_years is not none %}{{ "%g"|format(e.teaching_years) }} years{% else %}No total stated{% endif %}</dd>
-  {% if teaching_from_posts %}{% set t = teaching_from_posts.years %}<dt>Teaching, from the dated posts</dt><dd>{% if t.high is none %}at least {{ "%g"|format(t.low) }}{% elif t.low == t.high %}{{ "%g"|format(t.low) }}{% else %}between {{ "%g"|format(t.low) }} and {{ "%g"|format(t.high) }}{% endif %} years <span class="hint">counted to {{ teaching_from_posts.to }}; this is what the assessment uses</span></dd>{% endif %}
-  <dt>Publications</dt><dd>{{ e.publications_count if e.publications_count is not none else "Not stated" }}{% if e.publications_in_progress_count %}, and {{ e.publications_in_progress_count }} under review{% endif %}</dd>
-  <dt>Category</dt><dd>{{ a.category or "Not given" }}</dd>
-  <dt>State</dt><dd>{{ (personal.state if personal else None) or "Not given" }}</dd>
-</dl>
+{% if other_openings or correctable or can_withdraw %}
+<section class="panel">
+  <h2>Other actions</h2>
+  {% if other_openings %}
+  <form method="post" action="/hr/applications/{{ a.application_id }}/move" class="add-row"
+        {{ ui.confirm("The application moves to the opening you chose. Nothing is read again. An assessment already made is set aside and done again under that opening's rules.", "Move this application?", "Move", "plain") }}>
+    <label><span>Filed under the wrong post? Move to</span>
+      <select name="opening_id">
+        {% for x in other_openings %}<option value="{{ x.opening_id }}">{{ x.reference }}: {{ DESIGNATIONS[x.designation] }}, {{ x.school.name }}</option>{% endfor %}
+      </select>
+    </label>
+    <button type="submit" class="quiet">Move</button>
+    <span class="hint">Nothing is read again. An assessment already made is set aside and done again under that opening's rules.</span>
+  </form>
+  {% endif %}
 
+  {% if correctable %}
+  <details class="more">
+    <summary>Resume read badly? Read it again</summary>
+    <form method="post" action="/hr/applications/{{ a.application_id }}/read-again" class="stack">
+      <span class="hint">Use this when much of the record is wrong; to fix one or two values, correct those fields instead.
+        The resume goes back to the reading queue and is read afresh when you press the Read button on the opening's page,
+        which uses one request to the language model. What the new reading finds replaces everything shown under
+        "What the reader found", including corrections made by hand to fields and posts. Category, state and the other
+        form answers are kept.{% if awaiting_hr %} The assessment above is set aside.{% endif %}
+        The same resume read by the same model often comes back the same.</span>
+      <button type="submit" class="quiet" {{ ui.confirm("What the new reading finds replaces everything the reader found, including corrections made by hand to fields and posts." ~ (" The assessment is set aside." if awaiting_hr else ""), "Read this resume again?", "Read it again") }}>Read this resume again</button>
+    </form>
+  </details>
+  {% endif %}
+
+  {% if can_withdraw %}
+  <form method="post" action="/hr/applications/{{ a.application_id }}/withdraw" class="add-row danger-zone">
+    <button type="submit" class="danger" {{ ui.confirm("The application is withdrawn. A letter not yet sent is dropped. This cannot be undone here.", "Withdraw this application?", "Withdraw this application") }}>Withdraw this application</button>
+    <span class="hint">For a second copy of an application, or when the applicant pulls out, at any stage. A letter not yet sent is dropped. This cannot be undone here.</span>
+  </form>
+  {% endif %}
+</section>
+{% endif %}
+</aside>
+{% endif %}
+</div>{# /cols #}
+</div>{# /assessment #}
+
+{% if has_profile %}
+<div {{ part("profile") }}>
 {% if qualifications %}
 <h2>Qualifications</h2>
-<table>
+<table class="table cards">
   <thead><tr><th>Level</th><th>Degree</th><th>Course</th><th>College or university</th><th>Completed</th><th>Marks</th></tr></thead>
   <tbody>
     {% for q in qualifications %}
     <tr>
-      <td>{{ q.degree_level }}</td><td>{{ q.degree or "" }}</td>
-      <td>{{ q.discipline or "" }}{% if q.discipline_listed %}<br><span class="hint">{{ q.discipline_listed }}</span>{% endif %}</td>
-      <td>{{ q.college_name or q.university_name or "" }}{% if q.college_name and q.university_name %}<br><span class="hint">{{ q.university_name }}</span>{% endif %}</td>
-      <td class="nowrap">{{ q.completion_stated|as_stated }}</td>
-      <td class="nowrap">{% if q.marks_pct is not none %}{{ "%g"|format(q.marks_pct) }}%{% elif q.cgpa is not none %}CGPA {{ "%g"|format(q.cgpa) }}{% endif %} {{ q.division or "" }}</td>
+      <td data-label="Level">{{ q.degree_level }}</td><td class="head" data-label="Degree">{{ q.degree or "" }}</td>
+      <td data-label="Course">{{ q.discipline or "" }}{% if q.discipline_listed %}<span class="sub">{{ q.discipline_listed }}</span>{% endif %}</td>
+      <td data-label="College or university">{{ q.college_name or q.university_name or "" }}{% if q.college_name and q.university_name %}<span class="sub">{{ q.university_name }}</span>{% endif %}</td>
+      <td class="nowrap" data-label="Completed">{{ q.completion_stated|as_stated }}</td>
+      <td class="nowrap" data-label="Marks">{% if q.marks_pct is not none %}{{ "%g"|format(q.marks_pct) }}%{% elif q.cgpa is not none %}CGPA {{ "%g"|format(q.cgpa) }}{% endif %} {{ q.division or "" }}</td>
     </tr>
     {% endfor %}
   </tbody>
@@ -350,14 +472,14 @@
 {% if experience or correctable %}
 <h2 id="posts">Posts held</h2>
 {% if experience %}
-<table>
+<table class="table cards">
   <thead><tr><th>Post</th><th>Employer</th><th>Type</th><th>From</th><th>To</th><th>Duration stated</th></tr></thead>
   <tbody>
     {% for x in experience %}
     <tr>
-      <td>{{ x.designation_held or "" }}{% if not x.found_in_resume %}<br><span class="hint">Entered by HR</span>{% endif %}</td><td>{{ x.employer_name or "" }}</td>
-      <td>{{ x.experience_type|capitalize }}</td><td class="nowrap">{{ x.start_stated|as_stated }}</td>
-      <td class="nowrap">{{ "Present" if x.is_current else (x.end_stated|as_stated) }}</td><td>{{ x.duration_stated or "" }}</td>
+      <td class="head" data-label="Post">{{ x.designation_held or "" }}{% if not x.found_in_resume %}<span class="sub">Entered by HR</span>{% endif %}</td><td data-label="Employer">{{ x.employer_name or "" }}</td>
+      <td data-label="Type">{{ x.experience_type|capitalize }}</td><td class="nowrap" data-label="From">{{ x.start_stated|as_stated }}</td>
+      <td class="nowrap" data-label="To">{{ "Present" if x.is_current else (x.end_stated|as_stated) }}</td><td data-label="Duration stated">{{ x.duration_stated or "" }}</td>
     </tr>
     {% endfor %}
   </tbody>
@@ -368,17 +490,18 @@
 {% if correctable %}
 <details class="panel">
   <summary>Correct the dates or type of a post, or add a post</summary>
-  <form method="post" action="/hr/applications/{{ a.application_id }}/posts" class="stack">
+  <form method="post" action="/hr/applications/{{ a.application_id }}/posts" class="stack wide-form">
     <span class="hint">Experience is counted from these dates. Take them from the resume or an experience certificate.
       Write a date as 2019, 07-2019 or 15-07-2019: a year alone is read as any day in that year, so giving the month
       narrows the range. A post of the type "Other" is not counted.
       {% if awaiting_hr %}<strong>Saving sets the assessment above aside; the application is then assessed again.</strong>{% endif %}</span>
-    <table>
+    <div class="table-wrap">
+    <table class="table">
       <thead><tr><th>Post</th><th>Type</th><th>From</th><th>To</th><th>Still in this post</th></tr></thead>
       <tbody>
         {% for x in experience %}
         <tr>
-          <td>{{ x.designation_held or "Post not named" }}{% if x.employer_name %}<br><span class="hint">{{ x.employer_name }}</span>{% endif %}</td>
+          <td>{{ x.designation_held or "Post not named" }}{% if x.employer_name %}<span class="sub">{{ x.employer_name }}</span>{% endif %}</td>
           <td><select name="kind_{{ x.experience_id }}" aria-label="Type of post {{ loop.index }}">
             {% for code, label in POST_KINDS %}<option value="{{ code }}"{% if code == x.experience_type %} selected{% endif %}>{{ label }}</option>{% endfor %}
           </select></td>
@@ -399,55 +522,73 @@
         </tr>
       </tbody>
     </table>
+    </div>
     <button type="submit" class="quiet">Save posts</button>
   </form>
 </details>
 {% endif %}
 {% endif %}
 
+{% if research %}
+<h2>Research profile, as stated</h2>
+<section class="panel">
+<dl class="facts cols">
+  {% if research.orcid_id %}<div><dt>ORCID</dt><dd>{{ research.orcid_id }}</dd></div>{% endif %}
+  {% if research.scopus_author_id %}<div><dt>Scopus author ID</dt><dd>{{ research.scopus_author_id }}</dd></div>{% endif %}
+  {% if research.google_scholar_id %}<div><dt>Google Scholar</dt><dd>{{ research.google_scholar_id }}</dd></div>{% endif %}
+  {% if research.total_citations is not none %}<div><dt>Citations</dt><dd>{{ research.total_citations }}</dd></div>{% endif %}
+  {% if research.h_index is not none %}<div><dt>h-index</dt><dd>{{ research.h_index }}</dd></div>{% endif %}
+  {% if research.i10_index is not none %}<div><dt>i10-index</dt><dd>{{ research.i10_index }}</dd></div>{% endif %}
+</dl>
+</section>
+{% endif %}
+
+{% if subjects or skills or memberships %}
+<h2>Teaching and skills</h2>
+<section class="panel">
+<dl class="facts stack">
+  {% if subjects %}<dt>Subjects taught</dt><dd><ul class="chips">{% for s in subjects %}<li class="chip">{{ s.subject_name }}{% if s.course_level %} ({{ s.course_level }}){% endif %}</li>{% endfor %}</ul></dd>{% endif %}
+  {% if skills %}<dt>Skills</dt><dd><ul class="chips">{% for s in skills %}<li class="chip">{{ s.skill_name }}</li>{% endfor %}</ul></dd>{% endif %}
+  {% if memberships %}<dt>Memberships</dt><dd><ul class="chips">{% for m in memberships %}<li class="chip">{{ m.membership }}</li>{% endfor %}</ul></dd>{% endif %}
+</dl>
+</section>
+{% endif %}
+</div>
+{% endif %}
+
+{% if has_activities %}
+<div {{ part("activities") }}>
 {% if publications %}
 <h2>Publications ({{ publications|length }})</h2>
-<table>
+<table class="table cards">
   <thead><tr><th>Title</th><th>Type</th><th>Where</th><th>Year</th><th>Status</th><th>Authors</th><th>Indexing</th></tr></thead>
   <tbody>
     {% for p in publications %}
     <tr>
-      <td>{{ p.title }}{% if not p.found_in_resume %}<br><span class="error">Not found in the resume text</span>{% endif %}</td>
-      <td>{{ p.publication_type|replace("_", " ")|capitalize }}</td><td>{{ p.venue_name or "" }}</td><td>{{ p.year or "" }}</td>
-      <td>{{ p.status|replace("_", " ")|capitalize }}</td>
-      <td>{% if p.author_count %}{{ p.author_count }}{% if p.is_first_author %}, first{% endif %}{% endif %}</td>
-      <td>{{ p.indexing or "" }}{% if p.impact_factor is not none %} IF {{ "%g"|format(p.impact_factor) }}{% endif %}</td>
+      <td class="head" data-label="Title">{{ p.title }}{% if not p.found_in_resume %}<span class="error">Not found in the resume text</span>{% endif %}</td>
+      <td data-label="Type">{{ p.publication_type|replace("_", " ")|capitalize }}</td><td data-label="Where">{{ p.venue_name or "" }}</td><td data-label="Year">{{ p.year or "" }}</td>
+      <td data-label="Status">{{ p.status|replace("_", " ")|capitalize }}</td>
+      <td data-label="Authors">{% if p.author_count %}{{ p.author_count }}{% if p.is_first_author %}, first{% endif %}{% endif %}</td>
+      <td data-label="Indexing">{{ p.indexing or "" }}{% if p.impact_factor is not none %} IF {{ "%g"|format(p.impact_factor) }}{% endif %}</td>
     </tr>
     {% endfor %}
   </tbody>
 </table>
 {% endif %}
 
-{% if research %}
-<h2>Research profile, as stated</h2>
-<dl class="facts">
-  {% if research.orcid_id %}<dt>ORCID</dt><dd>{{ research.orcid_id }}</dd>{% endif %}
-  {% if research.scopus_author_id %}<dt>Scopus author ID</dt><dd>{{ research.scopus_author_id }}</dd>{% endif %}
-  {% if research.google_scholar_id %}<dt>Google Scholar</dt><dd>{{ research.google_scholar_id }}</dd>{% endif %}
-  {% if research.total_citations is not none %}<dt>Citations</dt><dd>{{ research.total_citations }}</dd>{% endif %}
-  {% if research.h_index is not none %}<dt>h-index</dt><dd>{{ research.h_index }}</dd>{% endif %}
-  {% if research.i10_index is not none %}<dt>i10-index</dt><dd>{{ research.i10_index }}</dd>{% endif %}
-</dl>
-{% endif %}
-
 {% if achievements or guidance %}
 <h2>Patents, awards, projects and guidance</h2>
-<table>
+<table class="table cards">
   <thead><tr><th>Kind</th><th>What</th><th>Details</th><th>Year</th><th>Status</th></tr></thead>
   <tbody>
     {% for x in achievements %}
-    <tr><td>{{ x.kind|replace("_", " ")|capitalize }}</td><td>{{ x.title }}</td>
-      <td>{{ x.details or "" }}{% if x.amount_stated %} {{ x.amount_stated }}{% endif %}{% if x.level %} ({{ x.level|capitalize }}){% endif %}</td>
-      <td>{{ x.year or "" }}</td><td>{{ x.status or "" }}</td></tr>
+    <tr><td data-label="Kind">{{ x.kind|replace("_", " ")|capitalize }}</td><td class="head" data-label="What">{{ x.title }}</td>
+      <td data-label="Details">{{ x.details or "" }}{% if x.amount_stated %} {{ x.amount_stated }}{% endif %}{% if x.level %} ({{ x.level|capitalize }}){% endif %}</td>
+      <td data-label="Year">{{ x.year or "" }}</td><td data-label="Status">{{ x.status or "" }}</td></tr>
     {% endfor %}
     {% for g in guidance %}
-    <tr><td>Guidance ({{ {"PHD": "Ph.D.", "PG": "Master's", "UG": "Bachelor's"}.get(g.level, "other") }})</td><td>{{ g.description }}</td>
-      <td>{% if g.student_count is not none %}{{ g.student_count }} student(s){% endif %}</td><td></td><td></td></tr>
+    <tr><td data-label="Kind">Guidance ({{ {"PHD": "Ph.D.", "PG": "Master's", "UG": "Bachelor's"}.get(g.level, "other") }})</td><td class="head" data-label="What">{{ g.description }}</td>
+      <td data-label="Details">{% if g.student_count is not none %}{{ g.student_count }} student(s){% endif %}</td><td></td><td></td></tr>
     {% endfor %}
   </tbody>
 </table>
@@ -455,38 +596,32 @@
 
 {% if events %}
 <h2>Seminars, workshops and courses ({{ events|length }})</h2>
-<table>
+<table class="table cards">
   <thead><tr><th>Kind</th><th>Title</th><th>Role</th><th>Organiser</th><th>Duration</th><th>Year</th></tr></thead>
   <tbody>
     {% for v in events %}
-    <tr><td>{{ v.kind|capitalize }}{% if v.level %}<br><span class="hint">{{ v.level|capitalize }}</span>{% endif %}</td><td>{{ v.title }}</td>
-      <td>{{ v.role|replace("_", " ")|capitalize }}</td><td>{{ v.organiser or "" }}</td><td>{{ v.duration_stated or "" }}</td><td>{{ v.year or "" }}</td></tr>
+    <tr><td data-label="Kind">{{ v.kind|capitalize }}{% if v.level %}<span class="sub">{{ v.level|capitalize }}</span>{% endif %}</td><td class="head" data-label="Title">{{ v.title }}</td>
+      <td data-label="Role">{{ v.role|replace("_", " ")|capitalize }}</td><td data-label="Organiser">{{ v.organiser or "" }}</td><td data-label="Duration">{{ v.duration_stated or "" }}</td><td data-label="Year">{{ v.year or "" }}</td></tr>
     {% endfor %}
   </tbody>
 </table>
 {% endif %}
-
-{% if subjects or skills or memberships %}
-<h2>Teaching and skills</h2>
-<dl class="facts">
-  {% if subjects %}<dt>Subjects taught</dt><dd>{% for s in subjects %}{{ s.subject_name }}{% if s.course_level %} ({{ s.course_level }}){% endif %}{{ ", " if not loop.last }}{% endfor %}</dd>{% endif %}
-  {% if skills %}<dt>Skills</dt><dd>{% for s in skills %}{{ s.skill_name }}{{ ", " if not loop.last }}{% endfor %}</dd>{% endif %}
-  {% if memberships %}<dt>Memberships</dt><dd>{% for m in memberships %}{{ m.membership }}{{ ", " if not loop.last }}{% endfor %}</dd>{% endif %}
-</dl>
-{% endif %}
+</div>
 {% endif %}
 
+{% if has_log %}
+<div {{ part("log") }}>
 {% if correspondence %}
 <h2>Messages received about this application ({{ correspondence|length }})</h2>
-<table>
+<table class="table cards">
   <thead><tr><th>Received</th><th>From</th><th>Subject and message</th><th>Attachment</th></tr></thead>
   <tbody>
     {% for m in correspondence %}
     <tr>
-      <td class="nowrap">{{ m.received_at|ddmmyyyy }}</td><td class="long">{{ m.sender_name or "" }}<br><span class="hint">{{ m.sender or "" }}</span></td>
-      <td class="long">{{ m.subject }}{% if m.body_excerpt %}<p class="quote">{{ m.body_excerpt }}</p>{% endif %}</td>
-      <td>{% if m.attachment_path %}<a href="/hr/inbox/{{ m.inbox_id }}/attachment" target="_blank" rel="noopener">Open the attached document</a>
-        <br><span class="hint">{{ m.attachment_name }}</span>{% endif %}</td>
+      <td class="nowrap" data-label="Received">{{ ui.when(m.received_at) }}</td><td class="long" data-label="From">{{ m.sender_name or "" }}<span class="sub">{{ m.sender or "" }}</span></td>
+      <td class="long head" data-label="Subject">{{ m.subject }}{% if m.body_excerpt %}<p class="quote">{{ m.body_excerpt }}</p>{% endif %}</td>
+      <td data-label="Attachment">{% if m.attachment_path %}<a class="button secondary sm" href="/hr/inbox/{{ m.inbox_id }}/attachment" target="_blank" rel="noopener">{{ ui.icon("paperclip") }} Open the attached document</a>
+        <span class="sub">{{ m.attachment_name }}</span>{% endif %}</td>
     </tr>
     {% endfor %}
   </tbody>
@@ -496,15 +631,15 @@
 
 {% if decisions %}
 <h2>Decisions at this gate</h2>
-<table>
+<table class="table cards">
   <thead><tr><th>When</th><th>What was done</th><th>Decision</th><th>Justification</th><th>By</th></tr></thead>
   <tbody>
     {% for d in decisions %}
     <tr>
-      <td class="nowrap">{{ d.decided_at|ddmmyyyy }}</td>
-      <td>{{ {"APPROVED": "Approved as assessed", "OVERRIDDEN": "Overridden", "DECIDED": "Decided by HR", "RETURNED": "Sent back", "REOPENED": "Decision reopened"}[d.action] }}</td>
-      <td>{% if d.final_outcome == "SHORTLISTED" %}Short-listed, {{ DESIGNATIONS.get(d.final_designation, "") }}{% elif d.final_outcome %}Does not meet the minimum qualifications{% endif %}</td>
-      <td>{{ d.justification or "" }}</td><td>{{ people.get(d.actor, d.actor) }}</td>
+      <td class="nowrap" data-label="When">{{ ui.when(d.decided_at) }}</td>
+      <td class="head" data-label="What was done">{{ {"APPROVED": "Approved as assessed", "OVERRIDDEN": "Overridden", "DECIDED": "Decided by HR", "RETURNED": "Sent back", "REOPENED": "Decision reopened"}[d.action] }}</td>
+      <td data-label="Decision">{% if d.final_outcome == "SHORTLISTED" %}Short-listed, {{ DESIGNATIONS.get(d.final_designation, "") }}{% elif d.final_outcome %}Does not meet the minimum qualifications{% endif %}</td>
+      <td data-label="Justification">{{ d.justification or "" }}</td><td data-label="By">{{ people.get(d.actor, d.actor) }}</td>
     </tr>
     {% endfor %}
   </tbody>
@@ -513,51 +648,19 @@
 
 {% if edits %}
 <h2>Changes made at this check</h2>
-<table>
+<table class="table cards">
   <thead><tr><th>When</th><th>Field</th><th>What was done</th><th>Before</th><th>After</th><th>By</th></tr></thead>
   <tbody>
     {% for d in edits %}
     <tr>
-      <td class="nowrap">{{ d.edited_at|ddmmyyyy }}</td><td>{{ field_labels.get(d.field, d.field) }}</td>
-      <td>{{ ACTION_LABELS.get(d.action, d.action) }}</td><td>{{ {"yes": "Yes", "no": "No"}.get(d.old_value, d.old_value) or "Empty" }}</td><td>{{ {"yes": "Yes", "no": "No"}.get(d.new_value, d.new_value) or "Empty" }}</td>
-      <td>{{ people.get(d.actor, d.actor) }}</td>
+      <td class="nowrap" data-label="When">{{ ui.when(d.edited_at) }}</td><td class="head" data-label="Field">{{ field_labels.get(d.field, d.field) }}</td>
+      <td data-label="What was done">{{ ACTION_LABELS.get(d.action, d.action) }}</td><td data-label="Before">{{ {"yes": "Yes", "no": "No"}.get(d.old_value, d.old_value) or "Empty" }}</td><td data-label="After">{{ {"yes": "Yes", "no": "No"}.get(d.new_value, d.new_value) or "Empty" }}</td>
+      <td data-label="By">{{ people.get(d.actor, d.actor) }}</td>
     </tr>
     {% endfor %}
   </tbody>
 </table>
 {% endif %}
-
-{% if correctable %}
-<details class="panel">
-  <summary>Resume read badly? Read it again</summary>
-  <form method="post" action="/hr/applications/{{ a.application_id }}/read-again" class="stack">
-    <span class="hint">Use this when much of the record is wrong; to fix one or two values, correct those fields instead.
-      The resume goes back to the reading queue and is read afresh when you press the Read button on the opening's page,
-      which uses one request to the language model. What the new reading finds replaces everything shown under
-      "What the reader found", including corrections made by hand to fields and posts. Category, state and the other
-      form answers are kept.{% if awaiting_hr %} The assessment above is set aside.{% endif %}
-      The same resume read by the same model often comes back the same.</span>
-    <button type="submit" class="quiet">Read this resume again</button>
-  </form>
-</details>
-{% endif %}
-
-{% if other_openings %}
-<form method="post" action="/hr/applications/{{ a.application_id }}/move" class="inline">
-  <label>Filed under the wrong post? Move to
-    <select name="opening_id">
-      {% for x in other_openings %}<option value="{{ x.opening_id }}">{{ x.reference }}: {{ DESIGNATIONS[x.designation] }}, {{ x.school.name }}</option>{% endfor %}
-    </select>
-  </label>
-  <button type="submit" class="quiet">Move</button>
-  <span class="hint">Nothing is read again. An assessment already made is set aside and done again under that opening's rules.</span>
-</form>
-{% endif %}
-
-{% if can_withdraw %}
-<form method="post" action="/hr/applications/{{ a.application_id }}/withdraw" class="inline">
-  <button type="submit" class="quiet">Withdraw this application</button>
-  <span class="hint">For a second copy of an application, or when the applicant pulls out, at any stage. A letter not yet sent is dropped. This cannot be undone here.</span>
-</form>
+</div>
 {% endif %}
 {% endblock %}

@@ -2,129 +2,191 @@
 {% block title %}{{ o.reference }} · RecruitAI{% endblock %}
 {% block trail %}<a href="/hr/openings">Openings</a> › {{ o.reference }}{% endblock %}
 {% block content %}
-<h1>{{ o.reference }}: {{ DESIGNATIONS[o.designation] }}</h1>
-<dl class="facts">
-  <dt>School</dt><dd>{{ o.school.name }}</dd>
-  {% if o.department %}<dt>Department</dt><dd>{{ o.department.name }}</dd>{% endif %}
-  {% if o.title %}<dt>Title</dt><dd>{{ o.title }}</dd>{% endif %}
-  <dt>Rules that apply</dt><dd>{{ DISCIPLINE_GROUPS[o.discipline_group] }}</dd>
-  {% if o.drive %}<dt>Advertisement</dt><dd>{{ o.drive.advertisement_ref }}, published {{ o.drive.advertisement_date|ddmmyyyy }}</dd>{% endif %}
-  <dt>Closing date</dt><dd>{{ o.closing_date|ddmmyyyy or "Open-ended" }}</dd>
-  <dt>Eligibility counted as on</dt><dd>{{ counted_on[0]|ddmmyyyy }} <span class="hint">{{ counted_on[1] }}</span></dd>
-  <dt>Status</dt><dd>{{ "Accepting applications" if accepting else "Closed" }}</dd>
-  <dt>Link for applicants</dt><dd><code>{{ request.base_url }}apply/{{ o.opening_id }}</code>
-    <span class="hint">Works only on this computer until the application is hosted. Applicants can also email a resume quoting {{ o.reference }}.</span></dd>
-</dl>
-
-{% if can_edit %}
-<form method="post" action="/hr/openings/{{ o.opening_id }}/{{ "close" if o.status == "OPEN" else "reopen" }}" class="inline">
-  <a class="button" href="/hr/openings/{{ o.opening_id }}/edit">Edit this opening</a>
-  <a href="/apply/{{ o.opening_id }}">Its application form</a>
-  <button type="submit" class="quiet">{{ "Close this opening" if o.status == "OPEN" else "Reopen this opening" }}</button>
-</form>
+<div class="page-head">
+  <div>
+    <p class="eyebrow">{{ o.school.name }}{% if o.department %} · {{ o.department.name }}{% endif %}</p>
+    <h1>{{ o.reference }} · {{ DESIGNATIONS[o.designation] }}</h1>
+  </div>
+  {% if can_edit %}
+  <form method="post" action="/hr/openings/{{ o.opening_id }}/{{ "close" if o.status == "OPEN" else "reopen" }}" class="actions">
+    <a class="button secondary" href="/apply/{{ o.opening_id }}">{{ ui.icon("external") }} Its application form</a>
+    {% if o.status == "OPEN" %}
+    <button type="submit" class="danger" {{ ui.confirm("Applicants will no longer be able to apply for " ~ o.reference ~ ". Applications already received are kept, and you can reopen it later.", "Close this opening?", "Close this opening") }}>Close this opening</button>
+    {% else %}
+    <button type="submit" class="secondary">Reopen this opening</button>
+    {% endif %}
+    <a class="button" href="/hr/openings/{{ o.opening_id }}/edit">{{ ui.icon("edit") }} Edit this opening</a>
+  </form>
+  {% endif %}
+</div>
 
 <section class="panel">
-  <h2>Add resumes you already hold</h2>
-  <form method="post" action="/hr/openings/{{ o.opening_id }}/upload" enctype="multipart/form-data" class="inline">
-    <label>PDF or DOCX files <input type="file" name="resumes" accept=".pdf,.docx" multiple required></label>
-    <button type="submit">Upload</button>
+  <dl class="facts cols">
+    {% call ui.fact("Status") %}{% if accepting %}{{ ui.badge("Accepting applications", "green") }}{% else %}{{ ui.badge("Closed", "") }}{% endif %}{% endcall %}
+    {% call ui.fact("School") %}{{ o.school.name }}{% endcall %}
+    {% if o.department %}{% call ui.fact("Department") %}{{ o.department.name }}{% endcall %}{% endif %}
+    {% if o.title %}{% call ui.fact("Title") %}{{ o.title }}{% endcall %}{% endif %}
+    {% call ui.fact("Rules that apply") %}{{ DISCIPLINE_GROUPS[o.discipline_group] }}{% endcall %}
+    {% if o.drive %}{% call ui.fact("Advertisement") %}{{ o.drive.advertisement_ref }}, published {{ o.drive.advertisement_date|ddmmyyyy }}{% endcall %}{% endif %}
+    {% call ui.fact("Closing date") %}{{ o.closing_date|ddmmyyyy or "Open-ended" }}{% endcall %}
+    {% call ui.fact("Eligibility counted as on", wide=True) %}{{ counted_on[0]|ddmmyyyy }} <span class="hint">{{ counted_on[1] }}</span>{% endcall %}
+  </dl>
+  <div class="field">
+    <label for="apply-link">Link for applicants</label>
+    {{ ui.copy_field("apply-link", request.base_url ~ "apply/" ~ o.opening_id, "Link for applicants") }}
+    <span class="hint">Works only on this computer until the application is hosted. Applicants can also email a resume quoting {{ o.reference }}.</span>
+  </div>
+</section>
+
+{% if can_edit %}
+<section class="panel">
+  <div class="card-head"><h2>Add resumes you already hold</h2></div>
+  <form method="post" action="/hr/openings/{{ o.opening_id }}/upload" enctype="multipart/form-data" class="upload">
+    {{ ui.dropzone("resumes", "Drop PDF or DOCX files here, or click to choose", "PDF or DOCX files. Several at once is fine.", accept=".pdf,.docx", multiple=True, required=True) }}
+    <div class="inline">
+      <button type="submit">{{ ui.icon("upload") }} Upload</button>
+      <span class="hint">Uploaded resumes have no form answers. They can be assessed without them; category, state and study leave can be entered on each application's page.</span>
+    </div>
   </form>
-  <p class="hint">Uploaded resumes have no form answers. They can be assessed without them; category, state and study leave can be entered on each application's page.</p>
   {% if outcomes %}
-  <ul>
+  <ul class="rows">
     {% for u in outcomes %}
-    <li>{{ u.filename }}:
-      {% if u.reference %}added as {{ u.reference }}{% else %}<span class="error">not added, {{ u.problem }}</span>{% endif %}
+    <li><span>{{ u.filename }}:
+      {% if u.reference %}added as {{ u.reference }}{% else %}<span class="error">not added, {{ u.problem }}</span>{% endif %}</span>
+      {% if u.reference %}{{ ui.badge("Added", "green") }}{% else %}{{ ui.badge("Not added", "red") }}{% endif %}
     </li>
     {% endfor %}
   </ul>
   {% endif %}
 </section>
-
 {% else %}
-<p class="hint">Your account may view this opening but not change it.</p>
+{% call ui.alert("info") %}Your account may view this opening but not change it.{% endcall %}
 {% endif %}
 
-<h2>Applications ({{ rows|length }})</h2>
+<div class="card-head section-head">
+  <h2 id="applications">Applications ({{ rows|length }})</h2>
+  {% if rows %}
+  <div class="actions">
+    <a class="button secondary sm" href="/hr/openings/{{ o.opening_id }}/digest">{{ ui.icon("file") }} Digest</a>
+    <a class="button secondary sm" href="/hr/openings/{{ o.opening_id }}/emails">{{ ui.icon("mail") }} Emails to candidates</a>
+    <a class="button secondary sm" href="/hr/openings/{{ o.opening_id }}/export.xlsx">{{ ui.icon("download") }} Download as Excel</a>
+  </div>
+  {% endif %}
+</div>
+<p class="hint">A short-listing aid. Applications are listed in order of receipt, not ranked; every outcome needs an HR decision.</p>
+
 {% if letters %}
-<p class="notice" role="status"><strong>{{ letters }} waiting for your approval.</strong> Nothing is sent until you approve it.
-  <a href="/hr/openings/{{ o.opening_id }}/emails">Read and approve them</a></p>
+<div class="next">
+  <p role="status"><strong>{{ letters }} waiting for your approval.</strong> <span class="hint">Nothing is sent until you approve it.</span></p>
+  <a class="button" href="/hr/openings/{{ o.opening_id }}/emails">Read and approve them</a>
+</div>
 {% endif %}
 {% if reading %}
 <p class="notice" role="status"><strong>Reading in progress.</strong> This page refreshes every few seconds.</p>
 {% elif due and can_edit %}
-<form method="post" action="/hr/queue/run" class="inline">
+<form method="post" action="/hr/queue/run" class="next">
   <input type="hidden" name="back" value="/hr/openings/{{ o.opening_id }}">
   <input type="hidden" name="limit" value="12">
+  <p><strong>Resumes waiting to be read</strong>
+    <span class="hint">{{ "That is" if due <= 12 else "Twelve at a time;" }} {{ [due, 12]|min }} request(s) to the language model, one per application.
+    The count is across all openings.</span></p>
   <button type="submit">{% if due > 12 %}Read 12 of the {{ due }} waiting applications{% elif due == 1 %}Read the 1 waiting application{% else %}Read the {{ due }} waiting applications{% endif %}</button>
-  <span class="hint">{{ "That is" if due <= 12 else "Twelve at a time;" }} {{ [due, 12]|min }} request(s) to the language model, one per application.
-    The count is across all openings.</span>
 </form>
 {% endif %}
-<p class="hint">A short-listing aid. Applications are listed in order of receipt, not ranked; every outcome needs an HR decision.
-  {% if rows %}<a href="/hr/openings/{{ o.opening_id }}/digest">Digest</a> · <a href="/hr/openings/{{ o.opening_id }}/emails">Emails to candidates</a> · <a href="/hr/openings/{{ o.opening_id }}/export.xlsx">Download as Excel</a>{% endif %}</p>
 {% set to_assess = rows|selectattr("a.status", "equalto", "EXTRACTED")|list|length %}
 {% if to_assess and can_edit %}
-<form method="post" action="/hr/openings/{{ o.opening_id }}/assess" class="inline">
+<form method="post" action="/hr/openings/{{ o.opening_id }}/assess" class="next">
+  <p><strong>Read and ready to be assessed</strong>
+    <span class="hint">Checks each against the rules chosen for this opening. No language model is used.</span></p>
   <button type="submit">Assess {{ to_assess }} read application(s)</button>
-  <span class="hint">Checks each against the rules chosen for this opening. No language model is used.</span>
 </form>
 {% endif %}
 {% if out_of_date and can_edit %}
-<form method="post" action="/hr/openings/{{ o.opening_id }}/reassess" class="inline">
-  <button type="submit">Assess {{ out_of_date }} application(s) again as on {{ counted_on[0]|ddmmyyyy }}</button>
-  <span class="hint">These were assessed counting to another date. Eligibility for this opening is counted as on
-    {{ counted_on[0]|ddmmyyyy }}, {{ counted_on[1] }}. The earlier findings are kept as history. No language model is used.</span>
+<form method="post" action="/hr/openings/{{ o.opening_id }}/reassess" class="next">
+  <p><strong>Assessed counting to another date</strong>
+    <span class="hint">These were assessed counting to another date. Eligibility for this opening is counted as on
+    {{ counted_on[0]|ddmmyyyy }}, {{ counted_on[1] }}. The earlier findings are kept as history. No language model is used.</span></p>
+  <button type="submit" class="secondary">Assess {{ out_of_date }} application(s) again as on {{ counted_on[0]|ddmmyyyy }}</button>
 </form>
 {% endif %}
+
 {% if rows %}
-<table>
-  <thead><tr><th>Reference</th><th>Name</th><th>Received</th><th>Source</th><th>Category</th><th>Status</th><th>Reason, clause and page</th><th>HR decision</th></tr></thead>
+{% set n = namespace(needs=0, short=0, no=0, decided=0) %}
+{% for r in rows %}
+  {% if r.decided %}{% set n.decided = n.decided + 1 %}{% if r.decided.final_outcome == "SHORTLISTED" %}{% set n.short = n.short + 1 %}{% else %}{% set n.no = n.no + 1 %}{% endif %}
+  {% elif r.v %}{% set n.needs = n.needs + 1 %}{% endif %}
+{% endfor %}
+<div class="toolbar">
+  <div class="segments" data-filter-tabs="#apps" role="group" aria-label="Show">
+    <button type="button" aria-pressed="true" data-group="">All <span class="n">{{ rows|length }}</span></button>
+    <button type="button" aria-pressed="false" data-group="needs">Needs decision <span class="n">{{ n.needs }}</span></button>
+    <button type="button" aria-pressed="false" data-group="short">Short-listed <span class="n">{{ n.short }}</span></button>
+    <button type="button" aria-pressed="false" data-group="no">Not eligible <span class="n">{{ n.no }}</span></button>
+    <button type="button" aria-pressed="false" data-group="decided">Decided <span class="n">{{ n.decided }}</span></button>
+  </div>
+  <span class="grow"></span>
+  <label class="search">{{ ui.icon("search") }}<span class="sr">Search these applications</span>
+    <input type="search" placeholder="Search by name or reference" data-filter="#apps"></label>
+</div>
+<table class="table cards sticky" id="apps" data-sortable>
+  <thead><tr><th data-sort="text">Reference</th><th data-sort="text">Name</th><th data-sort="date">Received</th><th data-sort="text">Status</th>
+    <th>Reason, clause and page</th><th>HR decision</th></tr></thead>
   <tbody>
     {% for r in rows %}
-    <tr>
-      <td class="nowrap"><a href="/hr/applications/{{ r.a.application_id }}">{{ r.a.reference }}</a></td>
-      <td>{{ r.name or "Not yet known" }}</td>
-      <td class="nowrap">{{ r.a.created_at|ddmmyyyy }}</td>
-      <td>{{ {"WEB_FORM": "Application form", "MANUAL_UPLOAD": "HR upload", "EMAIL": "Email", "GOOGLE_FORM": "Google Form"}.get(r.a.resume_source, r.a.resume_source) }}</td>
-      <td>{{ r.a.category or "Not given" }}</td>
-      <td>
-        {{ STATE_LABELS.get(r.a.status, r.a.status) }}
-        {% if r.a.status == "PENDING_REVIEW" %}<br><a href="/hr/applications/{{ r.a.application_id }}">Check fields</a>{% endif %}
-        {% if r.failed_note %}<br><span class="error">{{ r.failed_note|why_unreadable }}</span>{% endif %}
-        {% if r.a.possible_duplicate_candidate_id %}<br><span class="error">Possible duplicate of an existing candidate</span>{% endif %}
-        {% if r.v and r.v.eligible_designation and r.v.outcome == "RE_CATEGORISED" %}<br><span class="hint">Meets {{ DESIGNATIONS[r.v.eligible_designation] }}</span>{% endif %}
-        {% if r.v and r.policy %}<br><span class="{{ "error" if "not met" in r.policy else "hint" }}">{{ r.policy }}</span>{% endif %}
+    {% set received = (r.a.created_at|ddmmyyyy).split(" ") %}
+    <tr data-group="{% if r.decided %}decided {{ "short" if r.decided.final_outcome == "SHORTLISTED" else "no" }}{% elif r.v %}needs{% endif %}">
+      <td class="nowrap head" data-label="Reference"><a class="ref" href="/hr/applications/{{ r.a.application_id }}">{{ r.a.reference }}</a></td>
+      <td class="w-m" data-label="Name">{{ r.name or "Not yet known" }}
+        <span class="sub">Category: {{ r.a.category or "Not given" }}</span></td>
+      <td class="nowrap" data-label="Received" data-value="{{ r.a.created_at|ddmmyyyy }}">{{ received[0] }} <span class="time">{{ received[1] if received|length > 1 }}</span>
+        <span class="sub">{{ {"WEB_FORM": "Application form", "MANUAL_UPLOAD": "HR upload", "EMAIL": "Email", "GOOGLE_FORM": "Google Form"}.get(r.a.resume_source, r.a.resume_source) }}</span></td>
+      <td data-label="Status">
+        {{ ui.status_badge(r.a.status) }}
+        {% if r.a.status == "PENDING_REVIEW" %}<a class="button secondary sm" href="/hr/applications/{{ r.a.application_id }}">Check fields</a>{% endif %}
+        {% if r.failed_note %}<span class="error">{{ r.failed_note|why_unreadable }}</span>{% endif %}
+        {% if r.a.possible_duplicate_candidate_id %}<span class="error">Possible duplicate of an existing candidate</span>{% endif %}
+        {% if r.v and r.v.eligible_designation and r.v.outcome == "RE_CATEGORISED" %}<span class="sub">Meets {{ DESIGNATIONS[r.v.eligible_designation] }}</span>{% endif %}
+        {% if r.v and r.policy %}<span class="{{ "error" if "not met" in r.policy else "sub" }}">{{ r.policy }}</span>{% endif %}
       </td>
-      <td>
+      <td data-label="Reason">
         {% if r.v %}
           {% if r.v.outcome == "MANUAL_REVIEW" %}{{ ((r.v.details or {}).open_points or ["To be settled by a person"])[0] }}
           {% elif r.v.failing_clause %}{{ r.v.failing_clause }} ({{ r.v.failing_clause_page }})
           {% else %}Every requirement met{% endif %}
         {% endif %}
       </td>
-      <td>
+      <td class="w-m" data-label="HR decision">
         {% if r.decided %}
-          {{ {"APPROVED": "Approved", "OVERRIDDEN": "Overridden", "DECIDED": "Decided"}[r.decided.action] }}:
-          {% if r.decided.final_outcome == "SHORTLISTED" %}short-listed, {{ DESIGNATIONS.get(r.decided.final_designation, "") }}{% else %}not eligible{% endif %}
-        {% elif r.v %}<a href="/hr/applications/{{ r.a.application_id }}">{{ "Decide" if can_approve else "Waiting for a decision" }}</a>{% endif %}
+          {% set how = {"APPROVED": "Approved", "OVERRIDDEN": "Overridden", "DECIDED": "Decided"}[r.decided.action] %}
+          {% if r.decided.final_outcome == "SHORTLISTED" %}{{ ui.badge("Short-listed", "green", how ~ ": short-listed, " ~ DESIGNATIONS.get(r.decided.final_designation, "")) }}
+          <span class="sub">{{ how }}: short-listed, {{ DESIGNATIONS.get(r.decided.final_designation, "") }}</span>
+          {% else %}{{ ui.badge("Not eligible", "red", how ~ ": not eligible") }}
+          <span class="sub">{{ how }}: not eligible</span>{% endif %}
+        {% elif r.v %}
+          {% if can_approve %}<a class="button sm" href="/hr/applications/{{ r.a.application_id }}">Decide</a>
+          {% else %}<a class="badge amber" href="/hr/applications/{{ r.a.application_id }}">Waiting for a decision</a>{% endif %}
+        {% endif %}
       </td>
     </tr>
     {% endfor %}
+    <tr class="no-match" hidden><td colspan="6">No application matches. Clear the search or choose "All".</td></tr>
   </tbody>
 </table>
 {% if other_openings %}
-<form method="post" action="/hr/openings/{{ o.opening_id }}/move-all" class="inline">
+<form method="post" action="/hr/openings/{{ o.opening_id }}/move-all" class="inline bulk"
+      {{ ui.confirm("Every application here that HR has not yet decided moves to the opening you chose. Nothing is read again. An assessment already made is set aside and done again under that opening's rules.", "Move all of these applications?", "Move all") }}>
   <label>Move all of these applications to
     <select name="target_id">
       {% for x in other_openings %}<option value="{{ x.opening_id }}">{{ x.reference }}: {{ DESIGNATIONS[x.designation] }}, {{ x.school.name }}</option>{% endfor %}
     </select>
   </label>
-  <button type="submit" class="quiet">Move all</button>
+  <button type="submit" class="danger">Move all</button>
   <span class="hint">For applications filed under the wrong post. Those HR has already decided stay here.</span>
 </form>
 {% endif %}
 {% else %}
-<p>No applications yet.</p>
+{% call ui.empty("No applications yet.", "inbox") %}
+  <p>They arrive through the link for applicants above, by email, or as resumes you add here.</p>
+{% endcall %}
 {% endif %}
 {% endblock %}

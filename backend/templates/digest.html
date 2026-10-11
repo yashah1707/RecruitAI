@@ -2,7 +2,10 @@
 {% block title %}Digest · {{ o.reference }} · RecruitAI{% endblock %}
 {% block trail %}<a href="/hr/openings">Openings</a> › <a href="/hr/openings/{{ o.opening_id }}">{{ o.reference }}</a> › Digest{% endblock %}
 {% block content %}
-<h1>Digest: {{ o.reference }}, {{ DESIGNATIONS[o.designation] }}</h1>
+{% call ui.page_head("Digest", o.reference ~ ", " ~ DESIGNATIONS[o.designation]) %}
+  <button type="button" class="secondary" data-print hidden>{{ ui.icon("print") }} Print or save as PDF</button>
+{% endcall %}
+<section class="panel">
 <dl class="facts">
   <dt>School</dt><dd>{{ o.school.name }}{% if o.department %}, {{ o.department.name }}{% endif %}</dd>
   <dt>Rules that apply</dt><dd>{{ DISCIPLINE_GROUPS[o.discipline_group] }}</dd>
@@ -13,24 +16,25 @@
 </dl>
 <p class="hint">A short-listing aid. Applications are in order of receipt within each group and are not ranked.
   Selection is made by the Selection Committee at interview. Use your browser's Print to keep a copy.</p>
+</section>
 
 {% for section in d.sections %}
 <h2>{{ section.title }} ({{ section.rows|length }})</h2>
-<table>
+<table class="table cards">
   <thead><tr><th>Reference</th><th>Name</th><th>What the rules give, and why</th><th>HR decision</th><th>Email</th></tr></thead>
   <tbody>
     {% for r in section.rows %}
     <tr>
-      <td class="nowrap"><a href="/hr/applications/{{ r.a.application_id }}">{{ r.a.reference }}</a></td>
-      <td>{{ r.name or "Not yet known" }}</td>
-      <td>{{ r.finding or STATE_LABELS.get(r.a.status, r.a.status) }}</td>
-      <td>{{ r.decision or "" }}</td>
-      <td class="nowrap">{{ {"DRAFT": "Drafted", "APPROVED": "Approved", "SENT": "Sent"}.get(r.email, "") }}</td>
+      <td class="nowrap head" data-label="Reference"><a class="ref" href="/hr/applications/{{ r.a.application_id }}">{{ r.a.reference }}</a></td>
+      <td class="w-m" data-label="Name">{{ r.name or "Not yet known" }}</td>
+      <td data-label="What the rules give">{{ r.finding or STATE_LABELS.get(r.a.status, r.a.status) }}</td>
+      <td data-label="HR decision">{{ r.decision or "" }}</td>
+      <td class="nowrap" data-label="Email">{% if r.email %}{{ ui.badge({"DRAFT": "Drafted", "APPROVED": "Approved", "SENT": "Sent"}.get(r.email, ""), {"DRAFT": "purple", "APPROVED": "amber", "SENT": "green"}.get(r.email, ""), plain=True) }}{% endif %}</td>
     </tr>
     {% endfor %}
   </tbody>
 </table>
 {% else %}
-<p>No applications yet.</p>
+{% call ui.empty("No applications yet.", "inbox") %}{% endcall %}
 {% endfor %}
 {% endblock %}

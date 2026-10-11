@@ -1,91 +1,104 @@
 {% extends "base.html" %}
 {% block title %}Inbox · RecruitAI{% endblock %}
+{% set KIND = {"APPLICATION": ("Application", "purple"), "JOB_OPENING": ("Opening announcement", "amber"), "OTHER": ("Other", "")} %}
+{% macro when(value) %}{% set t = (value|ddmmyyyy).split(" ") %}{{ t[0] }} <span class="time">{{ t[1] if t|length > 1 }}</span>{% endmacro %}
 {% block content %}
-<h1>Inbox</h1>
+{% call ui.page_head("Inbox", "Applications and other messages that arrived by email.") %}
+  {% if configured %}
+  <form method="post" action="/hr/inbox/check" class="inline">
+    <button type="submit">{{ ui.icon("inbox") }} Check inbox</button>
+  </form>
+  {% endif %}
+{% endcall %}
 {% if configured %}
-<form method="post" action="/hr/inbox/check" class="inline">
-  <button type="submit">Check inbox</button>
-  <span class="hint">Looks at the last 30 days of <strong>{{ mailbox }}</strong>. Nothing in the mailbox is changed, and no
-    language model is used. A resume that arrives is queued for reading like any other.</span>
-</form>
+<p class="hint">Looks at the last 30 days of <strong>{{ mailbox }}</strong>. Nothing in the mailbox is changed, and no
+    language model is used. A resume that arrives is queued for reading like any other.</p>
 {% else %}
-<p class="panel warn">No mailbox is configured, so applications sent by email are not picked up.
-  <span class="hint">For whoever runs the system: set IMAP_HOST, IMAP_USER and IMAP_PASSWORD in <code>.env</code> and restart.</span></p>
+{% call ui.alert("warning", "No mailbox is configured, so applications sent by email are not picked up.") %}
+  <span class="hint">For whoever runs the system: set IMAP_HOST, IMAP_USER and IMAP_PASSWORD in <code>.env</code> and restart.</span>
+{% endcall %}
 {% endif %}
 
 <h2>Waiting for you ({{ rows|length }})</h2>
 {% if rows %}
-<table>
-  <thead><tr><th>Received</th><th>From</th><th>Subject</th><th>What it is</th><th>What to do</th></tr></thead>
-  <tbody>
-    {% for m in rows %}
-    <tr>
-      <td class="nowrap">{{ m.received_at|ddmmyyyy }}</td>
-      <td class="long">{{ m.sender_name or "" }}<br><span class="hint">{{ m.sender or "" }}</span></td>
-      <td class="long">{{ m.subject }}
-        {% if m.body_excerpt %}<p class="quote">{{ m.body_excerpt }}</p>{% else %}<br><span class="hint">The message has no text.</span>{% endif %}
-        {% if m.attachment_path %}<a href="/hr/inbox/{{ m.inbox_id }}/attachment" target="_blank" rel="noopener">{{ "Open the attached resume" if m.kind == "APPLICATION" else "Open the attachment" }}</a>
-          <span class="hint">({{ m.attachment_name }})</span>{% endif %}</td>
-      <td>{{ {"APPLICATION": "Application", "JOB_OPENING": "Opening announcement", "OTHER": "Other"}[m.kind] }}<br>
-        <span class="hint">{{ m.note or "" }}</span>
-        {% if m.application_id %}<br><a href="/hr/applications/{{ m.application_id }}">Open {{ "APP-%06d"|format(m.application_id) }}</a>{% endif %}</td>
-      <td>
-        {% set c = choices[m.inbox_id] %}
-        {% if m.status == "REJECTED" and c.already %}
-        <p class="error">Not filed: this same resume is already in the system:
-          {% for x in c.already %}<a href="/hr/applications/{{ x.application_id }}">{{ x.reference }}</a> under {{ x.opening.reference if x.opening else "no opening" }}
-          ({{ STATE_LABELS.get(x.status, x.status) }}){{ "; " if not loop.last }}{% endfor %}.
-          Nothing more is needed; set it aside.</p>
-        {% endif %}
-        {% if m.status == "NEEDS_JOB_MATCH" %}
-        {% if c.already %}
-        <p class="error">This same resume is already in the system:
-          {% for x in c.already %}<a href="/hr/applications/{{ x.application_id }}">{{ x.reference }}</a> under {{ x.opening.reference if x.opening else "no opening" }}
-          ({{ STATE_LABELS.get(x.status, x.status) }}){{ "; " if not loop.last }}{% endfor %}.
-          File it again only if the same person is applying for another post; otherwise set it aside.</p>
-        {% endif %}
-        {% if c.suggested %}<p class="hint"><strong>Suggested: {{ c.suggested.reference }}</strong>, because {{ c.reason }}. Check it before filing.</p>
-        {% else %}<p class="hint">Nothing in the message points to an opening. Open the resume, or ask the sender.</p>{% endif %}
-        <form method="post" action="/hr/inbox/{{ m.inbox_id }}/assign" class="inline">
-          <select name="opening_id" aria-label="Opening for this application">
-            {% if not c.suggested %}<option value="">Choose an opening…</option>{% endif %}
-            {% for o in c.openings %}<option value="{{ o.opening_id }}">{{ o.reference }}: {{ DESIGNATIONS[o.designation] }}, {{ o.school.name }}{% if o.department %}, {{ o.department.name }}{% endif %}</option>{% endfor %}
-          </select>
-          <button type="submit">File under this opening</button>
-        </form>
-        {% endif %}
-        <form method="post" action="/hr/inbox/{{ m.inbox_id }}/set-aside" class="inline">
-          <button type="submit" class="quiet">Set aside</button>
-          {% if m.sender and m.status == "NEEDS_JOB_MATCH" %}<a href="mailto:{{ m.sender }}?subject={{ ("Re: " ~ m.subject)|urlencode }}&body={{ "Thank you for your email. Please tell us which post you are applying for, with its reference (for example OPN-00001)."|urlencode }}">Reply to ask which post</a>
-          {% elif m.sender %}<a href="mailto:{{ m.sender }}?subject={{ ("Re: " ~ m.subject)|urlencode }}">Reply</a>{% endif %}
-        </form>
-      </td>
-    </tr>
-    {% endfor %}
-  </tbody>
-</table>
+<ul class="msgs">
+  {% for m in rows %}
+  {% set c = choices[m.inbox_id] %}
+  <li class="msg">
+    <div class="msg-head">
+      <span class="person">{{ ui.avatar(m.sender_name or m.sender) }}<span><strong>{{ m.sender_name or "" }}</strong><span class="hint">{{ m.sender or "" }}</span></span></span>
+      {{ ui.badge(KIND[m.kind][0], KIND[m.kind][1], "What it is") }}
+      <span class="nowrap">{{ when(m.received_at) }}</span>
+    </div>
+    <h3 class="msg-subject">{{ m.subject }}</h3>
+    {% if m.body_excerpt %}<p class="quote">{{ m.body_excerpt }}</p>{% else %}<span class="hint">The message has no text.</span>{% endif %}
+    {% if m.attachment_path or m.note or m.application_id %}
+    <p class="actions">
+      {% if m.attachment_path %}<a class="button secondary sm" href="/hr/inbox/{{ m.inbox_id }}/attachment" target="_blank" rel="noopener">{{ ui.icon("paperclip") }} {{ "Open the attached resume" if m.kind == "APPLICATION" else "Open the attachment" }}</a>
+        <span class="hint">({{ m.attachment_name }})</span>{% endif %}
+      {% if m.application_id %}<a class="button secondary sm" href="/hr/applications/{{ m.application_id }}">Open {{ "APP-%06d"|format(m.application_id) }}</a>{% endif %}
+      <span class="hint">{{ m.note or "" }}</span>
+    </p>
+    {% endif %}
+    {% if m.status == "REJECTED" and c.already %}
+    {% call ui.alert("warning", "Not filed: this same resume is already in the system") %}
+      {% for x in c.already %}<a href="/hr/applications/{{ x.application_id }}">{{ x.reference }}</a> under {{ x.opening.reference if x.opening else "no opening" }}
+      ({{ STATE_LABELS.get(x.status, x.status) }}){{ "; " if not loop.last }}{% endfor %}.
+      Nothing more is needed; set it aside.
+    {% endcall %}
+    {% endif %}
+    {% if m.status == "NEEDS_JOB_MATCH" and c.already %}
+    {% call ui.alert("warning", "This same resume is already in the system") %}
+      {% for x in c.already %}<a href="/hr/applications/{{ x.application_id }}">{{ x.reference }}</a> under {{ x.opening.reference if x.opening else "no opening" }}
+      ({{ STATE_LABELS.get(x.status, x.status) }}){{ "; " if not loop.last }}{% endfor %}.
+      File it again only if the same person is applying for another post; otherwise set it aside.
+    {% endcall %}
+    {% endif %}
+    <div class="msg-foot">
+      {% if m.status == "NEEDS_JOB_MATCH" %}
+      {% if c.suggested %}<p class="hint"><strong>Suggested: {{ c.suggested.reference }}</strong>, because {{ c.reason }}. Check it before filing.</p>
+      {% else %}<p class="hint">Nothing in the message points to an opening. Open the resume, or ask the sender.</p>{% endif %}
+      <form method="post" action="/hr/inbox/{{ m.inbox_id }}/assign" class="inline">
+        <select name="opening_id" aria-label="Opening for this application">
+          {% if not c.suggested %}<option value="">Choose an opening…</option>{% endif %}
+          {% for o in c.openings %}<option value="{{ o.opening_id }}">{{ o.reference }}: {{ DESIGNATIONS[o.designation] }}, {{ o.school.name }}{% if o.department %}, {{ o.department.name }}{% endif %}</option>{% endfor %}
+        </select>
+        <button type="submit">File under this opening</button>
+      </form>
+      {% endif %}
+      {% if m.sender and m.status == "NEEDS_JOB_MATCH" %}<a class="button secondary" href="mailto:{{ m.sender }}?subject={{ ("Re: " ~ m.subject)|urlencode }}&body={{ "Thank you for your email. Please tell us which post you are applying for, with its reference (for example OPN-00001)."|urlencode }}">{{ ui.icon("mail") }} Reply to ask which post</a>
+      {% elif m.sender %}<a class="button secondary" href="mailto:{{ m.sender }}?subject={{ ("Re: " ~ m.subject)|urlencode }}">{{ ui.icon("mail") }} Reply</a>{% endif %}
+      <form method="post" action="/hr/inbox/{{ m.inbox_id }}/set-aside" class="inline">
+        <button type="submit" class="danger" {{ ui.confirm("The message leaves this list and nothing is filed from it. It stays in the mailbox, and in the list of messages seen below.", "Set this message aside?", "Set aside") }}>Set aside</button>
+      </form>
+    </div>
+  </li>
+  {% endfor %}
+</ul>
 {% else %}
-<p>Nothing is waiting.</p>
+{% call ui.empty("Nothing is waiting.", "inbox") %}
+  <p>A message appears here when an emailed application needs an opening, or when something else needs you to look at it.</p>
+{% endcall %}
 {% endif %}
 
 <h2>Last 50 messages seen</h2>
 {% if recent %}
-<table>
+<table class="table cards">
   <thead><tr><th>Received</th><th>From</th><th>Subject</th><th>Sorted as</th><th>Outcome</th></tr></thead>
   <tbody>
     {% for m in recent %}
     <tr>
-      <td class="nowrap">{{ m.received_at|ddmmyyyy }}</td><td>{{ m.sender or "" }}</td><td class="long">{{ m.subject }}</td>
-      <td>{{ {"APPLICATION": "Application", "JOB_OPENING": "Opening announcement", "OTHER": "Other"}[m.kind] }}<br>
-        <span class="hint">{{ m.classified_by|replace("rule:", "rule: ")|replace("_", " ") }}</span></td>
-      <td>{{ {"IMPORTED": "Filed", "NEEDS_JOB_MATCH": "Waiting for an opening", "FOR_HR": "For you to look at", "REJECTED": "Not accepted", "IGNORED": "No action"}[m.status] }}
-        {% if m.application_id %}<a href="/hr/applications/{{ m.application_id }}">{{ "APP-%06d"|format(m.application_id) }}</a>{% endif %}
-        {% if m.note %}<br><span class="hint">{{ m.note }}</span>{% endif %}</td>
+      <td class="nowrap" data-label="Received">{{ when(m.received_at) }}</td><td class="long" data-label="From">{{ m.sender or "" }}</td><td class="long head" data-label="Subject">{{ m.subject }}</td>
+      <td data-label="Sorted as">{{ ui.badge(KIND[m.kind][0], KIND[m.kind][1], plain=True) }}
+        <span class="sub">{{ m.classified_by|replace("rule:", "rule: ")|replace("_", " ") }}</span></td>
+      <td data-label="Outcome">{{ {"IMPORTED": "Filed", "NEEDS_JOB_MATCH": "Waiting for an opening", "FOR_HR": "For you to look at", "REJECTED": "Not accepted", "IGNORED": "No action"}[m.status] }}
+        {% if m.application_id %}<a class="ref" href="/hr/applications/{{ m.application_id }}">{{ "APP-%06d"|format(m.application_id) }}</a>{% endif %}
+        {% if m.note %}<span class="sub">{{ m.note }}</span>{% endif %}</td>
     </tr>
     {% endfor %}
   </tbody>
 </table>
 {% else %}
-<p>No messages have been looked at yet.</p>
+{% call ui.empty("No messages have been looked at yet.", "mail") %}{% if configured %}<p>Press "Check inbox" above to look at the mailbox.</p>{% endif %}{% endcall %}
 {% endif %}
 {% endblock %}

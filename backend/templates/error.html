@@ -1,8 +1,11 @@
 {% extends "base.html" %}
 {% block title %}{{ title }} · RecruitAI{% endblock %}
 {% block content %}
-<h1>{{ title }}</h1>
-<p>{{ text }}</p>
-<p>{% if request.state.user|default(None) %}<a href="/">Back to the first page</a>
-  {% else %}<a href="/apply">See the faculty openings</a> · <a href="/login">Staff sign-in</a>{% endif %}</p>
+<div class="empty big">
+  {{ ui.icon("info") }}
+  <h1>{{ title }}</h1>
+  <p>{{ text }}</p>
+  <p class="actions">{% if request.state.user|default(None) %}<a class="button" href="/">Back to the first page</a>
+    {% else %}<a class="button" href="/apply">See the faculty openings</a> <a class="button secondary" href="/login">Staff sign-in</a>{% endif %}</p>
+</div>
 {% endblock %}

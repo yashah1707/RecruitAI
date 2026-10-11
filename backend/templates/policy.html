@@ -1,34 +1,60 @@
 {% extends "base.html" %}
 {% block title %}University criteria · RecruitAI{% endblock %}
 {% block content %}
-<h1>The university's own criteria</h1>
-<p>The UGC and AICTE Regulations set the minimum. Here the university may ask for more for a post. Each criterion is checked after
-  the statutory assessment and shown beside it, to HR and to the interview panel.</p>
-<p class="panel warn"><strong>A criterion here can only add to the statutory minimum.</strong> It never changes the statutory finding,
+{{ ui.page_head("The university's own criteria", "What the university asks for a post, over and above the statutory minimum.") }}
+{% call ui.alert("info", "A criterion here can only add to the statutory minimum.") %}
+  It never changes the statutory finding,
   and it cannot make eligible a candidate the Regulations find not eligible. A figure set below the statutory one has no effect,
-  because the statutory check still applies. HR decides with both in view.</p>
+  because the statutory check still applies. HR decides with both in view.
+{% endcall %}
+{% call ui.about("How this works") %}
+  <p>The UGC and AICTE Regulations set the minimum. Here the university may ask for more for a post. Each criterion is checked after
+  the statutory assessment and shown beside it, to HR and to the interview panel.</p>
+{% endcall %}
 
 <h2>Criteria in force ({{ rules|length }})</h2>
 {% if rules %}
-<table>
-  <thead><tr><th>Post</th><th>School</th><th>Criterion</th><th>Added</th><th></th></tr></thead>
+<table class="table cards">
+  <thead><tr><th>Post</th><th>School</th><th>Criterion</th><th>Added</th><th class="act"><span class="sr">Remove</span></th></tr></thead>
   <tbody>
     {% for r in rules %}
+    {% set added = (r.created_at|ddmmyyyy).split(" ") %}
     <tr>
-      <td>{{ DESIGNATIONS.get(r.designation, r.designation) }}</td><td>{{ r.school.name if r.school else "Every school" }}</td>
-      <td>{{ CRITERIA[r.criterion_name][0] if r.criterion_name in CRITERIA else r.criterion_name }}{% if r.criterion_name in CRITERIA and CRITERIA[r.criterion_name][1] %} {{ r.criterion_value }}{% endif %}</td>
-      <td class="nowrap">{{ r.created_at|ddmmyyyy }}</td>
-      <td><form method="post" action="/hr/policy/rules/{{ r.policy_id }}/remove" class="inline"><button type="submit" class="quiet">Remove</button></form></td>
+      <td class="head" data-label="Post">{{ DESIGNATIONS.get(r.designation, r.designation) }}</td><td data-label="School">{{ r.school.name if r.school else "Every school" }}</td>
+      <td data-label="Criterion">{{ CRITERIA[r.criterion_name][0] if r.criterion_name in CRITERIA else r.criterion_name }}{% if r.criterion_name in CRITERIA and CRITERIA[r.criterion_name][1] %} {{ r.criterion_value }}{% endif %}</td>
+      <td class="nowrap" data-label="Added">{{ added[0] }} <span class="time">{{ added[1] if added|length > 1 }}</span></td>
+      <td class="act"><form method="post" action="/hr/policy/rules/{{ r.policy_id }}/remove" class="inline"><button type="submit" class="danger sm" {{ ui.confirm("The criterion stops being checked from now on. Assessments already made keep the result they recorded.", "Remove this criterion?", "Remove") }}>Remove</button></form></td>
     </tr>
     {% endfor %}
   </tbody>
 </table>
 {% else %}
-<p>None. Candidates are assessed against the statutory minimum only.</p>
+{% call ui.empty("None. Candidates are assessed against the statutory minimum only.", "check-circle") %}
+  <p>Add a criterion below if the university asks for more than the Regulations do for a post.</p>
+{% endcall %}
 {% endif %}
 
+<h2>Norms for highlights</h2>
+<p class="hint">A research record above these figures is pointed out to HR and the panel as a highlight. A highlight is a pointer only: no rule or
+  score reads it. With no figure set, nothing is pointed out on that count. A school's own figures replace the university-wide ones for that school.</p>
+{% if norms %}
+<table class="table cards">
+  <thead><tr><th>For</th><th class="num">h-index above</th><th class="num">Citations above</th><th class="num">Impact factor of a first-author paper above</th></tr></thead>
+  <tbody>
+    {% for n in norms %}
+    <tr><td class="head" data-label="For">{{ n.school.name if n.school else "Every school" }}</td><td class="num" data-label="h-index above">{{ n.min_h_index if n.min_h_index is not none else "" }}</td>
+      <td class="num" data-label="Citations above">{{ n.min_citations if n.min_citations is not none else "" }}</td><td class="num" data-label="Impact factor above">{{ "%g"|format(n.min_impact_factor) if n.min_impact_factor is not none else "" }}</td></tr>
+    {% endfor %}
+  </tbody>
+</table>
+{% else %}
+{% call ui.empty("None set.", "info") %}<p>Use "Set or change the norms" below to have a strong research record pointed out.</p>{% endcall %}
+{% endif %}
+
+<h2>Change them</h2>
+<div class="grid-2 forms">
 <form method="post" action="/hr/policy/rules" class="stack">
-  <strong>Add a criterion</strong>
+  <strong class="form-title">Add a criterion</strong>
   <label>Post
     <select name="designation" required><option value="">Choose…</option>{% for code, text in DESIGNATIONS.items() %}<option value="{{ code }}">{{ text }}</option>{% endfor %}</select></label>
   <label>School
@@ -41,30 +67,15 @@
   <span class="hint">Held against the post the statutory rules place a candidate at. It applies to assessments made from now on.</span>
 </form>
 
-<h2>Norms for highlights</h2>
-<p>A research record above these figures is pointed out to HR and the panel as a highlight. A highlight is a pointer only: no rule or
-  score reads it. With no figure set, nothing is pointed out on that count. A school's own figures replace the university-wide ones for that school.</p>
-{% if norms %}
-<table>
-  <thead><tr><th>For</th><th>h-index above</th><th>Citations above</th><th>Impact factor of a first-author paper above</th></tr></thead>
-  <tbody>
-    {% for n in norms %}
-    <tr><td>{{ n.school.name if n.school else "Every school" }}</td><td>{{ n.min_h_index if n.min_h_index is not none else "" }}</td>
-      <td>{{ n.min_citations if n.min_citations is not none else "" }}</td><td>{{ "%g"|format(n.min_impact_factor) if n.min_impact_factor is not none else "" }}</td></tr>
-    {% endfor %}
-  </tbody>
-</table>
-{% else %}
-<p>None set.</p>
-{% endif %}
 <form method="post" action="/hr/policy/norms" class="stack">
-  <strong>Set or change the norms</strong>
+  <strong class="form-title">Set or change the norms</strong>
   <label>For
     <select name="school_id"><option value="">Every school</option>{% for s in schools %}<option value="{{ s.school_id }}">{{ s.name }}</option>{% endfor %}</select></label>
   <label>h-index above <input name="h_index" inputmode="numeric" maxlength="6"></label>
   <label>Citations above <input name="citations" inputmode="numeric" maxlength="8"></label>
   <label>Impact factor of a first-author paper above <input name="impact_factor" inputmode="decimal" maxlength="8"></label>
-  <button type="submit">Save</button>
+  <button type="submit" class="secondary">Save</button>
   <span class="hint">This replaces all three figures for the school chosen. Leave all three empty to remove them.</span>
 </form>
+</div>
 {% endblock %}

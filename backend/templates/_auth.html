@@ -1,0 +1,25 @@
+{% extends "base.html" %}
+{# The layout of the pages a person meets before they are signed in: the university on the left, one card on the right.
+   A page fills the "card" block, and "aside" for what goes under the card. #}
+{% block shell %}
+<div class="auth">
+  <section class="auth-brand" aria-label="RecruitAI, MIT ADT University">
+    <img src="{{ asset("img/mitadt-logo-light.png") }}" alt="MIT-ADT University, Pune" width="1289" height="500">
+    <div class="words">
+      <span class="rule"></span>
+      <p class="product">RecruitAI</p>
+      <p class="product-sub">Faculty Recruitment</p>
+      <p class="tagline">Faculty applications, checked against the UGC and AICTE minimum qualifications.</p>
+    </div>
+    <p class="small">MIT ADT University, Pune</p>
+  </section>
+  <main id="content" class="auth-main">
+    <div class="auth-card">
+      {% block card %}{% endblock %}
+    </div>
+    <div class="auth-aside">{% block aside %}{% endblock %}</div>
+    <p class="auth-foot">A short-listing aid. Selection is made by the Selection Committee at interview
+      (UGC Regulations, 2018, clause 4.1 Note).</p>
+  </main>
+</div>
+{% endblock %}
