@@ -12,7 +12,9 @@ from backend.db import Base, make_engine
 
 config = context.config
 if config.config_file_name is not None:
-    fileConfig(config.config_file_name)
+    # Leave loggers that already exist alone: when migrations run inside the application's process (the tests do),
+    # the default would silence the application's own log for the rest of that process.
+    fileConfig(config.config_file_name, disable_existing_loggers=False)
 
 target_metadata = Base.metadata
 

@@ -20,7 +20,9 @@ from app.result_cache import ResultCache
 from backend.db import get_engine
 from backend.jobs import run_due_jobs
 
-logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
+from backend.logging_setup import configure as _configure_logging
+
+_configure_logging()
 logger = logging.getLogger("recruitai.worker")
 
 POLL_SECONDS = 15

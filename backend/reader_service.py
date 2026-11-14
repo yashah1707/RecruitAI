@@ -21,6 +21,7 @@ from app.resume_text import UnreadableResumeError, extract_text
 from backend import states
 from backend.institutions import match_institution
 from backend.lists import canonical_state, listed_discipline
+from backend.storage import KeyMissing, read_stored
 from backend.models import (
     Application,
     Candidate,
@@ -83,7 +84,16 @@ def read_application(
     states.transition(session, application, states.PARSING, ACTOR)
 
     try:
-        data = Path(application.resume_path).read_bytes()
+        data = read_stored(application.resume_path)
+    except KeyMissing as exc:
+        # A setting is wrong, not the resume: the application waits to be read again once the key is put right.
+        states.transition(session, application, states.RECEIVED, ACTOR, note=_cut(f"stored file not opened: {exc}", 500))
+        logger.error("resume_not_opened application=%s reason=encryption_key", application.application_id)
+        return application.status
+    except OSError as exc:
+        states.transition(session, application, states.FAILED, ACTOR, note=_cut(f"unreadable: {exc}", 500))
+        return application.status
+    try:
         resume = extract_text(io.BytesIO(data), application.resume_filename)
     except (UnreadableResumeError, OSError) as exc:
         # The reason names the cause, never the candidate.

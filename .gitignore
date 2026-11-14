@@ -19,3 +19,7 @@ storage/
 # The generated docs/UGC_Rules_Mentor_Review.docx is the tracked one.
 docs/UGC_Rules_*_Review.docx
 !docs/UGC_Rules_Mentor_Review.docx
+
+# The application's log and its backups (backups hold every candidate's data).
+logs/
+backups/

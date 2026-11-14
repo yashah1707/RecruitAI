@@ -20,6 +20,19 @@ DATABASE_URL: str = os.environ.get(
 # gitignored and files are named by content hash, never by the candidate.
 STORAGE_DIR: Path = Path(os.environ.get("STORAGE_DIR", "") or PROJECT_ROOT / "storage" / "resumes")
 
+# Encrypts stored resumes and backups when set (see backend/storage.py). Create one with
+# `python -m backend.storage --new-key`. Without it, files are stored as uploaded.
+DATA_ENCRYPTION_KEY: str = os.environ.get("DATA_ENCRYPTION_KEY", "").strip()
+
+# The application's own log (errors and events, never personal data). Rotated at 1 MB, five kept.
+LOG_DIR: Path = Path(os.environ.get("LOG_DIR", "") or PROJECT_ROOT / "logs")
+
+# Backups (`python -m backend.backup`): where they go and how many are kept.
+BACKUP_DIR: Path = Path(os.environ.get("BACKUP_DIR", "") or PROJECT_ROOT / "backups")
+BACKUP_KEEP: int = int(os.environ.get("BACKUP_KEEP", "14") or 14)
+# The folder holding pg_dump, when it is not on PATH (e.g. C:\Program Files\PostgreSQL\16\bin).
+PG_BIN: str = os.environ.get("PG_BIN", "").strip()
+
 # The State whose SET/SLET is valid for appointment here (cl. 3.3, p. 58).
 INSTITUTION_STATE: str = os.environ.get("INSTITUTION_STATE", "Maharashtra").strip()
 

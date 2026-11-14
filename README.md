@@ -1,233 +1,194 @@
-# RecruitAI — Resume → Excel Dashboard (MVP slice)
+# RecruitAI
 
-A local, single-user tool: upload faculty resumes, get back an Excel workbook
-with extracted candidate fields, one row per candidate — ready to sort and
-filter by hand. This is the first vertical slice of the Reader Agent from the
-full RecruitAI design, built standalone.
+A web application that screens faculty applications at MIT Art, Design and Technology University
+against the statutory minimum qualifications: the UGC Regulations, 2018 (with their 2023 and 2024
+amendments) and, for technical schools, the AICTE (Degree) Regulation, 2019.
 
-**What this does not do:** compute eligibility, do arithmetic, rank or score
-candidates, or infer school/department/designation from resume text. See
-`RecruitAI_LLM_Layer_Implementation_Plan.md` for the full constraints this
-slice was built against.
+It does three separate jobs, and keeps them separate on purpose:
 
-## Setup
+1. **A language model reads.** Google Gemini turns each resume into structured fields (degrees,
+   marks, NET/SET, Ph.D., posts held, publications) and quotes the line of the resume each value
+   came from. Every value is checked against the resume text before it is kept.
+2. **Rules decide.** A Python rule engine checks those facts against the regulations, which are
+   stored in the database with their clause, gazette page and version. Each requirement is met,
+   not met, or cannot be told from the resume; anything that cannot be told goes to a person.
+   The language model never does arithmetic and never decides an outcome.
+3. **People approve.** Nothing reaches a candidate without a person at three gates: checking
+   uncertain fields, approving or overriding the outcome, and approving each letter.
 
-1. Install Python dependencies:
+The result is a short-list for interview, never a ranking and never a selection. Selection stays
+with the Selection Committee.
 
-   ```bash
+The full build plan, every decision and its reason, and the change log are in
+[docs/IMPLEMENTATION_PLAN.md](docs/IMPLEMENTATION_PLAN.md). How to use the pages is in
+[docs/USER_MANUAL.md](docs/USER_MANUAL.md).
+
+## What it does
+
+- **Openings.** HR creates an opening for a school, department and post, and chooses the rule set
+  (UGC, or an AICTE discipline). Each opening has a link for applicants.
+- **Four ways in.** The online application form, HR upload of many resumes, an email inbox
+  (read over IMAP, read-only), and a Google Form that reaches the same mailbox.
+- **Reading.** A queue reads resumes when a person starts it, with retries and a second model to
+  fall back on. Scanned resumes with no text are reported, never sent to the model.
+- **Gate 1, field check.** Only the uncertain fields are shown, each with its reason and the quoted
+  line. Every correction is recorded.
+- **Assessment.** NET/SET/SLET (State validity, Ph.D. exemption), marks with category and pre-1991
+  relaxations, experience under cl. 3.11, publications, Ph.D. guidance, the Research Score and the
+  short-listing score (as ranges), AICTE First Class from class, marks or grade point. A candidate
+  who misses the post applied for is checked for each lower post.
+- **Gate 2, HR decision.** Approve, override with a written reason, or send back. An override
+  never erases the engine's finding.
+- **Gate 3, letters.** Drafted by code from the stored working; sent only after a person approves.
+  A test mode sends every email to one address instead of the candidate.
+- **Reporting.** A plain-language finding per application, a printable digest per opening, an
+  Excel workbook, and a university dashboard that names and ranks no one.
+- **Access.** Five kinds of account (university administrator, HR administrator, school HR,
+  department HR, interviewer) with view, edit or approve rights per school or department, and an
+  audit trail of every action. The interview panel sees only short-listed candidates, without
+  contact details or category.
+- **Protection.** Stored resumes and backups can be encrypted; the log never holds personal data.
+
+## Setting it up
+
+Needs Python 3.13 and PostgreSQL 16.
+
+1. Install the Python packages:
+
+   ```
    pip install -r requirements.txt
    ```
 
-2. Get a Gemini API key from https://aistudio.google.com/apikey, then copy
-   `.env.example` to `.env` and put the key in it:
+2. Copy `.env.example` to `.env` and fill it in. The essentials are `DATABASE_URL` and
+   `GEMINI_API_KEY`; everything else is optional and explained in the file.
+
+3. Create an encryption key for stored resumes and backups (recommended):
 
    ```
-   GEMINI_API_KEY=your-key-here
+   python -m backend.storage --new-key
    ```
 
-## Running the dashboard
+   The key is written into `.env`. **Copy that line somewhere safe, away from this computer.**
+   Without it, encrypted resumes and backups cannot be opened.
 
-```bash
-streamlit run app/dashboard.py
-```
+4. Start the application. On Windows, double-click `run_app.bat`: it brings the database up to
+   date, loads the schools and the statutory rules, and starts the server. By hand:
 
-Upload one or more `.pdf` / `.docx` resumes, click **Extract fields**, review
-the preview table, then **Download Excel workbook**.
+   ```
+   alembic upgrade head
+   python -m backend.seed
+   python -m backend.rules_seed
+   uvicorn backend.main:app --host 127.0.0.1 --port 8000
+   ```
 
-### Running without a model (offline demo)
+5. Open http://127.0.0.1:8000. The first visit asks for the first university administrator
+   account; after that the page closes for good and other accounts are made under **Accounts**.
+   Applicants use http://127.0.0.1:8000/apply and need no account.
 
-The canned fake provider needs no API key and makes no network call:
+For a local PostgreSQL in Docker, `docker compose up -d` starts one with throwaway credentials.
 
-```bash
-LLM_PROVIDER=fake streamlit run app/dashboard.py
-```
+The server listens only on this computer (127.0.0.1). Putting it on a network needs HTTPS and a
+public address (`PUBLIC_BASE_URL`); that is Phase 10 of the plan and is waiting for the hosting
+decision.
 
-(On Windows PowerShell: `$env:LLM_PROVIDER = "fake"; streamlit run app/dashboard.py`)
+## Everyday commands
 
-### A note on providers
+| Command | What it does |
+|---|---|
+| `python -m backend.worker` | Read every waiting resume, then stop (`--loop` keeps running) |
+| `python -m backend.inbox` | Check the application mailbox once |
+| `python -m backend.backup` | Back up the database and resumes (`--list`, `--open FILE DIR`) |
+| `backup_recruitai.bat` | The same backup, for a double-click or Windows Task Scheduler |
+| `python -m backend.storage --status` | Count encrypted and unencrypted resume files |
+| `python -m backend.storage --encrypt-existing` | Encrypt resumes stored before the key was set |
+| `python -m backend.institutions FILE.csv` | Load HR's list of institutions and their tiers |
+| `python -m backend.rules_seed --write-transcription` | Regenerate the rules transcription sheet |
+| `python tools/make_mentor_review_docx.py` | Regenerate the mentor's Word copy of the rules |
 
-Gemini is the only real provider. Ollama (local `qwen3.5:4b` / `llama3.1:8b`)
-was the original plan and was evaluated properly: it worked, but on the
-target CPU-only machine it ran ~200s per resume against Gemini's ~20s, and
-was measurably weaker on the two highest-risk fields (NET/SET status and PhD
-status). It was removed rather than left as a selectable-but-untested option.
-
-**Read this before using it on real candidate data**: Gemini's free tier
-permits Google to use submitted prompts for model training. The dashboard
-shows a warning banner and every extraction call logs a warning when this
-provider is active, but nothing is blocked — that decision is yours to make,
-not the app's. Get a free API key at https://aistudio.google.com/apikey.
-
-**Free-tier quotas are per-model and per-day**, and each resume is one
-request — so a 12-resume batch costs 12. Measured on a real free-tier key:
-`gemini-3.5-flash` and `gemini-3.6-flash` get **20 requests/day each**, and
-the `-lite` variants get 500/day.
-
-Because those allowances are *separate*, `GEMINI_MODEL=auto` (the default)
-alternates between the two flash models by date and automatically fails over
-to the other one the moment a daily quota runs out — roughly 40 requests/day
-with no manual switching. When every model in the pool is exhausted the app
-stops with a clear message rather than retrying pointlessly.
-
-The `-lite` models are deliberately **not** in the rotation pool: they have
-far more quota but were measurably wrong on NET/SET status and PhD status on
-real resumes, which are the two highest-risk fields here. Use them via
-`GEMINI_MODEL=gemini-3.5-flash-lite` for UI/plumbing testing where accuracy
-doesn't matter, not for runs that count.
-
-## Running the backend (web application)
-
-The backend is the start of the full system: a database, the application
-workflow with its audit trail, and an API. The build plan is in
-[docs/IMPLEMENTATION_PLAN.md](docs/IMPLEMENTATION_PLAN.md).
-
-PostgreSQL is the target database. With Docker installed:
-
-```
-docker compose up -d
-alembic upgrade head
-python -m backend.seed
-uvicorn backend.main:app --host 127.0.0.1 --port 8000
-```
-
-Without PostgreSQL, set `DATABASE_URL` to a SQLite file for local
-development (the test suite runs this way):
-
-```
-set DATABASE_URL=sqlite:///recruitai_dev.db
-alembic upgrade head
-python -m backend.seed
-uvicorn backend.main:app --host 127.0.0.1 --port 8000
-```
-
-Load the statutory rules (UGC and AICTE thresholds and score tables) after the migration:
-
-```
-python -m backend.rules_seed
-```
-
-They live in `backend/rules_data.py`, each with its clause and gazette page.
-`docs/ugc_rules_transcription.md` and `docs/UGC_Rules_Mentor_Review.docx` are
-generated from that file for a person to check against the gazette; regenerate
-them with `python -m backend.rules_seed --write-transcription` and
-`python tools/make_mentor_review_docx.py` after any correction.
-
-On Windows, `run_app.bat` in the project folder does the three steps above and starts the application; double-click it.
-
-Then open http://127.0.0.1:8000/ for the HR pages (openings, uploads, the reading
-queue) and http://127.0.0.1:8000/apply for the applicant view. There is no login
-yet, so keep the server on 127.0.0.1.
-
-Applications are queued for reading and nothing is read until you press
-"Process queue" on the HR page or run the worker:
-
-```
-python -m backend.worker           process what is waiting, then exit
-python -m backend.worker --loop    keep processing
-```
-
-Each application read is one request to the language model. Set
-`LLM_PROVIDER=fake` to try the pages without using any.
-
-An application the reader could not settle shows "Check fields" on its
-opening's page. That screen lists only the fields in question, each with the
-reason and the line quoted from the resume; saving it records every change and
-moves the application on. A resume HR uploaded always stops there once, for the
-category, State and study-leave answers an application form would have given.
-
-Once applications are read, "Assess read applications" on the opening's page
-checks each against the rules chosen for that opening (UGC, or an AICTE
-discipline). No language model is used. Each application's page then shows
-the outcome, every requirement with the figures compared and its clause and
-gazette page, and anything a person still has to settle. The outcome is the
-engine's finding, not a decision: HR approves or overrides it.
-
-On that page HR then approves the finding, overrides it with a recorded
-justification, or sends it back, either to correct fields first or to be
-assessed again. "Download as Excel" on the opening's page gives the whole list
-with findings, clauses and decisions. It is listed in order of receipt and is
-not a ranking.
-
-When HR records a decision, an email to the candidate is drafted on the same
-page. Nothing is sent until a person approves it, and nothing can be sent at
-all until a mail server is set in `.env`:
-
-```
-SMTP_HOST=smtp.example.org
-SMTP_PORT=587
-SMTP_USER=...
-SMTP_PASSWORD=...
-SMTP_FROM=hr@example.org
-EMAIL_REDIRECT_TO=you@example.org    while testing: every email goes here, never to a candidate
-```
-
-Applications can also arrive by email. Set `IMAP_HOST` in `.env` (the login
-defaults to the sending account), then open **Inbox** and press **Check inbox**.
-A message with a PDF or DOCX resume that names an opening ("OPN-00003") is filed
-under it; one that names none waits on the Inbox page for you to choose. The
-mailbox is only read, never changed. To take applications through a Google
-Form, follow [docs/GOOGLE_FORM_SETUP.md](docs/GOOGLE_FORM_SETUP.md).
-
-"Digest" on the opening's page shows every application of that opening, grouped
-by where it stands, with the reason for each finding. Print it from the browser.
-
-Institutions and their tiers are HR's list. Load or update it from a CSV with
-the columns `institution_name, tier, category, aliases` (aliases separated by `;`):
-
-```
-python -m backend.institutions path/to/institutions.csv
-```
-
-After pulling a newer version, bring the database up to date:
-
-```
-alembic upgrade head
-python -m backend.seed
-```
-
-Interactive API documentation is at http://127.0.0.1:8000/docs.
-`STORAGE_DIR` sets where uploaded resumes are kept (default `storage/resumes`,
-gitignored).
+Each resume read is one request to the language model. Gemini's free tier allows about 20 requests
+a day per model; the default `GEMINI_MODEL=auto` alternates between two models and moves to the
+other when one runs out. **The free tier lets Google use what is sent for training**, so a paid key
+with suitable terms is needed before real candidates' resumes are read at scale.
+`LLM_PROVIDER=fake` runs everything with canned results and no model at all.
 
 ## Configuration
 
-Read once at startup from environment variables, all optional:
+Read from the environment and `.env` at start-up. All optional except where noted.
 
 | Variable | Default | Purpose |
 |---|---|---|
+| `DATABASE_URL` | local PostgreSQL | Any SQLAlchemy URL; SQLite works for trying it out |
+| `GEMINI_API_KEY` | (empty) | Needed when `LLM_PROVIDER=gemini` |
 | `LLM_PROVIDER` | `gemini` | `gemini` or `fake` |
-| `GEMINI_API_KEY` | *(empty)* | Required when `LLM_PROVIDER=gemini` |
-| `GEMINI_MODEL` | `auto` | `auto` rotates the pool daily; or pin a model name |
-| `GEMINI_MODEL_POOL` | `gemini-3.5-flash,gemini-3.6-flash` | Models `auto` rotates through and fails over between |
-| `GEMINI_TIMEOUT_SECONDS` | `60` | Per-call timeout for Gemini |
-| `CONFIDENCE_THRESHOLD` | `0.7` | Below this, a field routes its row to `needs_review` |
+| `GEMINI_MODEL` | `auto` | `auto` rotates `GEMINI_MODEL_POOL`; or name one model |
+| `GEMINI_MODEL_POOL` | `gemini-3.5-flash,gemini-3.6-flash` | Models `auto` rotates and fails over between |
+| `DATA_ENCRYPTION_KEY` | (empty) | Encrypts stored resumes and backups |
+| `STORAGE_DIR` | `storage/resumes` | Where resumes are kept |
+| `LOG_DIR` | `logs` | Where `recruitai.log` is written |
+| `BACKUP_DIR`, `BACKUP_KEEP` | `backups`, `14` | Where backups go and how many are kept |
+| `PG_BIN` | (found automatically) | The PostgreSQL `bin` folder, if `pg_dump` is not found |
+| `INSTITUTION_STATE` | `Maharashtra` | The State whose SET/SLET is valid here |
+| `SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, `SMTP_PASSWORD`, `SMTP_FROM` | (empty) | Sending letters; nothing is sent without them |
+| `EMAIL_REDIRECT_TO` | (empty) | Test mode: every email goes here, never to a candidate |
+| `IMAP_HOST`, `IMAP_USER`, `IMAP_PASSWORD`, `IMAP_FOLDER` | (empty) | The application mailbox |
+| `GOOGLE_FORM_SENDERS` | the mailbox's own address | Who a Google Form response may come from |
+| `ACKNOWLEDGE_APPLICATIONS` | `true` | Send an acknowledgement of receipt |
+| `PUBLIC_BASE_URL` | (empty) | The address used in emailed password-reset links |
+
+Google Form set-up: [docs/GOOGLE_FORM_SETUP.md](docs/GOOGLE_FORM_SETUP.md).
+
+## The statutory rules
+
+The rules live in `backend/rules_data.py`, transcribed from the gazette PDFs (each file's source
+address and SHA-256 are recorded). `docs/ugc_rules_transcription.md` and
+`docs/UGC_Rules_Mentor_Review.docx` are generated from the same data for a person to check against
+the gazette, and a test fails if the sheet and the data ever differ. The transcription was approved
+by the project guide in November 2026. Readings the Regulations leave open (for example, how a
+CGPA fits the percentage bands of Table 3A) are listed in the plan; the engine reports a range or
+sends the case to a person rather than guessing.
 
 ## Tests
 
-```bash
-pytest tests/test_confidence_routing.py tests/test_excel_output.py -q
+```
+python -m pytest -q
 ```
 
-These run with zero model calls. `tests/test_extraction_accuracy.py` runs the
-synthetic fixture set (`tests/fixtures/synthetic_resumes/`) through the real
-Gemini model and prints a per-field accuracy report — it is the only test
-that touches the network, and skips automatically without an API key:
+About a thousand tests, none of which call the language model or a mail server: a fake reader and a
+stand-in mail transport are used. The backend tests also run against PostgreSQL:
 
-```bash
+```
+set TEST_DATABASE_URL=postgresql+psycopg://user:password@localhost:5432/recruitai_test
+python -m pytest tests -k backend -q
+```
+
+(the test database is emptied by the tests; never point it at the real one).
+`tests/test_extraction_accuracy.py` reads the made-up resumes in `tests/fixtures/synthetic_resumes/`
+with the real model and reports accuracy per field. It makes one model request per resume, so it
+runs only when asked for:
+
+```
+set RUN_LIVE_GEMINI=1
 python -m pytest tests/test_extraction_accuracy.py -s -q
 ```
 
-## Notes
+## Layout
 
-- No PII (raw resume text or extracted values) is ever logged to console or
-  disk — only field-level confidence and routing decisions. Synthetic fixture
-  resumes are entirely fabricated names/data.
-- PDF text is read with PyMuPDF, falling back to pdfplumber. Measured over
-  23 real resumes, PyMuPDF was never worse and was far better on layouts
-  that drop inter-word spaces (three files went from ~180-250 glued tokens
-  per 1000 down to under 6). Scanned/image PDFs have no text layer at all
-  and fail cleanly with a `parse_error` — there is no OCR in this slice.
-- Each run's results live only in the downloaded `.xlsx` — there's no
-  database in this slice.
-- Column names mirror the eventual `extracted_data` schema so a later move to
-  Postgres is a rename, not a redesign.
+| Folder | What is in it |
+|---|---|
+| `backend/` | The web application: models, intake, reader, rule engine (`engine/`), gates, emails, access, pages |
+| `backend/templates/`, `backend/static/` | The pages and their design system |
+| `llm/` | The language-model interface, prompts, the Gemini provider and the fake one |
+| `app/` | Resume text extraction and the result cache; also the first Streamlit prototype (`app/dashboard.py`) |
+| `migrations/` | Alembic database migrations |
+| `docs/` | Plan, user manual, rules transcription, Google Form set-up |
+| `tests/` | Automated tests and made-up resumes |
+| `tools/` | Helpers for the rules sheet and accuracy scoring |
+
+## Privacy
+
+- Resumes, the database, `.env`, logs, backups and the result cache are personal data and are never
+  committed (see `.gitignore`).
+- Logs record ids, states and kinds of error, never names, addresses or resume text.
+- No real candidate's data appears in tests, fixtures or commits.
+- Category, disability status, State and contact details are withheld from the interview panel
+  until the university decides otherwise.

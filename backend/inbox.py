@@ -45,7 +45,7 @@ from sqlalchemy.orm import Session
 
 from backend import intake, settings
 from backend.models import Application, InboxMessage, JobOpening
-from backend.storage import ALLOWED_SUFFIXES, RejectedUpload, save_resume
+from backend.storage import ALLOWED_SUFFIXES, KeyMissing, RejectedUpload, read_stored, save_resume
 
 logger = logging.getLogger("recruitai.inbox")
 
@@ -267,7 +267,14 @@ def _take_application(session: Session, row: InboxMessage, rule: str, subject: s
 
 def import_into(session: Session, row: InboxMessage, opening: JobOpening) -> None:
     """Create the application for a message whose opening is known. Sets the row's status either way."""
-    data = Path(row.attachment_path).read_bytes()
+    try:
+        data = read_stored(row.attachment_path)
+    except KeyMissing:
+        # A setting is wrong, not the message: hold it for a person; it can be filed once the key is put right.
+        row.status = NEEDS_JOB_MATCH
+        row.note = "The attached resume is stored encrypted and could not be opened: the encryption key is missing or wrong."
+        logger.error("inbox_attachment_not_opened inbox=%s reason=encryption_key", row.inbox_id)
+        return
     try:
         if row.form_answers is not None:
             a = row.form_answers
@@ -438,6 +445,9 @@ def waiting(session: Session) -> list[InboxMessage]:
 
 if __name__ == "__main__":  # python -m backend.inbox
     from backend.db import get_engine
+    from backend.logging_setup import configure
+
+    configure()
 
     with Session(get_engine()) as s:
         print(summarise(check_inbox(s)))

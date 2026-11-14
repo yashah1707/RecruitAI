@@ -42,7 +42,15 @@ from backend.storage import RejectedUpload, save_resume
 from backend.web import current_user, install as install_access_handlers, router as web_router
 from llm.interface import LLMProvider
 
+from backend import storage as _storage
+from backend.logging_setup import configure as _configure_logging
+
+_configure_logging()
 logger = logging.getLogger("recruitai.api")
+try:
+    _storage.check_key()
+except _storage.KeyMissing as _exc:  # stop at start-up, not on the first upload
+    raise SystemExit(f"RecruitAI cannot start: {_exc}") from None
 
 DESIGNATIONS = ("ASSISTANT_PROFESSOR", "ASSOCIATE_PROFESSOR", "PROFESSOR", "SENIOR_PROFESSOR")
 CATEGORIES = ("General", "SC", "ST", "OBC-NCL", "EWS", "PwD")

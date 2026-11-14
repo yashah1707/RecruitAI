@@ -8,8 +8,8 @@ and its data-model workbook. Section numbers below (§) refer to that document.
 decision changes, this file is edited in the same commit and the change is
 noted in the [Change log](#change-log).
 
-- Last updated: 2026-10-07
-- Current phase: **Phase 8 — More intake channels** (built; awaiting the user's check on the real mailbox)
+- Last updated: 2026-11-14
+- Current phase: **Phase 10 — Hardening and delivery** (the parts that need no hosting are built; deployment waits for the hosting decision)
 
 ## Status at a glance
 
@@ -17,7 +17,7 @@ noted in the [Change log](#change-log).
 |---|---|---|
 | 0 | Reader stage: resume to checked, structured fields; Excel export | Done |
 | 1 | Foundation: FastAPI app, PostgreSQL schema, application states, audit trail | Done |
-| 2 | Statutory rules as data: UGC thresholds and score tables with clause and page | Built, UGC and AICTE; awaiting a human check of the transcription |
+| 2 | Statutory rules as data: UGC thresholds and score tables with clause and page | Done, UGC and AICTE; transcription approved by the mentor (2026-11-14) |
 | 3 | Intake: job openings, in-app application form, HR manual upload | Done |
 | 4 | Reader aligned to the data model; extraction review (Gate 1) | Built; new fields' accuracy not yet measured |
 | 5 | Assessor and Decision: the deterministic rule engine | Built; several readings await the mentor |
@@ -25,7 +25,7 @@ noted in the [Change log](#change-log).
 | 7 | Reporting: digest, plain-language reasons, drafted emails (Gate 3) | Done; live rewording untried |
 | 8 | More intake channels: email inbox, Google Forms | Built; inbox tried live once; form script untried |
 | 9 | Logins, school-scoped access, views, highlights, policy layer, drives dashboard | Done; then every page redesigned for MIT ADT University (2026-10-11) |
-| 10 | Hardening and delivery: encryption, deployment, manual, final report | Not started; on hold until the user names where it will be hosted |
+| 10 | Hardening and delivery: encryption, deployment, manual, final report | In part: encrypted resumes and backups, backups, the log, README and user manual built; deployment on hold until the user names where it will be hosted |
 
 ## Principles carried from the design document
 
@@ -137,7 +137,7 @@ Goal: every threshold and points table in the database, each with its citation.
 - [x] `docs/ugc_rules_transcription.md`: every loaded value with its page and a tick box,
       generated from the same data the system loads; a test fails if the two differ.
 - [x] Read-only API: `/rules` and `/rules/score-tables/{table}`.
-- [ ] **A person checks the transcription sheet against the gazette** and signs it.
+- [x] **A person checks the transcription sheet against the gazette** and signs it. The user reported on 2026-11-14 that the mentor approved it. The readings listed under Phase 5 that the Regulations leave open stand as built until he rules on them one by one.
 - [x] **AICTE (Degree) Regulation, 2019** fetched from the AICTE website and loaded: Assistant
       Professor for ten discipline groups (cl. 5.1), Associate Professor and Professor
       (cl. 5.2), and the First Class and grade-point table (cl. 7.3). `rubric_rules` gained
@@ -694,7 +694,7 @@ For the user to decide (not built):
 7. (Built; see above.) Entering and correcting post dates.
 8. **Form answers for uploaded and emailed resumes** are still entered by HR when wanted; asking the applicant
    through a private link was discussed and set aside for now.
-9. The README's opening section still describes the first, Excel-only stage. To be rewritten in Phase 10.
+9. (Done 2026-11-14.) The README describes the whole system.
 
 ## Phase 9 — Access control and the Section 17 extensions
 
@@ -789,10 +789,29 @@ their advertisement reference, which the dashboard shows but does not chart.
 
 ## Phase 10 — Hardening and delivery
 
-- [ ] Personal data encrypted at rest and in transit (§11.2).
+- [x] Stored resumes encrypted at rest (built 2026-11-14). With `DATA_ENCRYPTION_KEY` set, every resume is written
+      encrypted (Fernet: AES-128-CBC with an HMAC-SHA256 check) under the SHA-256 of its original content, so duplicate
+      detection is unchanged. Everything that reads a stored file goes through `storage.read_stored`, which also opens
+      files stored before the key was set; `python -m backend.storage --encrypt-existing` encrypts those in place, checking
+      each one opens again before replacing it. `--new-key` writes a key into `.env` and refuses if one is there. A missing
+      or wrong key never fails an application: the reading waits (RECEIVED, retried) and the resume page answers 503.
+- [ ] Database contents at rest: **left to the host's disk or volume encryption**, decided at deployment. Encrypting
+      columns in the application would break the lookups duplicate detection and the inbox rely on (by email, by
+      Message-ID) and would need blind indexes throughout; the resume files, which hold the most personal data, are
+      covered above. In transit: HTTPS, at deployment.
 - [ ] Paid LLM key; confirm data-use terms.
-- [ ] Performance check against the 10-second target; backups; error monitoring.
-- [ ] Deployment (Docker), user manual, final report.
+- [x] Backups (built 2026-11-14): `python -m backend.backup` (or `backup_recruitai.bat`, for Task Scheduler) writes one
+      zip with the database (`pg_dump` custom format, or a SQLite copy), the resume files and a manifest; encrypted as
+      `.zip.enc` when the key is set; the last `BACKUP_KEEP` (14) kept. `--open FILE DIR` unpacks one for restoring; the
+      steps are in the user manual. The database password is passed to pg_dump in its environment, never on the command
+      line.
+- [x] Error log (built 2026-11-14): `logs/recruitai.log`, rotated at 1 MB, five kept. Errors are logged as their type and
+      the frames of our own code where they happened, never their message (a database error quotes the row it refused);
+      a password-reset token in a path is blanked. Before this, unhandled errors were printed with their message.
+- [ ] Performance check against the 10-second target; monitoring that alerts someone (needs the host).
+- [ ] Deployment (Docker), HTTPS.
+- [x] User manual (`docs/USER_MANUAL.md`) and README rewritten for the whole system (gap-review item 9); the final report
+      was written outside the repository.
 - [ ] Optional: wrap the workflow in LangGraph for the agent framing.
 
 ## Decisions
@@ -894,3 +913,5 @@ their advertisement reference, which the dashboard shows but does not chart.
 | 2026-10-11 | Redesign, phase 3 of 3 (presentation only, as before): every remaining page. Dashboard: six figures at the top, what is waiting as a list with buttons, the two tables under grouped headings (Waiting, HR's decision, Out) so that neither scrolls sideways, channels as bars, and a Print button. Inbox: one card a message, with a warning callout for a resume already in the system, and Set aside asking first. University criteria: the tables first, the two forms side by side, Remove asking first. Panel view: grouped by opening, with search and sorting. Accounts: role badges, grants as chips, and the same forms opened in a sheet (Add an account; Change, one sheet an account), with a confirmation before removing a grant or closing an account. Password pages: a narrow card with a length hint that follows the typing; forgotten password, reset and first set-up use the sign-in layout (`_auth.html`). Applicants' pages: openings as cards, the form with a drop zone for the resume, and a clear page for the reference. New and edit opening, emails for an opening, the digest, the panel's settings, and the refusal and not-found pages are drawn from the same parts. Dates read DD-MM-YYYY with the time muted, through one macro. Clicked through as administrator, visitor and interviewer on the temporary copy: 34 checks, all passing; 17 signed-in pages and the public pages checked at 1440, 1280, 1024, 768 and 375 with no sideways scroll and no script error. One test that read the Reply link now reads it as the button it is. Not done, because it needs a figure the page is not given: a "last checked" time on the inbox. Left alone and reported: the decision letter that reads "...for the post of Your application...", and the intermittent failure of one move test. |
 | 2026-10-11 | Three things flagged during the redesign, looked into at the user's request. (1) The decision letter reading "...for the post of Your application...": not a fault in the code. The template in `emails.compose` writes the post and the school correctly, and of the eight letters stored, the six the template wrote are right; the one with the broken sentence was saved by a person (`drafted_by` = person), on APP-000005, and has gone only to the test mailbox. Nothing changed; the letter can be corrected on its application's page. (2) The test that failed now and then, `test_an_application_cannot_be_moved_once_decided...`: a fault in the test, not in the application. It built a second made-up DOCX and took it to be the same file as the first; a DOCX carries its time of writing, so the two were the same file only when built within the same second. Reproduced by running three suites at once; the test now gives the second application the first one's bytes. (3) The inbox page says when the mailbox was last checked (`web.last_inbox_check`, kept in memory like the reading queue's last run; a check that fails does not count), with a test. 495 backend tests on SQLite and on PostgreSQL. |
 | 2026-10-11 | A fault found in use, on the email form of an application: a letter that had already been approved (and was waiting, or had gone out only as a test copy) could be corrected in the box, but pressing Approve kept the old words and sent those; the correction was dropped without a word. Only Save changes took what was typed. Now every button takes the boxes first: changed words turn an approved letter back into a draft (`emails.edit`), and the same press of Approve approves it afresh and sends it; unchanged words leave an approved letter as it was. With a test that fails on the old code. The one letter this touched, on APP-000005, went only to the test mailbox. Also corrected: the status table still showed Phase 9 as not started. 496 backend tests on SQLite and on PostgreSQL. |
+| 2026-11-14 | The mentor approved the rules transcription (reported by the user). Phase 10, the parts that need no hosting: stored resumes encrypted at rest with `DATA_ENCRYPTION_KEY` (and files stored before it encrypted in place on command), backups of the database and resumes in one file, encrypted with the same key, with pruning and a restore path; an application log that records errors by type and place only, never their message; `backup_recruitai.bat`; the README rewritten for the whole system; `docs/USER_MANUAL.md`. Database contents at rest are left to the host's disk encryption, decided at deployment (see Phase 10). Tests set no real key and write no log into `logs/`. |
+| 2026-11-14 | Two faults found while testing the above. (1) `tests/test_extraction_accuracy.py` made live Gemini requests in any plain `pytest` run whenever `.env` held a key; a full run on this date did so. It now runs only with `RUN_LIVE_GEMINI=1`. (2) The migrations' logging set-up (`fileConfig`) switched off every logger already created when migrations ran inside the application's process, as the tests do; it now leaves them alone. Live accuracy check on the synthetic resumes, with the user's go-ahead: of 7, 5 were read and all 9 field checks on them were right; one stopped on HTTP 503 (model overloaded) and one on the day's quota, so those two are still to be run. Review before commit added: the application refuses to start, with the reason, when `DATA_ENCRYPTION_KEY` is set but not a valid key (otherwise every upload would have failed later); an emailed resume that cannot be opened is held for a person instead of stopping the inbox check; the backup command reports a key problem in words; error descriptions list only the project's own code. |

@@ -18,16 +18,18 @@ from pathlib import Path
 from urllib.parse import quote, urlparse
 
 from fastapi import APIRouter, BackgroundTasks, Depends, File, Form, HTTPException, Request, UploadFile
-from fastapi.responses import FileResponse, HTMLResponse, RedirectResponse, Response
+from fastapi.responses import HTMLResponse, RedirectResponse, Response
 from fastapi.templating import Jinja2Templates
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.result_cache import ResultCache
 from backend import (
-    access, assessor_service, emails, gate1, gate2, highlights, inbox, intake, jobs, policy, reporting, settings, states, views,
+    access, assessor_service, emails, gate1, gate2, highlights, inbox, intake, jobs, policy, reporting, settings, states, storage,
+    views,
 )
 from backend.access import Principal
+from backend.logging_setup import describe_error, safe_path
 from backend.db import get_session, get_session_factory
 from backend.deps import get_cache, get_provider
 from backend.engine.facts import counting_date
@@ -437,8 +439,8 @@ def _read_in_background(factory, provider: LLMProvider, cache: ResultCache | Non
             ran = jobs.run_due_jobs(session, provider, cache, limit=limit)
             session.commit()
             last_run["summary"] = jobs.summarise(ran)
-    except Exception:  # the page must be able to say that it failed
-        logger.exception("reading_run_failed")
+    except Exception as exc:  # the page must be able to say that it failed
+        logger.error("reading_run_failed error=%s", describe_error(exc))
         last_run["summary"] = "The reading run stopped because of an error. See the server log."
     finally:
         last_run["finished"] = datetime.now(timezone.utc).astimezone().strftime("%d-%m-%Y %H:%M")
@@ -484,6 +486,17 @@ def job_requeue(job_id: int, user: Principal = Depends(current_user), session: S
 
 _RESUME_TYPES = {".pdf": "application/pdf",
                  ".docx": "application/vnd.openxmlformats-officedocument.wordprocessingml.document"}
+
+
+def _stored_file(path: Path, filename: str) -> Response:
+    """A stored resume, decrypted if it was stored encrypted, named `filename` (never after the candidate)."""
+    try:
+        data = storage.read_stored(path)
+    except storage.KeyMissing:
+        logger.error("stored_file_not_opened reason=encryption_key")
+        raise HTTPException(status_code=503, detail="the file is stored encrypted and the encryption key is missing or wrong")
+    return Response(content=data, media_type=_RESUME_TYPES[path.suffix.lower()],
+                    headers={"Content-Disposition": f'inline; filename="{filename}"'})
 _FIELD_LABELS = {name: spec.label for name, spec in gate1.FIELDS.items()} | {"candidate": "Possible duplicate", "opening": "Opening", "resume": "Resume"}
 templates.env.globals["ACTION_LABELS"] = {
     "CONFIRMED": "Confirmed as read", "CORRECTED": "Corrected", "ENTERED": "Entered", "LEFT_EMPTY": "Left empty",
@@ -622,8 +635,7 @@ def review_resume(application_id: int, user: Principal = Depends(current_user), 
     if not path.is_file() or path.suffix.lower() not in _RESUME_TYPES:
         raise HTTPException(status_code=404, detail="the resume file is not available")
     # Named by its reference, not by the candidate or the original filename.
-    return FileResponse(path, media_type=_RESUME_TYPES[path.suffix.lower()],
-                        filename=f"{a.reference}{path.suffix.lower()}", content_disposition_type="inline")
+    return _stored_file(path, f"{a.reference}{path.suffix.lower()}")
 
 
 @router.post("/hr/applications/{application_id}/reopen")
@@ -808,8 +820,7 @@ def inbox_attachment(inbox_id: int, user: Principal = Depends(current_user), ses
     path = Path(row.attachment_path) if row is not None and row.attachment_path else None
     if path is None or not path.is_file() or path.suffix.lower() not in _RESUME_TYPES:
         raise HTTPException(status_code=404, detail="no attachment is held for this message")
-    return FileResponse(path, media_type=_RESUME_TYPES[path.suffix.lower()],
-                        filename=f"inbox-{inbox_id}{path.suffix.lower()}", content_disposition_type="inline")
+    return _stored_file(path, f"inbox-{inbox_id}{path.suffix.lower()}")
 
 
 @router.post("/hr/inbox/{inbox_id}/set-aside")
@@ -1304,8 +1315,7 @@ def interview_resume(application_id: int, user: Principal = Depends(current_user
     path = Path(a.resume_path)
     if not views.interviewer_visibility(session)["application.resume"] or not path.is_file() or path.suffix.lower() not in _RESUME_TYPES:
         raise HTTPException(status_code=404, detail="the resume file is not available")
-    return FileResponse(path, media_type=_RESUME_TYPES[path.suffix.lower()],
-                        filename=f"{a.reference}{path.suffix.lower()}", content_disposition_type="inline")
+    return _stored_file(path, f"{a.reference}{path.suffix.lower()}")
 
 
 @router.get("/admin/views", response_class=HTMLResponse)
@@ -1439,7 +1449,7 @@ def install(app) -> None:
 
     @app.exception_handler(Exception)
     def _fault(request: Request, exc):
-        logger.exception("unhandled_error path=%s", request.url.path)
+        logger.error("unhandled_error method=%s path=%s error=%s", request.method, safe_path(request.url.path), describe_error(exc))
         return _problem(request, 500)
 
     @app.exception_handler(access.NotSignedIn)
@@ -1484,8 +1494,8 @@ def _acknowledge_in_background(factory, draft_id: int) -> None:
         with factory() as session:
             emails.send_acknowledgement(session, session.get(EmailDraft, draft_id))
             session.commit()
-    except Exception:
-        logger.exception("acknowledgement_failed draft=%s", draft_id)
+    except Exception as exc:
+        logger.error("acknowledgement_failed draft=%s error=%s", draft_id, describe_error(exc))
 
 
 @router.get("/apply", response_class=HTMLResponse)

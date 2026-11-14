@@ -9,7 +9,8 @@ Everything else in the suite runs against FakeProvider with no network, so a
 Gemini outage or an exhausted quota cannot fail the build -- only this file
 is skipped.
 
-Run it explicitly:
+Run it explicitly (it makes one model request per case):
+    set RUN_LIVE_GEMINI=1
     python -m pytest tests/test_extraction_accuracy.py -s -q
 """
 
@@ -61,7 +62,10 @@ CASES: list[Case] = [
 
 
 def _live_calls_enabled() -> bool:
-    return bool(config.GEMINI_API_KEY) and os.environ.get("LLM_PROVIDER", "gemini") != "fake"
+    # Opt-in only: a key in .env is not enough. Each case is one request against a limited daily allowance,
+    # so a plain `pytest` run (which collects this file too) must never spend it.
+    return (os.environ.get("RUN_LIVE_GEMINI") == "1" and bool(config.GEMINI_API_KEY)
+            and os.environ.get("LLM_PROVIDER", "gemini") != "fake")
 
 
 def _run_report() -> list[dict]:
@@ -127,7 +131,7 @@ def _print_report(rows: list[dict]) -> None:
     print("=" * 62)
 
 
-@pytest.mark.skipif(not _live_calls_enabled(), reason="needs GEMINI_API_KEY; skipped under LLM_PROVIDER=fake")
+@pytest.mark.skipif(not _live_calls_enabled(), reason="live model calls: set RUN_LIVE_GEMINI=1 (and GEMINI_API_KEY) to run")
 def test_extraction_accuracy_report():
     rows = _run_report()
     _print_report(rows)
