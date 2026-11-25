@@ -304,6 +304,7 @@ def hr_home(request: Request, msg: str = "", user: Principal = Depends(current_u
         "accepting": {o.opening_id: intake.is_accepting(o) for o in openings},
         "reading": _run_lock.locked(), "last_run": last_run,
         "letters": {o: emails.waiting_in_words(c) for o, c in emails.waiting_for_approval(session).items() if o in mine},
+        "approvable": {o.opening_id for o in openings if user.may(access.APPROVE, o.school_id, o.department_id)},
     })
 
 
@@ -339,6 +340,9 @@ def opening_create(
     counted_on = _parse_date(eligibility_date, "eligibility_date", errors)
     opening = None
     schools = _schools_for(session, user)
+    # Every mistake at once: the opening's own checks, then whether this account may open posts in the school.
+    errors = {**intake.opening_errors(session, school_id=school_id, designation=designation, discipline_group=discipline_group,
+                                      closing_date=closing, advertisement_date=advertised), **errors}
     if school_id not in {x.school_id for x in schools}:
         errors["school_id"] = "Choose a school from the list."  # one this account may open posts in
     if not errors:
@@ -527,7 +531,8 @@ def _teaching_from_posts(session: Session, a: Application):
 
 
 def _review_page(request: Request, session: Session, a: Application, *, msg: str = "", errors: dict | None = None,
-                 answers: dict | None = None, left_empty: set | None = None, status_code: int = 200):
+                 answers: dict | None = None, left_empty: set | None = None, status_code: int = 200,
+                 kept: dict | None = None):
     flags = gate1.flagged_fields(session, a) if a.status == states.PENDING_REVIEW else []
     if answers is not None:  # what the person typed survives a refused save
         for f in flags:
@@ -571,14 +576,17 @@ def _review_page(request: Request, session: Session, a: Application, *, msg: str
         "guidance": rows(CandidateGuidance, CandidateGuidance.id), "subjects": rows(CandidateSubjectTaught, CandidateSubjectTaught.id),
         "skills": rows(CandidateSkill, CandidateSkill.id), "memberships": rows(CandidateMembership, CandidateMembership.id),
         "research": session.get(CandidateResearchProfile, a.candidate_id),
+        "kept": kept or {},  # what a refused decision or reopening had typed
     }, status_code=status_code)
 
 
 @router.get("/hr/applications/{application_id}", response_class=HTMLResponse)
 def review_form(request: Request, application_id: int, msg: str = "", user: Principal = Depends(current_user), session: Session = Depends(get_session)):
     refused = _carried(request, f"review:{application_id}")
+    kept = _carried(request, f"decision:{application_id}").get("kept")
     return _review_page(request, session, _application_or_404(session, application_id), msg=msg or refused.get("msg", ""),
-                        errors=refused.get("errors"), answers=refused.get("answers"), left_empty=refused.get("left_empty"))
+                        errors=refused.get("errors"), answers=refused.get("answers"), left_empty=refused.get("left_empty"),
+                        kept=kept)
 
 
 @router.post("/hr/applications/{application_id}/review", response_class=HTMLResponse)
@@ -696,15 +704,16 @@ def opening_move_all(opening_id: int, target_id: int = Form(0), user: Principal 
 # --- Gate 2: the HR decision -------------------------------------------------
 
 
-def _decision_action(session: Session, application_id: int, action, done: str):
+def _decision_action(session: Session, application_id: int, action, done: str, keep: dict | None = None):
     a = _application_or_404(session, application_id, lock=True)
     try:
         action(a)
-        text = done
     except gate2.DecisionError as exc:
         session.rollback()
-        text = " ".join(exc.errors.values())
-    return RedirectResponse(f"/hr/applications/{application_id}?msg=" + quote(text), status_code=303)
+        url = f"/hr/applications/{application_id}?failed=1&msg=" + quote(" ".join(exc.errors.values()))
+        # What the person typed comes back with the reason, so it need not be typed again.
+        return _back_to(url, f"decision:{application_id}", kept=keep) if keep else RedirectResponse(url, status_code=303)
+    return RedirectResponse(f"/hr/applications/{application_id}?msg=" + quote(done), status_code=303)
 
 
 @router.post("/hr/applications/{application_id}/approve")
@@ -717,7 +726,8 @@ def decision_override(application_id: int, outcome: str = Form(""), designation:
                       justification: str = Form(""), user: Principal = Depends(current_user), session: Session = Depends(get_session)):
     return _decision_action(
         session, application_id, lambda a: gate2.override(session, a, outcome, designation or None, justification, user.actor),
-        "Your decision is recorded with its justification.")
+        "Your decision is recorded with its justification.",
+        keep={"outcome": outcome, "designation": designation, "justification": justification})
 
 
 @router.post("/hr/applications/{application_id}/return")
@@ -736,7 +746,8 @@ def decision_reopen(application_id: int, reason: str = Form(""), user: Principal
                     session: Session = Depends(get_session)):
     return _decision_action(
         session, application_id, lambda a: gate2.reopen_decision(session, a, reason, user.actor),
-        "The decision is reopened and its letter dropped. Press Assess on the opening's page, then decide again.")
+        "The decision is reopened and its letter dropped. Press Assess on the opening's page, then decide again.",
+        keep={"reason": reason})
 
 
 @router.get("/hr/openings/{opening_id}/export.xlsx")
@@ -1105,17 +1116,18 @@ def password_change(request: Request, current: str = Form(""), new: str = Form("
     return RedirectResponse(home + "?msg=" + quote("Your password is changed."), status_code=303)
 
 
-def _accounts_page(request: Request, session: Session, msg: str = "", status_code: int = 200):
+def _accounts_page(request: Request, session: Session, msg: str = "", status_code: int = 200, new_account: dict | None = None):
     return templates.TemplateResponse(request, "users.html", {
         "users": session.scalars(select(User).order_by(User.name)).all(), "msg": msg,
         "schools": session.scalars(select(School).where(School.is_hiring_unit).order_by(School.name)).all(),
         "USER_TYPES": access.USER_TYPES, "LEVELS": access.LEVELS, "min": access.MIN_PASSWORD,
+        "new_account": new_account or {},
     }, status_code=status_code)
 
 
 @router.get("/admin/users", response_class=HTMLResponse)
 def accounts(request: Request, msg: str = "", user: Principal = Depends(current_user), session: Session = Depends(get_session)):
-    return _accounts_page(request, session, msg)
+    return _accounts_page(request, session, msg, new_account=_carried(request, "account_new"))
 
 
 def _account_action(session: Session, action, done: str):
@@ -1139,9 +1151,16 @@ def _account_or_404(session: Session, user_id: int) -> User:
 @router.post("/admin/users")
 def account_create(name: str = Form(""), email: str = Form(""), user_type: str = Form(""), password: str = Form(""),
                    user: Principal = Depends(current_user), session: Session = Depends(get_session)):
-    return _account_action(
-        session, lambda: access.create_user(session, name=name, email=email, password=password, user_type=user_type),
-        "Account created. Give the person the temporary password yourself; they must choose their own when they first sign in.")
+    try:
+        access.create_user(session, name=name, email=email, password=password, user_type=user_type)
+        session.commit()
+    except access.AccessError as exc:
+        session.rollback()
+        # Back to the form, open, with what was typed (never the password) and the reason.
+        return _back_to("/admin/users", "account_new", error=str(exc), v={"name": name, "email": email, "user_type": user_type})
+    return RedirectResponse("/admin/users?msg=" + quote(
+        "Account created. Give the person the temporary password yourself; they must choose their own when they first sign in."),
+        status_code=303)
 
 
 @router.post("/admin/users/{user_id}/update")

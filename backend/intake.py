@@ -85,6 +85,22 @@ def suggested_discipline_group(school: School) -> str:
 # --- openings ----------------------------------------------------------------
 
 
+def opening_errors(session: Session, *, school_id: str, designation: str, discipline_group: str,
+                   closing_date: date | None = None, advertisement_date: date | None = None) -> dict[str, str]:
+    """Every problem with a new opening's choices at once, keyed by field, so the form can show them together."""
+    errors: dict[str, str] = {}
+    school = session.get(School, school_id) if school_id else None
+    if school is None or not school.is_hiring_unit:
+        errors["school_id"] = "Choose a school from the list."
+    if designation not in DESIGNATIONS:
+        errors["designation"] = "Choose a designation from the list."
+    if discipline_group not in DISCIPLINE_GROUPS:
+        errors["discipline_group"] = "Choose a discipline group from the list."
+    if closing_date and advertisement_date and closing_date < advertisement_date:
+        errors["closing_date"] = "The closing date is before the advertisement date."
+    return errors
+
+
 def create_opening(
     session: Session,
     *,
@@ -98,18 +114,11 @@ def create_opening(
     advertisement_date: date | None = None,
     eligibility_date: date | None = None,
 ) -> JobOpening:
-    errors: dict[str, str] = {}
-    school = session.get(School, school_id)
-    if school is None or not school.is_hiring_unit:
-        errors["school_id"] = "Choose a school from the list."
-    if designation not in DESIGNATIONS:
-        errors["designation"] = "Choose a designation from the list."
-    if discipline_group not in DISCIPLINE_GROUPS:
-        errors["discipline_group"] = "Choose a discipline group from the list."
-    if closing_date and advertisement_date and closing_date < advertisement_date:
-        errors["closing_date"] = "The closing date is before the advertisement date."
+    errors = opening_errors(session, school_id=school_id, designation=designation, discipline_group=discipline_group,
+                            closing_date=closing_date, advertisement_date=advertisement_date)
     if errors:
         raise IntakeError(errors)
+    school = session.get(School, school_id)
 
     department = None
     department_name = " ".join((department_name or "").split())

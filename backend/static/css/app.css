@@ -277,6 +277,7 @@ dialog.drawer { width: min(520px, 100vw); max-height: 100vh; height: 100vh; marg
 .toasts { position: fixed; right: var(--s4); bottom: var(--s4); z-index: 50; display: grid; gap: var(--s2); width: min(420px, calc(100vw - 32px)); }
 .toasts:empty { display: none; }
 .toast { display: flex; gap: var(--s3); align-items: flex-start; margin: 0; padding: var(--s3) var(--s3) var(--s3) var(--s4); border: 1px solid var(--ok-line); border-left: 4px solid var(--ok); border-radius: var(--r1); background: #F0FDF4; color: var(--ink); box-shadow: var(--shadow-2); animation: rise 0.18s ease-out; }
+.toast.failed, .notice.failed { border-color: var(--danger-line); border-left-color: var(--danger); background: var(--danger-bg); }
 .toast-x { margin-left: auto; padding: 2px; border: 0; background: none; box-shadow: none; color: var(--muted); border-radius: var(--r1); }
 .toast-x:hover { background: rgba(0, 0, 0, 0.06); color: var(--ink); }
 @keyframes rise { from { opacity: 0; transform: translateY(8px); } }

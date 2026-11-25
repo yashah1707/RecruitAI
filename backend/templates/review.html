@@ -140,13 +140,13 @@
   {% if decided.justification %}<p>Justification: {{ decided.justification }}</p>{% endif %}
   <p class="hint">Short-listing is for interview only. Selection is made by the Selection Committee.</p>
   {% if a.status == "HR_APPROVED" and can_approve %}
-  <details class="more">
+  <details class="more"{% if kept.get("reason") is not none %} open{% endif %}>
     <summary>Decided wrongly? Reopen this decision</summary>
     <form method="post" action="/hr/applications/{{ a.application_id }}/reopen-decision" class="stack">
       <span class="hint">Possible because the candidate has not been informed yet. The decision stays on record as reopened, its letter is
         dropped, and the application is assessed and decided again. Needs an account that may approve.</span>
       <label>Why it is reopened
-        <textarea name="reason" rows="2" maxlength="1000" required></textarea></label>
+        <textarea name="reason" rows="2" maxlength="1000" required>{{ kept.get("reason", "") }}</textarea></label>
       <button type="submit" class="quiet">Reopen the decision</button>
     </form>
   </details>
@@ -166,7 +166,7 @@
   <p>{% if email.status == "APPROVED" %}<strong>Approved, not yet sent to the candidate.</strong>
      {% if email.redirected and email.sent_at %}A test copy went to the redirect address on {{ email.sent_at|ddmmyyyy }}.{% endif %}
      {% if not mail_configured %}No mail server is configured, so it is waiting.{% endif %}
-     {% else %}<strong>Draft.</strong> Nothing is sent until you approve it.{% endif %}
+     {% else %}<strong>Draft.</strong> Nothing is sent until {{ "you approve it" if can_approve else "an account that may approve it does" }}.{% endif %}
      Written by {{ {"template": "the system from the decision above", "person": "HR", "model": "the language model, from the system's draft"}[email.drafted_by] }}.</p>
   {% if mail_configured and redirect_to %}
   {% call ui.alert("warning", "Test mode.", "status") %}When you press Approve and send, this email goes to
@@ -212,31 +212,31 @@
   <div class="card-head"><h2>Your decision</h2></div>
   <div class="options">
   {% if evaluation.outcome != "MANUAL_REVIEW" %}
-  <details class="option" name="decision" open>
+  <details class="option" name="decision"{% if not kept %} open{% endif %}>
     <summary><span class="option-title">Approve as assessed</span><span class="hint">Accepts the finding above as it stands.</span></summary>
     <form method="post" action="/hr/applications/{{ a.application_id }}/approve" class="inline">
       <button type="submit">Approve as assessed</button>
     </form>
   </details>
   {% endif %}
-  <details class="option" name="decision"{% if evaluation.outcome == "MANUAL_REVIEW" %} open{% endif %}>
+  <details class="option" name="decision"{% if evaluation.outcome == "MANUAL_REVIEW" or kept.get("justification") is not none %} open{% endif %}>
   <summary><span class="option-title">{{ "Decide it yourself" if evaluation.outcome == "MANUAL_REVIEW" else "Or override it" }}</span><span class="hint">Record your own decision, with what you relied on.</span></summary>
   <form method="post" action="/hr/applications/{{ a.application_id }}/override" class="stack">
     <label>Decision
       <select name="outcome">
         <option value="">Choose…</option>
-        <option value="SHORTLISTED">Short-list for interview</option>
-        <option value="NOT_ELIGIBLE">Does not meet the minimum qualifications</option>
+        <option value="SHORTLISTED"{% if kept.get("outcome") == "SHORTLISTED" %} selected{% endif %}>Short-list for interview</option>
+        <option value="NOT_ELIGIBLE"{% if kept.get("outcome") == "NOT_ELIGIBLE" %} selected{% endif %}>Does not meet the minimum qualifications</option>
       </select>
     </label>
     <label>Post, if short-listed
       <select name="designation">
         <option value="">Choose…</option>
-        {% for code, label in DESIGNATIONS.items() %}<option value="{{ code }}"{% if code == a.applied_designation %} selected{% endif %}>{{ label }}</option>{% endfor %}
+        {% for code, label in DESIGNATIONS.items() %}<option value="{{ code }}"{% if code == kept.get("designation", a.applied_designation) %} selected{% endif %}>{{ label }}</option>{% endfor %}
       </select>
     </label>
     <label>Justification
-      <textarea name="justification" rows="3" maxlength="1000" required></textarea>
+      <textarea name="justification" rows="3" maxlength="1000" required>{{ kept.get("justification", "") }}</textarea>
       <span class="hint">Kept with the decision. Say what you relied on, for example a certificate you have seen.</span>
     </label>
     <button type="submit"{% if evaluation.outcome != "MANUAL_REVIEW" %} class="quiet"{% endif %}>Record my decision</button>

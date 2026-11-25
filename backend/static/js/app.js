@@ -67,7 +67,7 @@
   // must not show it again.
   (function () {
     var here = new URL(location.href), had = false;
-    ["msg", "sent", "expired", "said"].forEach(function (k) { if (here.searchParams.has(k)) { here.searchParams.delete(k); had = true; } });
+    ["msg", "sent", "expired", "said", "failed"].forEach(function (k) { if (here.searchParams.has(k)) { here.searchParams.delete(k); had = true; } });
     if (had) { history.replaceState(null, "", here.pathname + here.search + here.hash); }
   })();
 
@@ -301,6 +301,8 @@
     button.hidden = false;
     button.addEventListener("click", function () { target.showModal(); });
   });
+  // A form in a dialog that was refused comes back open, with what was typed and the reason.
+  all("dialog[data-open-now]").forEach(function (d) { if (typeof d.showModal === "function") { d.showModal(); } });
   all("dialog").forEach(function (d) {
     d.addEventListener("click", function (e) { if (e.target === d) { d.close(); } });  // a click on the dimmed page closes it
   });

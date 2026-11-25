@@ -77,8 +77,13 @@
 
 {% if letters %}
 <div class="next">
+  {% if can_approve %}
   <p role="status"><strong>{{ letters }} waiting for your approval.</strong> <span class="hint">Nothing is sent until you approve it.</span></p>
   <a class="button" href="/hr/openings/{{ o.opening_id }}/emails">Read and approve them</a>
+  {% else %}
+  <p role="status"><strong>{{ letters }} waiting for approval.</strong> <span class="hint">An account that may approve them will do so; nothing is sent until then.</span></p>
+  <a class="button secondary" href="/hr/openings/{{ o.opening_id }}/emails">Read them</a>
+  {% endif %}
 </div>
 {% endif %}
 {% if reading %}

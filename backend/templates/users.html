@@ -109,17 +109,19 @@
 </dialog>
 {% endfor %}
 
-<dialog class="sheet drawer" id="add-account" aria-labelledby="add-account-title">
+{% set nv = new_account.get("v", {}) %}
+<dialog class="sheet drawer" id="add-account" aria-labelledby="add-account-title"{% if new_account %} data-open-now{% endif %}>
   <div class="dialog-head"><h2 id="add-account-title">Add an account</h2>
     <form method="dialog"><button type="submit" class="ghost sm" aria-label="Close">{{ ui.icon("x") }}</button></form></div>
   <div class="dialog-main">
 <form method="post" action="/admin/users" class="stack">
-  <label>Name <input name="name" maxlength="200" required></label>
-  <label>Email address <input type="email" name="email" maxlength="254" required autocomplete="off"></label>
+  {% if new_account.get("error") %}<p class="error" role="alert">Not created. {{ new_account.error }}{% if nv %} Type the temporary password again.{% endif %}</p>{% endif %}
+  <label>Name <input name="name" maxlength="200" required value="{{ nv.get('name', '') }}"></label>
+  <label>Email address <input type="email" name="email" maxlength="254" required autocomplete="off" value="{{ nv.get('email', '') }}"></label>
   <label>Kind of account
     <select name="user_type" required>
       <option value="">Choose…</option>
-      {% for code, text in USER_TYPES.items() %}<option value="{{ code }}">{{ text }}</option>{% endfor %}
+      {% for code, text in USER_TYPES.items() %}<option value="{{ code }}"{% if nv.get('user_type') == code %} selected{% endif %}>{{ text }}</option>{% endfor %}
     </select></label>
   <label>Temporary password <input type="password" name="password" autocomplete="new-password" minlength="{{ min }}" required>
     <span class="hint">At least {{ min }} characters. The person must choose their own when they first sign in. Nothing is emailed:

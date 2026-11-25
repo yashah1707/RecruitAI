@@ -281,9 +281,17 @@ def _first_class_check(facts: Facts, mode: str, rule: Rule, rules: RuleSet) -> C
     results, texts = [], []
     for level in levels:
         degrees = _degrees_of(facts, level)
+        label = "Bachelor's degree" if level == "UG" else "Master's degree"
+        if not degrees and facts.highest_degree in _HIGHER[level]:
+            # Held (the highest qualification shows it) though not listed degree by degree: judge it on what the
+            # record does give, the Master's marks or CGPA read as scored fields, so the page never says both
+            # "held" and "not on the record".
+            degrees = [Degree(level=level, name=label,
+                              marks_pct=facts.masters_marks_pct if level == "PG" else None,
+                              cgpa=facts.masters_cgpa if level == "PG" else None)]
         if not degrees:
             results.append(UNKNOWN)
-            texts.append(f"no {'Bachelor' if level == 'UG' else 'Master'}'s degree is on the record")
+            texts.append(f"no {label} is on the record")
             continue
         each = [_first_class(d, rules) for d in degrees]
         best = PASS if any(r == PASS for r, _ in each) else (UNKNOWN if any(r == UNKNOWN for r, _ in each) else FAIL)

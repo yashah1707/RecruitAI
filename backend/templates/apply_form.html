@@ -77,6 +77,8 @@
       <input type="file" name="resume" accept=".pdf,.docx" required>
     </label>
     {{ err("resume") }}
+    {% if f.errors and not f.errors.get("resume") %}<span class="error" role="alert">Please choose your resume again. For your
+      safety, the browser does not keep a chosen file after the form is returned to you.</span>{% endif %}
     <span class="hint">A scanned or photographed resume cannot be read. Please upload one exported from a word processor.</span>
   </div>
   <label class="choice">

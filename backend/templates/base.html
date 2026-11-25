@@ -70,7 +70,8 @@
   </header>
   {% if me %}{% set trail %}{% block trail %}{% endblock %}{% endset %}{% if trail|trim %}<p class="trail">{{ trail }}</p>{% endif %}{% endif %}
   <main id="content">
-    {% if msg %}<p class="notice" role="status" data-toast>{{ msg }}</p>{% endif %}
+    {% if msg %}{% set failed = request.query_params.get("failed") or msg.startswith("Not ") %}
+    <p class="notice{{ ' failed' if failed }}" role="{{ 'alert' if failed else 'status' }}" data-toast>{{ msg }}</p>{% endif %}
     {% block content %}{% endblock %}
   </main>
   <footer class="foot">

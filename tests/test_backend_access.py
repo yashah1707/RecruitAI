@@ -371,8 +371,9 @@ def test_only_a_university_administrator_manages_accounts_and_an_interviewer_has
         new = s.scalar(select(User).where(User.email == "nita.new@example.org"))
         new_id = new.user_id
         assert new.must_change_password and PASSWORD not in new.password_hash
-    assert "Not done. There is already an account" in web.post(
-        "/admin/users", data={"name": "Nita Again", "email": "nita.new@example.org", "user_type": "SCHOOL_HR", "password": PASSWORD}).text
+    again = web.post("/admin/users", data={"name": "Nita Again", "email": "nita.new@example.org", "user_type": "SCHOOL_HR",
+                                           "password": PASSWORD}).text
+    assert "Not created. There is already an account" in again and "data-open-now" in again  # the form comes back open
     granted = web.post(f"/admin/users/{new_id}/grants", data={"school_id": COMPUTING, "department_id": "", "level": "APPROVE"}).text
     assert "Access granted." in granted and "MIT School of Computing: View, edit and approve" in granted
     with Session(engine) as s:
