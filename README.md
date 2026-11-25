@@ -143,9 +143,10 @@ The rules live in `backend/rules_data.py`, transcribed from the gazette PDFs (ea
 address and SHA-256 are recorded). `docs/ugc_rules_transcription.md` and
 `docs/UGC_Rules_Mentor_Review.docx` are generated from the same data for a person to check against
 the gazette, and a test fails if the sheet and the data ever differ. The transcription was approved
-by the project guide in November 2026. Readings the Regulations leave open (for example, how a
-CGPA fits the percentage bands of Table 3A) are listed in the plan; the engine reports a range or
-sends the case to a person rather than guessing.
+by the project guide in November 2026. Where the Regulations leave a point open (for example,
+whether impact-factor points add to a paper's score), the guide's decision is recorded with the
+point in `rules_data.OPEN_POINT_DECISIONS` and printed in the sheet. Where a resume leaves a fact
+out, the engine reports a range or sends the case to a person rather than guessing.
 
 ## Tests
 

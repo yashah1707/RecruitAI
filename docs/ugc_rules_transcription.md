@@ -230,7 +230,7 @@ Faculty groups: SCI_ENG = Sciences / Engineering / Agriculture / Medical / Veter
 
 ## 8. Points the gazette leaves unsettled
 
-These are recorded, not resolved. Each needs a decision before a score that depends on it is computed.
+The gazette does not settle these. The project guide's decisions, given on 14-11-2026, are recorded under each; a point without one is still open.
 
 ### T2_BASE_VS_IMPACT_FACTOR
 
@@ -238,7 +238,7 @@ These are recorded, not resolved. Each needs a decision before a score that depe
 
 S.N. 1 gives 08 (or 10) points per paper. The list below the table then says the score for research papers 'would be augmented': 5 points without impact factor, 10 for IF below 1, up to 30 for IF above 10. The gazette does not say whether the impact-factor points are added to the 8/10 or replace them.
 
-**Decision:** ______________________
+**Decision (14-11-2026):** Added: a journal paper scores its 8/10 points plus its impact-factor points.
 
 ### T2_IMPACT_FACTOR_BOUNDARIES
 
@@ -246,7 +246,7 @@ S.N. 1 gives 08 (or 10) points per paper. The list below the table then says the
 
 'Between 1 and 2', 'between 2 and 5' and 'between 5 and 10' share their end values, so an impact factor of exactly 1, 2, 5 or 10 falls in two bands. Stored here as lower bound inclusive, upper bound exclusive.
 
-**Decision:** ______________________
+**Decision (14-11-2026):** The higher band: lower bound inclusive, upper bound exclusive (IF 2.0 is '2 to 5').
 
 ### T3_PG_VS_SNO3_FOR_MTECH
 
@@ -254,7 +254,7 @@ S.N. 1 gives 08 (or 10) points per paper. The list below the table then says the
 
 S.No. 3 now reads 'M.Phil/LLM/M.Tech/M.Arch/M.E./M.V.Sc./M.D etc.'. For a candidate whose only post-graduate degree is an M.Tech or M.E., the gazette does not say whether that degree scores under S.No. 2 (Post-Graduation), S.No. 3, or both.
 
-**Decision:** ______________________
+**Decision (14-11-2026):** S.No. 2 (Post-Graduation) when it is the candidate's only Master's degree; S.No. 3 only when another Master's degree is held as well.
 
 ### T3_CGPA
 
@@ -262,7 +262,7 @@ S.No. 3 now reads 'M.Phil/LLM/M.Tech/M.Arch/M.E./M.V.Sc./M.D etc.'. For a candid
 
 The bands are in percentages. cl. 3.6 accepts 'a relevant grade which is regarded as equivalent of 55%' but gives no conversion. A CGPA needs the awarding university's own conversion before it can be banded.
 
-**Decision:** ______________________
+**Decision (14-11-2026):** No conversion: a CGPA is not placed in a band; a person settles it from the marksheet.
 
 ### T3_GRAD_BELOW_45_AND_RESERVED
 
@@ -270,7 +270,7 @@ The bands are in percentages. cl. 3.6 accepts 'a relevant grade which is regarde
 
 No score is given for Graduation below 45%, and the reserved-category lower bound is written into the Post-Graduation row only. Stored as written.
 
-**Decision:** ______________________
+**Decision (14-11-2026):** As written: no points below 45%, and the reserved-category limit in the Post-Graduation row only.
 
 ### ENGINEERING_NOT_IN_UGC_CL4
 
@@ -278,7 +278,7 @@ No score is given for Graduation below 45%, and the reserved-category lower boun
 
 UGC clause 4 has no section for Engineering and Technology, and cl. 1.1 says the technical-education authority's norms prevail. AICTE's 2019 Regulation applies to 'all degree level technical institutions and universities ... imparting technical education'. Our reading is that posts in the computing, engineering and technology schools are assessed under AICTE cl. 5.1 and 5.2 and not under UGC cl. 4.1: no NET/SET and no 55% rule, but First Class in the Bachelor's or the Master's degree. Is that the reading the university applies?
 
-**Decision:** ______________________
+**Decision (14-11-2026):** Confirmed: computing, engineering and technology posts are assessed under AICTE cl. 5.1 and 5.2 only.
 
 ### AICTE_CGPA_BETWEEN_TABLE_VALUES
 
@@ -286,7 +286,7 @@ UGC clause 4 has no section for Engineering and Technology, and cl. 1.1 says the
 
 The table gives five grade points only (6.25 = 55% up to 8.25 = 75%). They lie on a straight line, percentage = (CGPA - 0.75) x 10, but the gazette does not state a formula or say how to read a CGPA between or above the listed values, or a CGPA on a scale other than 10.
 
-**Decision:** ______________________
+**Decision (14-11-2026):** Confirmed: a CGPA of 6.75 or more on a ten-point scale is First Class; a grade point of 4 or less is another scale and goes to a person.
 
 ### AICTE_RELEVANT_BRANCH
 
@@ -294,7 +294,7 @@ The table gives five grade points only (6.25 = 55% up to 8.25 = 75%). They lie o
 
 Degrees must be 'in relevant branch'. cl. 7.4 leaves interdisciplinary and new nomenclatures to the selection committee. The software cannot decide relevance; it will show the degree and course and leave this to a person.
 
-**Decision:** ______________________
+**Decision (14-11-2026):** Confirmed: relevance is for the Selection Committee; the system never judges it.
 
 ### AICTE_CLASS_NOT_STATED
 
@@ -302,7 +302,7 @@ Degrees must be 'in relevant branch'. cl. 7.4 leaves interdisciplinary and new n
 
 Many resumes state neither a class nor marks for a degree. First Class then cannot be confirmed from the resume and must come from the marksheet.
 
-**Decision:** ______________________
+**Decision (14-11-2026):** Confirmed: the case goes to a person, who checks the marksheet; never a rejection.
 
 ### AICTE_NO_RELAXATION_OR_SHORTLIST_SCORE
 
@@ -310,7 +310,7 @@ Many resumes state neither a class nor marks for a degree. First Class then cann
 
 The Regulation contains no relaxation for reserved categories and no short-listing score comparable to UGC Tables 3A/3B. Does the university apply the UGC relaxation (cl. 3.4) or the UGC short-listing table to AICTE-governed posts, or neither?
 
-**Decision:** ______________________
+**Decision (14-11-2026):** Neither the UGC relaxation nor the UGC short-listing table is applied to AICTE posts.
 
 ### AICTE_NO_RESEARCH_DEGREE_EXCLUSION
 
@@ -318,7 +318,7 @@ The Regulation contains no relaxation for reserved categories and no short-listi
 
 UGC cl. 3.11 excludes the time taken to acquire an M.Phil. or Ph.D. from experience unless it was pursued in service without leave. The AICTE Regulation was searched (2026-10-06) and has no such provision; its cl. 2.25 sets conditions for counting past service instead (regular appointment, equivalent grade, proper selection procedure). The system therefore deducts nothing for a research degree on AICTE-governed posts and leaves the cl. 2.25 conditions to the document check. Does the university apply the UGC exclusion to them anyway?
 
-**Decision:** ______________________
+**Decision (14-11-2026):** Confirmed: nothing is deducted for a research degree on AICTE posts; the cl. 2.25 conditions are for the document check.
 
 ### AICTE_LATER_CLARIFICATIONS
 
@@ -326,7 +326,7 @@ UGC cl. 3.11 excludes the time taken to acquire an M.Phil. or Ph.D. from experie
 
 AICTE has issued clarifications after 2019. They have not been read. Which of them does the university treat as binding for direct recruitment?
 
-**Decision:** ______________________
+**Decision (14-11-2026):** The 2019 Regulation is enough for now.
 
 ### STATE_GR_DIFFERS_FROM_GAZETTE
 
@@ -334,7 +334,7 @@ AICTE has issued clarifications after 2019. They have not been read. Which of th
 
 The G.R. extract differs from the UGC gazette in three places: its cl. 4.10 still makes a Ph.D. mandatory for Assistant Professor from 01.07.2021 (substituted by the UGC 2nd Amendment, 2023); its cl. 4.11 omits the sentence in UGC cl. 3.11 that service spent pursuing a research degree while teaching, without leave, counts as experience; and it requires the thesis to be evaluated by 'two examiners' where UGC cl. 3.3 says 'two external examiners'. The system follows the UGC gazette. Should HR be told?
 
-**Decision:** ______________________
+**Decision (14-11-2026):** Follow the UGC gazette, and tell HR of the differences.
 
 ### GRADE_EQUIVALENT_55
 
@@ -342,4 +342,4 @@ The G.R. extract differs from the UGC gazette in three places: its cl. 4.10 stil
 
 55% 'or an equivalent grade in a point-scale'. Which CGPA counts as equivalent is set by each university, not by the Regulations.
 
-**Decision:** ______________________
+**Decision (14-11-2026):** No conversion: a UGC candidate who gives only a CGPA goes to a person.

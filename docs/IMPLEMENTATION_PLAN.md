@@ -395,8 +395,10 @@ Readings the engine takes until the mentor rules on them (each is one place in t
   point is taken as not lower. A grade point of 4 or less is treated as another scale and left to a person.
 - **A CGPA is never set against the UGC 55%.** It is an open point every time (cl. 3.6), so a UGC candidate whose
   Master's result is a CGPA goes to MANUAL_REVIEW.
-- **Table 2, impact factor:** both readings are taken (replaces the base points, or adds to them), so the score is a range.
-- **Table 3A, M.Tech/M.E.:** scored under S.No. 2 and under S.No. 3, as a range.
+- **Table 2, impact factor:** *decided 2026-11-14:* the impact-factor points are added to the 8/10 per paper. (Until then
+  both readings were taken and the score was a range.)
+- **Table 3A, M.Tech/M.E.:** *decided 2026-11-14:* S.No. 2 (Post-Graduation) when it is the candidate's only Master's
+  degree, S.No. 3 only when another Master's is held as well; one degree is never counted twice.
 
 Limits to know about:
 
@@ -830,6 +832,7 @@ their advertisement reference, which the dashboard shows but does not chart.
 | 2026-10-07 | Reversed in part: an HR upload is not held for the form answers. They are still never taken from the resume; a person enters them, and the engine asks for one only when it would change the outcome. |
 | 2026-10-06 | The engine answers met, not met or cannot be told. Anything it cannot tell goes to a person; it is never rounded. |
 | 2026-10-06 | Until the mentor rules, the open readings are taken as listed under Phase 5, and scores are given as ranges. |
+| 2026-11-14 | The project guide answered the 15 open rule questions (option A throughout; provisional, he may revise any). Impact-factor points add to the 8/10; an M.Tech/M.E. is Post-Graduation unless another Master's is held; a CGPA is never converted for UGC bands or the 55% floor; AICTE alone governs technical posts, with no UGC relaxation, short-listing table or cl. 3.11 deduction; AICTE First Class from 6.75; relevance is for the committee; the 2019 AICTE Regulation is enough for now; the UGC gazette prevails over the State G.R. and HR is told; eligibility is counted on the closing date unless the advertisement names another. Recorded per point in `rules_data.OPEN_POINT_DECISIONS` and in the transcription sheet. |
 | 2026-10-06 | Disciplines with their own UGC clause (4.2 to 4.6) are chosen as such on the opening and assessed by a person until their rules are loaded. |
 | 2026-10-08 | When a Gemini model stays overloaded through its retries, the next model in the pool is tried (reverses the earlier "do not spend the pool" choice for that one case). |
 | 2026-10-08 | An application may be withdrawn at any stage; a message quoting an application's reference is correspondence, never a new application. |
@@ -846,18 +849,18 @@ their advertisement reference, which the dashboard shows but does not chart.
 | Which college mailbox, and who grants access (a development mailbox is in use for now) | Before go-live |
 | Which mail server and sender address candidate emails go out from | Before any email is sent |
 | Where the system will be hosted | Phase 10 |
-| Does the university assess technical-school posts under AICTE cl. 5.1/5.2 and not UGC cl. 4.1? (mentor sheet, Section 11) | Phase 5 |
-| Which later AICTE clarifications apply; they have not been read | Phase 5 |
-| Does any relaxation or short-listing score apply to AICTE-governed posts? The Regulation has neither | Phase 5 |
-| How to read a CGPA between or above the five points AICTE cl. 7.3 lists | Phase 5 |
+| Does the university assess technical-school posts under AICTE cl. 5.1/5.2 and not UGC cl. 4.1? (mentor sheet, Section 11) | Answered 2026-11-14: AICTE only |
+| Which later AICTE clarifications apply; they have not been read | Answered 2026-11-14: the 2019 Regulation for now |
+| Does any relaxation or short-listing score apply to AICTE-governed posts? The Regulation has neither | Answered 2026-11-14: neither |
+| How to read a CGPA between or above the five points AICTE cl. 7.3 lists | Answered 2026-11-14: 6.75 or more is First Class |
 | Should resumes be read automatically on arrival once a paid key is in use? | Before go-live |
-| Table 2: do impact-factor points add to or replace the 8/10 per paper? | Phase 5 (Research Score) |
-| Table 3A: does an M.Tech/M.E. score as Post-Graduation, under S.No. 3, or both? | Phase 5 (short-listing score) |
-| How is a CGPA placed in the percentage bands of Table 3A? | Phase 5 |
+| Table 2: do impact-factor points add to or replace the 8/10 per paper? | Answered 2026-11-14: they add |
+| Table 3A: does an M.Tech/M.E. score as Post-Graduation, under S.No. 3, or both? | Answered 2026-11-14: Post-Graduation, unless another Master's is held |
+| How is a CGPA placed in the percentage bands of Table 3A? | Answered 2026-11-14: it is not; a person settles it |
 | Load UGC cl. 4.2 to 4.6 (music, arts, drama, yoga, therapy)? Needed only if those schools recruit through the system | Phase 6 or later |
-| Is eligibility counted as on the last date for applications where the advertisement names no other date? (built that way, provisionally, 2026-10-08) | Before results are relied on |
-| Who checks and signs the rules transcription sheet (one question was added on 2026-10-06, so the mentor's copy is one behind) | Before Phase 5 results are relied on |
-| Does the university apply the UGC cl. 3.11 exclusion to AICTE-governed posts? AICTE's Regulation has none | Before Phase 5 results are relied on |
+| Is eligibility counted as on the last date for applications where the advertisement names no other date? | Answered 2026-11-14: yes, the closing date |
+| Who checks and signs the rules transcription sheet | Done: approved by the project guide (reported 2026-11-14) |
+| Does the university apply the UGC cl. 3.11 exclusion to AICTE-governed posts? AICTE's Regulation has none | Answered 2026-11-14: no |
 | HR's institutions list with tiers and other spellings (four workbook rows are loaded) | Phase 6 (highlights) |
 | Was an international talk given abroad or in India? Not on most resumes; ask on the form, or at document check? | Phase 5 (Research Score) |
 | How accurate are the new fields on real resumes? Read live once; not yet compared with the resumes | Before Phase 5 relies on them |
@@ -915,3 +918,4 @@ their advertisement reference, which the dashboard shows but does not chart.
 | 2026-10-11 | A fault found in use, on the email form of an application: a letter that had already been approved (and was waiting, or had gone out only as a test copy) could be corrected in the box, but pressing Approve kept the old words and sent those; the correction was dropped without a word. Only Save changes took what was typed. Now every button takes the boxes first: changed words turn an approved letter back into a draft (`emails.edit`), and the same press of Approve approves it afresh and sends it; unchanged words leave an approved letter as it was. With a test that fails on the old code. The one letter this touched, on APP-000005, went only to the test mailbox. Also corrected: the status table still showed Phase 9 as not started. 496 backend tests on SQLite and on PostgreSQL. |
 | 2026-11-14 | The mentor approved the rules transcription (reported by the user). Phase 10, the parts that need no hosting: stored resumes encrypted at rest with `DATA_ENCRYPTION_KEY` (and files stored before it encrypted in place on command), backups of the database and resumes in one file, encrypted with the same key, with pruning and a restore path; an application log that records errors by type and place only, never their message; `backup_recruitai.bat`; the README rewritten for the whole system; `docs/USER_MANUAL.md`. Database contents at rest are left to the host's disk encryption, decided at deployment (see Phase 10). Tests set no real key and write no log into `logs/`. |
 | 2026-11-14 | Two faults found while testing the above. (1) `tests/test_extraction_accuracy.py` made live Gemini requests in any plain `pytest` run whenever `.env` held a key; a full run on this date did so. It now runs only with `RUN_LIVE_GEMINI=1`. (2) The migrations' logging set-up (`fileConfig`) switched off every logger already created when migrations ran inside the application's process, as the tests do; it now leaves them alone. Live accuracy check on the synthetic resumes, with the user's go-ahead: of 7, 5 were read and all 9 field checks on them were right; one stopped on HTTP 503 (model overloaded) and one on the day's quota, so those two are still to be run. Review before commit added: the application refuses to start, with the reason, when `DATA_ENCRYPTION_KEY` is set but not a valid key (otherwise every upload would have failed later); an emailed resume that cannot be opened is held for a person instead of stopping the inbox check; the backup command reports a key problem in words; error descriptions list only the project's own code. |
+| 2026-11-14 | The project guide's answers to the 15 open rule questions (sheet sent as `report/RecruitAI - Open Rule Questions for Mentor.docx`), recorded as option A throughout and provisional. Two change the engine: Table 2 now adds the impact-factor points to the 8/10 per paper (a paper with no impact factor scores 13 to 15, the range now coming only from the faculty column the opening does not record), and Table 3A scores an M.Tech/M.E./LL.M. as Post-Graduation when it is the only Master's and under S.No. 3 only beside another Master's. The other thirteen confirm what was built. `rules_data.OPEN_POINT_DECISIONS` holds them; the transcription sheet prints them; four engine tests were rewritten for the decided readings and one added for the M.Tech cases. |

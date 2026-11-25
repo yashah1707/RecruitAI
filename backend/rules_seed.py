@@ -202,9 +202,13 @@ def render_transcription() -> str:
                 "Commerce / Management and other related disciplines; ALL = the same figure in both columns.",
             ]
 
-    out += ["", "## 8. Points the gazette leaves unsettled", "", "These are recorded, not resolved. Each needs a decision before a score that depends on it is computed.", ""]
+    out += ["", "## 8. Points the gazette leaves unsettled", "",
+            f"The gazette does not settle these. The project guide's decisions, given on {R.DECISIONS_GIVEN}, are "
+            "recorded under each; a point without one is still open.", ""]
     for o in R.OPEN_POINTS:
-        out += [f"### {o['code']}", "", f"*Where:* {o['where']}", "", o["question"], "", "**Decision:** ______________________", ""]
+        decision = R.OPEN_POINT_DECISIONS.get(o["code"])
+        out += [f"### {o['code']}", "", f"*Where:* {o['where']}", "", o["question"], "",
+                f"**Decision ({R.DECISIONS_GIVEN}):** {decision}" if decision else "**Decision:** ______________________", ""]
     return "\n".join(out).rstrip() + "\n"
 
 

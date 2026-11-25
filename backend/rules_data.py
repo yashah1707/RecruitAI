@@ -494,8 +494,8 @@ TABLE_TITLES: dict[str, str] = {
 
 # --- what the gazette leaves unsettled --------------------------------------
 #
-# These are not resolved in this file. Each needs a decision from the mentor
-# or HR before Phase 5 computes a score that depends on it.
+# The points the gazette does not settle, as put to the project guide. His decisions are in
+# OPEN_POINT_DECISIONS below; a point without one there is still open.
 
 OPEN_POINTS: tuple[dict, ...] = (
     {
@@ -597,3 +597,31 @@ OPEN_POINTS: tuple[dict, ...] = (
         "university, not by the Regulations.",
     },
 )
+
+# The project guide's decisions on the points above, given on 14-11-2026 through the question sheet
+# (report/RecruitAI - Open Rule Questions for Mentor.docx, questions 1-14; question 15, the date eligibility is
+# counted on, is recorded in the implementation plan). Provisional: he may revise any of them, and a revision is
+# a change here. The code that relies on each one names its code.
+DECISIONS_GIVEN = "14-11-2026"
+OPEN_POINT_DECISIONS: dict[str, str] = {
+    "T2_BASE_VS_IMPACT_FACTOR": "Added: a journal paper scores its 8/10 points plus its impact-factor points.",
+    "T2_IMPACT_FACTOR_BOUNDARIES": "The higher band: lower bound inclusive, upper bound exclusive (IF 2.0 is '2 to 5').",
+    "T3_PG_VS_SNO3_FOR_MTECH": "S.No. 2 (Post-Graduation) when it is the candidate's only Master's degree; S.No. 3 only "
+                               "when another Master's degree is held as well.",
+    "T3_CGPA": "No conversion: a CGPA is not placed in a band; a person settles it from the marksheet.",
+    "T3_GRAD_BELOW_45_AND_RESERVED": "As written: no points below 45%, and the reserved-category limit in the "
+                                     "Post-Graduation row only.",
+    "ENGINEERING_NOT_IN_UGC_CL4": "Confirmed: computing, engineering and technology posts are assessed under AICTE "
+                                  "cl. 5.1 and 5.2 only.",
+    "AICTE_CGPA_BETWEEN_TABLE_VALUES": "Confirmed: a CGPA of 6.75 or more on a ten-point scale is First Class; a "
+                                       "grade point of 4 or less is another scale and goes to a person.",
+    "AICTE_RELEVANT_BRANCH": "Confirmed: relevance is for the Selection Committee; the system never judges it.",
+    "AICTE_CLASS_NOT_STATED": "Confirmed: the case goes to a person, who checks the marksheet; never a rejection.",
+    "AICTE_NO_RELAXATION_OR_SHORTLIST_SCORE": "Neither the UGC relaxation nor the UGC short-listing table is applied "
+                                              "to AICTE posts.",
+    "AICTE_NO_RESEARCH_DEGREE_EXCLUSION": "Confirmed: nothing is deducted for a research degree on AICTE posts; the "
+                                          "cl. 2.25 conditions are for the document check.",
+    "AICTE_LATER_CLARIFICATIONS": "The 2019 Regulation is enough for now.",
+    "STATE_GR_DIFFERS_FROM_GAZETTE": "Follow the UGC gazette, and tell HR of the differences.",
+    "GRADE_EQUIVALENT_55": "No conversion: a UGC candidate who gives only a CGPA goes to a person.",
+}

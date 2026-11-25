@@ -428,29 +428,31 @@ def test_a_partly_stated_date_is_the_span_of_days_it_can_mean(text, earliest, la
 # --- Appendix II scores ------------------------------------------------------
 
 
-def test_table_2_research_score_spans_the_two_readings_and_what_the_resume_leaves_unsaid(session):
+def test_table_2_research_score_adds_impact_factor_points_and_spans_what_the_resume_leaves_unsaid(session):
     f = _facts("ASSOCIATE_PROFESSOR",
                papers=[Paper(kind="JOURNAL", author_count=1), Paper(kind="JOURNAL", author_count=1),
                        Paper(kind="JOURNAL", author_count=1, cleared_review=False)],
                items=[Item(kind="GUIDANCE_PHD", status="1 Ph.D. awarded", count=1),
                       Item(kind="PATENT", level="NATIONAL", status="Granted"), Item(kind="TALK", level="NATIONAL")])
     s = scores.research_score(f, load_rules(session, "GENERAL"))
-    # Papers: 5 each with no impact factor if that replaces the base; 10 + 5 each if it adds to it.
-    assert (s.lines[0].low, s.lines[0].high) == (10, 30)
+    # Papers: the base (8, or 10 in Sciences/Engineering, which the opening does not say) plus 5 for no impact
+    # factor, added as the project guide decided (T2_BASE_VS_IMPACT_FACTOR): 13 to 15 each.
+    assert (s.lines[0].low, s.lines[0].high) == (26, 30)
     # A Ph.D. awarded is 10; a co-supervisor gets 70% of it. National patent 7. National talk 3.
     assert (s.lines[3].low, s.lines[3].high) == (7, 10) and (s.lines[4].low, s.lines[4].high) == (7, 7)
-    assert s.total == Bounds(27, 50) and s.categories.low == 4
+    assert s.total == Bounds(43, 50) and s.categories.low == 4
+    assert "added to the 8/10" in s.notes[0]
 
 
 def test_table_2_impact_factor_and_authorship_shares(session):
     rules = load_rules(session, "GENERAL")
     one = lambda **kw: scores.research_score(_facts(papers=[Paper(kind="JOURNAL", **kw)]), rules).lines[0]  # noqa: E731
-    assert (one(author_count=1, impact_factor=3.2).low, one(author_count=1, impact_factor=3.2).high) == (20, 30)
-    assert (one(author_count=1, impact_factor=12).low, one(author_count=1, impact_factor=0.4).low) == (30, 10)
-    assert one(author_count=2).low == pytest.approx(3.5) and one(author_count=2).high == pytest.approx(10.5)   # 70% each
-    assert one(author_count=4, is_first_author=True).low == pytest.approx(3.5)                                  # first: 70%
-    assert one(author_count=4, is_first_author=False).low == pytest.approx(1.5)                                 # joint: 30%
-    assert (one().low, one().high) == (pytest.approx(1.5), 15)                                                  # authors not listed
+    assert (one(author_count=1, impact_factor=3.2).low, one(author_count=1, impact_factor=3.2).high) == (28, 30)  # 8/10 + 20
+    assert (one(author_count=1, impact_factor=12).low, one(author_count=1, impact_factor=0.4).low) == (38, 18)   # 8 + 30, 8 + 10
+    assert one(author_count=2).low == pytest.approx(9.1) and one(author_count=2).high == pytest.approx(10.5)     # 70% each
+    assert one(author_count=4, is_first_author=True).low == pytest.approx(9.1)                                    # first: 70%
+    assert one(author_count=4, is_first_author=False).low == pytest.approx(3.9)                                   # joint: 30%
+    assert (one().low, one().high) == (pytest.approx(3.9), 15)                                                    # authors not listed
 
 
 def test_table_2_talks_are_capped_at_thirty_percent_of_the_total(session):
@@ -462,17 +464,17 @@ def test_table_2_talks_are_capped_at_thirty_percent_of_the_total(session):
 
 
 def test_the_research_score_check_passes_fails_or_is_left_open_by_its_bounds(session):
-    papers = [Paper(kind="JOURNAL", author_count=1) for _ in range(16)]  # between 80 and 240
+    papers = [Paper(kind="JOURNAL", author_count=1) for _ in range(16)]  # 13 to 15 each: between 208 and 240
     f = _associate_applicant(leave=False)
     f.research_score, f.papers = None, papers
     # A Ph.D. guided (7 to 10) and a national patent (7): with the papers, three of the six categories.
     f.items = [Item(kind="GUIDANCE_PHD", status="1 Ph.D. awarded", count=1), Item(kind="PATENT", level="NATIONAL", status="Granted")]
     d = _ugc(session, f)
-    assert d.outcome == SHORTLISTED and _check(d, "research_score").result == PASS   # 94 clears 75 on either reading
+    assert d.outcome == SHORTLISTED and _check(d, "research_score").result == PASS   # 222 or more clears 75
     assert _check(d, "research_score_categories").result == PASS
-    f.papers = papers[:10]                                                  # between 64 and 167: depends on the reading
+    f.papers = papers[:4]                                                   # between 66 and 77: depends on the faculty column
     d = _ugc(session, f)
-    assert d.outcome == MANUAL_REVIEW and "between 64 and 167" in d.open_points[0]
+    assert d.outcome == MANUAL_REVIEW and "between 66 and 77" in d.open_points[0]
     f.papers = papers[:3]                                                   # at most 62
     assert _check(_ugc(session, f), "research_score").result == FAIL
 
@@ -510,7 +512,7 @@ def test_table_3a_caps_bands_and_open_points(session):
                items=[Item(kind="AWARD", level="NATIONAL"), Item(kind="AWARD", level="STATE")])
     lines = {l.label[:2]: (l.low, l.high) for l in scores.shortlist_score(f, rules).lines}
     assert lines["1."] == (0, 15)      # a CGPA cannot be banded
-    assert lines["2."] == (0, 20)      # 52% scores 20 for a reserved category under S.No. 2, nothing under S.No. 3
+    assert lines["2."] == (20, 20)     # the M.Tech is the only Master's, so it is the Post-Graduation: 52% scores 20 (SC)
     assert lines["3-"] == (30, 30)     # Ph.D. 30, and the M.Phil. + Ph.D. cap is 30
     assert lines["5."] == (0, 0)       # a SET counts only in its own State (Note D)
     assert lines["6."] == (10, 10) and lines["7."] == (10, 10) and lines["8."] == (3, 3)
@@ -519,6 +521,18 @@ def test_table_3a_caps_bands_and_open_points(session):
                       Post(kind="RESEARCH", start=P("2022-01-01"), end=P("2024-01-01"))])
     line = scores.shortlist_score(g, rules).lines[5]
     assert (line.low, line.high) == (pytest.approx(4.0, abs=0.01), pytest.approx(8.0, abs=0.01))
+
+
+def test_table_3a_an_mtech_held_besides_another_masters_scores_under_sno_3_and_is_never_counted_twice(session):
+    """T3_PG_VS_SNO3_FOR_MTECH, as the project guide decided."""
+    rules = load_rules(session, "GENERAL")
+    lines = lambda degrees: {l.label[:2]: (l.low, l.high) for l in scores.shortlist_score(_facts(degrees=degrees), rules).lines}  # noqa: E731
+    both = lines([Degree("PG", name="M.Sc.", marks_pct=65), Degree("PG", name="M.Tech", marks_pct=65)])
+    assert both["2."] == (23, 23) and both["3-"] == (7, 7)   # M.Sc. as Post-Graduation (60-80%: 23); M.Tech under S.No. 3 (7)
+    only = lines([Degree("PG", name="M.Tech", marks_pct=65)])
+    assert only["2."] == (23, 23) and only["3-"] == (0, 0)   # its only Master's: Post-Graduation, and nothing more
+    two_listed = lines([Degree("PG", name="M.E.", marks_pct=58), Degree("PG", name="M.Tech", marks_pct=65)])
+    assert two_listed["2."] == (23, 23) and two_listed["3-"] == (5, 5)  # the better one is the Post-Graduation
 
 
 # --- the workflow step -------------------------------------------------------

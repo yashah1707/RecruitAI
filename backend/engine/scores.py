@@ -5,12 +5,14 @@ code. Nothing is typed in here.
 
 Both scores are worked out as a lower and an upper bound, because a resume
 leaves much unsaid (how many authors a paper had, whether a project was
-completed) and because the gazette itself is unsettled in places. Where it
-is, the two readings are both taken and the bound spans them:
+completed). Where the gazette itself was unsettled, the project guide decided
+(14-11-2026; recorded on each point in rules_data.OPEN_POINTS):
 
-    T2_BASE_VS_IMPACT_FACTOR   impact-factor points replace, or add to, the 8/10 per paper
-    T3_PG_VS_SNO3_FOR_MTECH    an M.Tech/M.E. scores under S.No. 2, S.No. 3, or both
-    T3_CGPA                    a CGPA cannot be placed in a percentage band
+    T2_BASE_VS_IMPACT_FACTOR   impact-factor points are added to the 8/10 per paper
+    T3_PG_VS_SNO3_FOR_MTECH    an M.Tech/M.E./LL.M. scores under S.No. 2 when it is the candidate's only
+                               Master's degree, and under S.No. 3 when they hold another Master's as well
+    T3_CGPA                    a CGPA is not placed in a percentage band: that row spans every band and
+                               a person settles it from the marksheet
 
 What the Reader does not extract is not scored at all: Table 2 category 3
 (pedagogy, MOOCs, e-content), consultancy and policy documents. The score is
@@ -101,13 +103,14 @@ def research_score(facts: Facts, rules: RuleSet) -> Score:
     cats = [_Sum() for _ in range(7)]  # index 1..6 = the table's six categories
 
     # 1. Research papers. Which column applies (8 or 10) depends on the faculty, which the opening does not record.
-    # The lower bound takes the "replaces" reading, which does not use the base at all.
+    # The base therefore spans the two columns. Impact-factor points are added to it (T2_BASE_VS_IMPACT_FACTOR, decided).
+    base_low = min(t["PAPER_SCI_ENG"].points, t["PAPER_OTHER"].points)
     base_high = max(t["PAPER_SCI_ENG"].points, t["PAPER_OTHER"].points)
     for p in (p for p in facts.papers if p.cleared_review):
         s_low, s_high = _share(p, t)
         if p.kind == "JOURNAL":
             extra = _impact_points(p.impact_factor, t)
-            cats[1].add(extra * s_low, (base_high + extra) * s_high)  # replaces, or adds to, the base
+            cats[1].add((base_low + extra) * s_low, (base_high + extra) * s_high)
         elif p.kind == "BOOK":
             cats[2].add(t["BOOK_EDITOR_NATIONAL"].points * s_low, t["BOOK_INTL"].points * s_high)
         elif p.kind == "BOOK_CHAPTER":
@@ -171,7 +174,7 @@ def research_score(facts: Facts, rules: RuleSet) -> Score:
     # Category 3 is not read, so it may or may not carry points: it widens the upper count only.
     with_points = Bounds(sum(1 for c in cats[1:] if c.low > 0), sum(1 for c in cats[1:] if c.high is None or c.high > 0) + 1)
     return Score(Bounds(round(low, 2), None if high is None else round(high, 2)), lines, with_points,
-                 ["Impact-factor points are taken both as replacing and as adding to the base points (open point T2_BASE_VS_IMPACT_FACTOR).",
+                 ["Impact-factor points are added to the 8/10 per paper (decided by the project guide, T2_BASE_VS_IMPACT_FACTOR).",
                   "Category 3, consultancy and policy documents are not read from resumes and are not scored."])
 
 
@@ -210,22 +213,27 @@ def shortlist_score(facts: Facts, rules: RuleSet, table: str = "TABLE_3A") -> Sc
     grad = best("UG", "GRAD_")
     lines.append(Line("1. Graduation", *grad))
 
-    # A Master's that is also on the S.No. 3 list (M.Tech, M.E., LL.M. ...) may score under
-    # S.No. 2, under S.No. 3, or both: the 3rd Amendment does not say. Both ends are taken.
+    # A Master's that is also on the S.No. 3 list (M.Tech, M.E., LL.M. ...) is the candidate's Post-Graduation
+    # (S.No. 2) when it is their only Master's degree, and scores under S.No. 3 only when they hold another
+    # Master's as well, so one degree is never counted twice (T3_PG_VS_SNO3_FOR_MTECH, decided).
     masters = [d for d in facts.degrees if d.level == "PG"]
     for d in masters:
         if d.marks_pct is None and d.cgpa is None:
             d.marks_pct = facts.masters_marks_pct
     pg_low = pg_high = sno3_low = sno3_high = 0.0
+    mphil = [d for d in masters if _MPHIL_RE.search(d.name or "")]
+    listed = [d for d in masters if d not in mphil and _SNO3_DEGREE_RE.search(d.name or "")]
+    plain = [d for d in masters if d not in mphil and d not in listed]
+    if not plain and listed:
+        # The best of the listed degrees is the Post-Graduation; any other listed degree is additional.
+        primary = max(listed, key=lambda d: _band(t, "PG_", d.marks_pct, facts.category))
+        plain, listed = [primary], [d for d in listed if d is not primary]
     for d in masters:
         as_pg, as_sno3 = _band(t, "PG_", d.marks_pct, facts.category), _band(t, "MPHIL_", d.marks_pct)
-        if _MPHIL_RE.search(d.name or ""):
-            sno3_low, sno3_high = max(sno3_low, as_sno3[0]), max(sno3_high, as_sno3[1])
-        elif _SNO3_DEGREE_RE.search(d.name or ""):
-            pg_low, pg_high = max(pg_low, min(as_pg[0], as_sno3[0])), max(pg_high, as_pg[1])
-            sno3_high = max(sno3_high, as_sno3[1])
-        else:
+        if any(d is p for p in plain):
             pg_low, pg_high = max(pg_low, as_pg[0]), max(pg_high, as_pg[1])
+        else:  # an M.Phil., or a listed degree held in addition to another Master's
+            sno3_low, sno3_high = max(sno3_low, as_sno3[0]), max(sno3_high, as_sno3[1])
     if not masters:
         pg_low, pg_high = _band(t, "PG_", facts.masters_marks_pct, facts.category)
     lines.append(Line("2. Post-Graduation", pg_low, pg_high))
@@ -267,6 +275,8 @@ def shortlist_score(facts: Facts, rules: RuleSet, table: str = "TABLE_3A") -> Sc
         l.low, l.high = round(l.low, 2), round(l.high, 2)
     return Score(total, lines, notes=[
         "A short-listing aid only: selection is on the interview (cl. 4.1 Note).",
-        "Marks given as a CGPA cannot be placed in a percentage band, so that row spans every band (open point T3_CGPA).",
-        "An M.Tech/M.E./LL.M. is scored both under S.No. 2 and under S.No. 3 (open point T3_PG_VS_SNO3_FOR_MTECH).",
+        "Marks given as a CGPA are not placed in a percentage band, so that row spans every band and a person settles "
+        "it from the marksheet (decided by the project guide, T3_CGPA).",
+        "An M.Tech/M.E./LL.M. scores as Post-Graduation when it is the only Master's degree, and under S.No. 3 when "
+        "another Master's is held (decided by the project guide, T3_PG_VS_SNO3_FOR_MTECH).",
     ])
