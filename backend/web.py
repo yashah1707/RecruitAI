@@ -162,6 +162,11 @@ _CARRY_SECONDS = 300
 _carried_over: dict[str, tuple[float, dict]] = {}
 
 
+def _told(path: str, text: str, *, failed: bool = False, anchor: str = "") -> RedirectResponse:
+    """Back to a page with a message; a refusal is marked so the page shows it as one (red), not as a success."""
+    return RedirectResponse(f"{path}?{'failed=1&' if failed else ''}msg={quote(text)}{anchor}", status_code=303)
+
+
 def _back_to(url: str, kind: str, **data) -> RedirectResponse:
     now = time.monotonic()
     for old in [k for k, (at, _) in _carried_over.items() if now - at > _CARRY_SECONDS]:
@@ -613,11 +618,10 @@ def _review_action(session: Session, application_id: int, action, done: str):
     a = _application_or_404(session, application_id, lock=True)
     try:
         action(a)
-        text = done
     except gate1.ReviewError as exc:
         session.rollback()
-        text = exc.errors.get("", "That could not be saved.")
-    return RedirectResponse(f"/hr/applications/{application_id}?msg=" + quote(text), status_code=303)
+        return _told(f"/hr/applications/{application_id}", exc.errors.get("", "That could not be saved."), failed=True)
+    return _told(f"/hr/applications/{application_id}", done)
 
 
 @router.post("/hr/applications/{application_id}/duplicate")
@@ -683,22 +687,20 @@ def application_move(application_id: int, opening_id: int = Form(0), user: Princ
         if target is None:
             raise intake.IntakeError({"opening": "Choose an opening to move it to."})
         intake.move_application(session, a, target, user.actor)
-        text = f"Moved to {target.reference}. It will be assessed under that opening's rules."
     except intake.IntakeError as exc:
         session.rollback()
-        text = exc.errors.get("opening", "That could not be done.")
-    return RedirectResponse(f"/hr/applications/{application_id}?msg=" + quote(text), status_code=303)
+        return _told(f"/hr/applications/{application_id}", exc.errors.get("opening", "That could not be done."), failed=True)
+    return _told(f"/hr/applications/{application_id}", f"Moved to {target.reference}. It will be assessed under that opening's rules.")
 
 
 @router.post("/hr/openings/{opening_id}/move-all")
 def opening_move_all(opening_id: int, target_id: int = Form(0), user: Principal = Depends(current_user), session: Session = Depends(get_session)):
     source, target = _opening_or_404(session, opening_id), _target_opening(session, user, target_id)
     if target is None or target.opening_id == source.opening_id:
-        text = "Choose another opening to move the applications to."
-    else:
-        moved, stayed = intake.move_all(session, source, target, user.actor)
-        text = f"Moved {moved} application(s) to {target.reference}." + (" Not moved: " + "; ".join(stayed) if stayed else "")
-    return RedirectResponse(f"/hr/openings/{opening_id}?msg=" + quote(text), status_code=303)
+        return _told(f"/hr/openings/{opening_id}", "Choose another opening to move the applications to.", failed=True)
+    moved, stayed = intake.move_all(session, source, target, user.actor)
+    text = f"Moved {moved} application(s) to {target.reference}." + (" Not moved: " + "; ".join(stayed) if stayed else "")
+    return _told(f"/hr/openings/{opening_id}", text)
 
 
 # --- Gate 2: the HR decision -------------------------------------------------
@@ -794,12 +796,13 @@ def inbox_check(user: Principal = Depends(current_user), session: Session = Depe
         text = inbox.summarise(inbox.check_inbox(session))
         last_inbox_check["at"] = datetime.now(timezone.utc)  # only a check that got through counts
     except RuntimeError as exc:
-        text = str(exc)
+        return _told("/hr/inbox", str(exc), failed=True)
     except Exception as exc:  # a wrong password, the server unreachable: say so, without the server's own words
         logger.warning("inbox_check_failed kind=%s", type(exc).__name__)
         session.rollback()
-        text = f"The mailbox could not be read ({type(exc).__name__}). Check the IMAP settings and that IMAP is enabled for the account."
-    return RedirectResponse("/hr/inbox?msg=" + quote(text), status_code=303)
+        return _told("/hr/inbox", f"The mailbox could not be read ({type(exc).__name__}). Check the IMAP settings and that "
+                                  "IMAP is enabled for the account.", failed=True)
+    return _told("/hr/inbox", text)
 
 
 def _inbox_row(session: Session, inbox_id: int) -> InboxMessage:
@@ -818,10 +821,9 @@ def inbox_assign(inbox_id: int, opening_id: str = Form(""), user: Principal = De
         if opening is None:
             raise ValueError("Choose an opening.")
         inbox.assign_opening(session, row, opening)
-        text = row.note or "Done."
     except ValueError as exc:
-        text = str(exc)
-    return RedirectResponse("/hr/inbox?msg=" + quote(text), status_code=303)
+        return _told("/hr/inbox", str(exc), failed=True)
+    return _told("/hr/inbox", row.note or "Done.")
 
 
 @router.get("/hr/inbox/{inbox_id}/attachment")
@@ -839,10 +841,9 @@ def inbox_set_aside(inbox_id: int, user: Principal = Depends(current_user), sess
     row = _inbox_row(session, inbox_id)
     try:
         inbox.set_aside(session, row)
-        text = "Set aside."
     except ValueError as exc:
-        text = str(exc)
-    return RedirectResponse("/hr/inbox?msg=" + quote(text), status_code=303)
+        return _told("/hr/inbox", str(exc), failed=True)
+    return _told("/hr/inbox", "Set aside.")
 
 
 @router.get("/hr/openings/{opening_id}/edit", response_class=HTMLResponse)
@@ -963,8 +964,8 @@ def _email_action(session: Session, application_id: int, action, done: str):
         text = action(draft) or done
     except emails.DraftError as exc:
         # What was done before the refusal (a save before an approval that failed) is kept.
-        text = str(exc)
-    return RedirectResponse(f"/hr/applications/{application_id}?msg=" + quote(text) + "#email", status_code=303)
+        return _told(f"/hr/applications/{application_id}", str(exc), failed=True, anchor="#email")
+    return _told(f"/hr/applications/{application_id}", text, anchor="#email")
 
 
 @router.post("/hr/applications/{application_id}/email")
@@ -1361,10 +1362,9 @@ def highlight_add(application_id: int, description: str = Form(""), user: Princi
     a = _application_or_404(session, application_id)
     try:
         highlights.add(session, a, description, user.actor)
-        text = "Highlight added."
     except highlights.HighlightError as exc:
-        text = str(exc)
-    return RedirectResponse(f"/hr/applications/{application_id}?msg=" + quote(text) + "#highlights", status_code=303)
+        return _told(f"/hr/applications/{application_id}", str(exc), failed=True, anchor="#highlights")
+    return _told(f"/hr/applications/{application_id}", "Highlight added.", anchor="#highlights")
 
 
 @router.post("/hr/applications/{application_id}/highlights/{highlight_id}/remove")

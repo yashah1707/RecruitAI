@@ -150,3 +150,18 @@ def test_a_new_opening_with_several_mistakes_shows_them_all_at_once(client):
     for message in ("Choose a school from the list.", "Choose a designation from the list.",
                     "Choose a discipline group from the list."):
         assert message in page, message
+
+
+# --- every refusal that comes back as a message is shown as a refusal --------------------------------------------
+
+
+def test_refusals_from_other_actions_are_shown_in_red_and_their_successes_are_not(client, session, tmp_path):
+    a = _assessed(session, tmp_path)
+    short = client.post(f"/hr/applications/{a.application_id}/highlights", data={"description": "x"}).text
+    assert 'class="notice failed" role="alert"' in short and "5 to 400 characters" in short
+    added = client.post(f"/hr/applications/{a.application_id}/highlights", data={"description": "A made-up highlight."}).text
+    assert "Highlight added." in added and "notice failed" not in added
+    nowhere = client.post(f"/hr/applications/{a.application_id}/move", data={"opening_id": "0"}).text
+    assert 'class="notice failed"' in nowhere and "Choose an opening" in nowhere
+    same = client.post(f"/hr/openings/{a.opening_id}/move-all", data={"target_id": str(a.opening_id)}).text
+    assert 'class="notice failed"' in same and "Choose another opening" in same

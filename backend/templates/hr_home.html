@@ -35,15 +35,16 @@
 </section>
 
 {% if letters %}
+{% set yours = letters.keys()|select("in", approvable)|list %}
 <section class="panel">
-  <div class="card-head"><h2>{{ "Emails waiting for your approval" if approvable else "Emails waiting for approval" }}</h2></div>
+  <div class="card-head"><h2>{{ "Emails waiting for your approval" if yours else "Emails waiting for approval" }}</h2></div>
   <ul class="rows">
     {% for o in openings if letters.get(o.opening_id) %}
     <li><span><a class="ref" href="/hr/openings/{{ o.opening_id }}/emails">{{ o.reference }}</a>: {{ letters[o.opening_id] }}</span>
       <a class="button secondary sm" href="/hr/openings/{{ o.opening_id }}/emails">{{ "Read and approve" if o.opening_id in approvable else "Read them" }}</a></li>
     {% endfor %}
   </ul>
-  <p class="hint">Nothing is sent until {{ "you approve it" if approvable else "an account that may approve it does" }}. An acknowledgement for a resume that came by email waits here
+  <p class="hint">Nothing is sent until {{ "you approve it" if yours else "an account that may approve it does" }}. An acknowledgement for a resume that came by email waits here
     because its address was read from the resume.</p>
 </section>
 {% endif %}
